@@ -26,6 +26,8 @@ def main():
     for name, folder in PACKAGES.items():
         package = ROOT / folder
         files.extend(package / item for item in COMMON)
+        files.extend(package / item for item in ('recover_failed_run.bat', 'recover_failed_run.command', 'recover_failed_run.sh')
+                     if (package / item).is_file())
         namespace = 'flow_base' if name == 'base' else name
         wheel = package / f'{namespace}-{versions[name]}-py3-none-any.whl'
         files.append(wheel)
