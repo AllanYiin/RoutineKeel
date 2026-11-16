@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import dataclasses
+import uuid
 from pathlib import Path
 from .presentation import Reporter, ACTIVE
 from .core.run_context import RunContext, ACTIVE_RUN
@@ -133,8 +134,8 @@ def run_demo(runtime, task, output):
     run_id = runtime.start_run(task.flow_id, 'demonstration_fixture', output)
     logs = runtime.logs / task.flow_id / run_id
     from types import SimpleNamespace
-    reporter = Reporter(task.manifest.title + '｜示範資料（非正式處理）', task.flow_id, run_id, logs, 1)
-    run_token = ACTIVE_RUN.set(RunContext(runtime, run_id, logs, reporter))
+    reporter = Reporter(task.manifest.title + '｜示範資料（非正式處理）', task.flow_id, run_id, logs, 1, runtime)
+    run_token = ACTIVE_RUN.set(RunContext(runtime, run_id, logs, reporter, event_sink=reporter.event_recorder))
     reporter_token = ACTIVE.set(reporter)
     store = RunStore(runtime)
     supervisor = None
@@ -142,10 +143,14 @@ def run_demo(runtime, task, output):
         store.transition(run_id, 'created', 'queued')
         supervisor = Supervisor(runtime, run_id, ACTIVE_RUN.get())
         supervisor.__enter__()
+        reporter.event_recorder.record('run.preparing')
         store.transition(run_id, 'preparing', 'running')
+        reporter.event_recorder.record('run.started')
         reporter.start()
+        reporter.event_recorder.record('step.started', attributes={'step_id': 'demo'})
         reporter.enter(SimpleNamespace(id='demo', handler='adapter.demo'), 1, '建立示範資料')
         result = task.load(runtime).demo(runtime, artifact_directory(output, task.manifest.output_layout))
+        reporter.event_recorder.record('step.finished', attributes={'step_id': 'demo'})
         if supervisor.heartbeat_error:
             raise FlowError('SUPERVISOR_HEARTBEAT', '執行期間無法更新監督程序 lease') from supervisor.heartbeat_error
         if ACTIVE_RUN.get().cancel_requested.is_set():
@@ -153,13 +158,17 @@ def run_demo(runtime, task, output):
         result.update(flow_id=task.flow_id, run_id=run_id, output=str(output), output_layout=task.manifest.output_layout)
         result['token_usage'] = reporter.usage.finish()
         result['presentation'] = reporter.references()
+        reporter.event_recorder.record('delivery.staged', attributes={'output_layout': task.manifest.output_layout})
         atomic_json(output / 'report.json', result)
         write_delivery_index(output, result)
         atomic_json(logs / 'report.json', result)
         store.transition(run_id, 'running', 'publishing')
         delivery_index = output / 'deliverables.json'
         store.record_delivery(run_id, delivery_index if delivery_index.is_file() else output / 'report.json')
+        reporter.event_recorder.record('delivery.verified', attributes={'status': 'verified'})
         store.transition(run_id, 'publishing', 'succeeded', result_status='demonstration', delivery_status='published')
+        reporter.event_recorder.record('delivery.published', attributes={'result_status': 'demonstration'})
+        reporter.event_recorder.record('run.finished', attributes={'result_status': 'demonstration'})
         try:
             runtime.update_run(run_id, 'complete', finished=True)
             reporter.complete('executed')
@@ -174,6 +183,11 @@ def run_demo(runtime, task, output):
         cancelled = isinstance(exc, FlowError) and exc.code in {'PROCESS_CANCELLED', 'RUN_CANCEL_REQUESTED'}
         status = 'cancelled' if cancelled else ('interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed')
         code = exc.code if isinstance(exc, FlowError) else type(exc).__name__
+        try:
+            reporter.event_recorder.record('run.interrupted' if isinstance(exc, KeyboardInterrupt) else ('run.cancelled' if cancelled else 'run.failed'),
+                                           severity='ERROR', attributes={'code': code})
+        except Exception:
+            pass
         diagnostic = record_exception(exc, logs, flow_id=task.flow_id, run_id=run_id, launch_id=launcher_id(runtime))
         store.finish_failure(run_id, interrupted=isinstance(exc, KeyboardInterrupt), cancelled=cancelled, error_id=diagnostic['error_id'])
         status = store.get(run_id)['execution_status']
@@ -216,8 +230,8 @@ def run_workflow(runtime, task, workflow, source, output=None, *, offline=False,
     logs = runtime.logs / task.flow_id / run_id
     logs.mkdir(parents=True, exist_ok=True)
     atomic_json(logs / 'run.json', {'flow_id': task.flow_id, 'run_id': run_id, 'task': task.manifest.id, 'status': 'starting'})
-    reporter = Reporter(task.manifest.title, task.flow_id, run_id, logs, len(workflow.steps))
-    run_token = ACTIVE_RUN.set(RunContext(runtime, run_id, logs, reporter))
+    reporter = Reporter(task.manifest.title, task.flow_id, run_id, logs, len(workflow.steps), runtime)
+    run_token = ACTIVE_RUN.set(RunContext(runtime, run_id, logs, reporter, event_sink=reporter.event_recorder))
     reporter_token = ACTIVE.set(reporter)
     store = RunStore(runtime)
     supervisor = None
@@ -225,6 +239,7 @@ def run_workflow(runtime, task, workflow, source, output=None, *, offline=False,
         store.transition(run_id, 'created', 'queued')
         supervisor = Supervisor(runtime, run_id, ACTIVE_RUN.get())
         supervisor.__enter__()
+        reporter.event_recorder.record('run.preparing')
         reporter.start()
         report = _run_workflow(runtime, task, workflow, source, output, run_id=run_id, offline=offline, prepared=prepared)
         if supervisor.heartbeat_error:
@@ -234,6 +249,8 @@ def run_workflow(runtime, task, workflow, source, output=None, *, offline=False,
         store.record_delivery(run_id, delivery_index if delivery_index.is_file() else delivery_root / 'report.json')
         store.transition(run_id, 'publishing', 'succeeded',
                          result_status=str(report.get('status', 'unknown')).lower(), delivery_status='published')
+        reporter.event_recorder.record('delivery.published', attributes={'result_status': str(report.get('status', 'unknown')).lower()})
+        reporter.event_recorder.record('run.finished', attributes={'result_status': str(report.get('status', 'unknown')).lower()})
         try:
             runtime.update_run(run_id, report.get('status', 'complete'), job_id=report.get('job_id'), finished=True)
             atomic_json(logs / 'run.json', {'flow_id': task.flow_id, 'run_id': run_id, 'job_id': report.get('job_id'), 'status': report.get('status', 'complete')})
@@ -250,6 +267,11 @@ def run_workflow(runtime, task, workflow, source, output=None, *, offline=False,
         cancelled = isinstance(exc, FlowError) and exc.code in {'PROCESS_CANCELLED', 'RUN_CANCEL_REQUESTED'}
         status = 'cancelled' if cancelled else ('interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed')
         code = exc.code if isinstance(exc, FlowError) else type(exc).__name__
+        try:
+            reporter.event_recorder.record('run.interrupted' if isinstance(exc, KeyboardInterrupt) else ('run.cancelled' if cancelled else 'run.failed'),
+                                           severity='ERROR', attributes={'code': code})
+        except Exception:
+            pass
         diagnostic = record_exception(exc, logs, flow_id=task.flow_id, run_id=run_id,
                                       launch_id=launcher_id(runtime), step=reporter.step_id)
         store.finish_failure(run_id, interrupted=isinstance(exc, KeyboardInterrupt), cancelled=cancelled, error_id=diagnostic['error_id'])
@@ -305,10 +327,13 @@ def _run_workflow(runtime, task, workflow, source, output, *, run_id, offline=Fa
         atomic_json(report_path, {'job_id': job, 'status': 'preparing', 'runtime': __version__, 'output_layout': layout})
         try:
             runtime.update_run(run_id, 'preparing', job_id=job)
+            recorder = ACTIVE.get().event_recorder
             if prepared is None:
                 adapter.prepare(runtime, workflow, offline)
                 adapter.inspect_input(runtime, workflow, source)
+                recorder.record('resource.verify_started')
                 prepared = adapter.verify(runtime, workflow)
+                recorder.record('resource.verified')
             ACTIVE.get().environment_ready(prepared)
             snapshot = {'runtime': __version__, 'task': task.manifest.id, 'task_version': task.manifest.version,
                         'flow_id': task.flow_id, 'run_id': run_id,
@@ -319,11 +344,16 @@ def _run_workflow(runtime, task, workflow, source, output, *, run_id, offline=Fa
             runtime.update_run(run_id, 'running', job_id=job)
             store = RunStore(runtime)
             store.transition(run_id, 'preparing', 'running')
+            recorder.record('run.started')
             artifacts = {}
+            root_span = current(runtime).span_id
             for index, step in enumerate(workflow.steps, 1):
                 if current(runtime).cancel_requested.is_set():
                     raise FlowError('RUN_CANCEL_REQUESTED', '已確認取消；停止後續節點')
                 current(runtime).attempt_id = store.create_attempt(run_id, step.id)
+                current(runtime).parent_span_id = root_span
+                current(runtime).span_id = 'span_' + uuid.uuid4().hex
+                recorder.record('step.started', attributes={'step_id': step.id})
                 label = adapter.step_title(step) if hasattr(adapter, 'step_title') else step.id
                 ACTIVE.get().enter(step, index, label)
                 deps = {name: artifacts[name] for name in step.needs}
@@ -342,6 +372,7 @@ def _run_workflow(runtime, task, workflow, source, output, *, run_id, offline=Fa
                     if artifact:
                         status = 'cached'
                         store.transition_attempt(current(runtime).attempt_id, 'pending', 'cached')
+                        recorder.record('step.cache_hit', attributes={'step_id': step.id, 'cache_key': key})
                     else:
                         store.transition_attempt(current(runtime).attempt_id, 'pending', 'running')
                         target = runtime.home / 'artifacts' / key / 'result.json'
@@ -355,6 +386,7 @@ def _run_workflow(runtime, task, workflow, source, output, *, run_id, offline=Fa
                             raise FlowError('HANDLER_CONTRACT', 'Handler must return a file in its assigned artifact directory')
                         runtime.remember(key, artifact)
                         store.transition_attempt(current(runtime).attempt_id, 'running', 'succeeded')
+                        recorder.record('step.finished', attributes={'step_id': step.id, 'artifact_hash': sha256(artifact)})
                         status = 'executed'
                     artifacts[step.id] = artifact
                     row = {'id': step.id, 'handler': step.handler, 'status': status, 'cache_key': key}
@@ -363,9 +395,12 @@ def _run_workflow(runtime, task, workflow, source, output, *, run_id, offline=Fa
                     atomic_json(work / 'progress.json', {'flow_id': task.flow_id, 'run_id': run_id, 'job_id': job, 'steps': history})
                     atomic_json(logs / 'progress.json', {'flow_id': task.flow_id, 'run_id': run_id, 'job_id': job, 'steps': history})
                 current(runtime).attempt_id = None
+                current(runtime).span_id = root_span
+                current(runtime).parent_span_id = None
             terminal = artifacts[workflow.steps[-1].id]
             if current(runtime).cancel_requested.is_set():
                 raise FlowError('RUN_CANCEL_REQUESTED', '已確認取消；停止成果發布')
+            recorder.record('delivery.staged', attributes={'output_layout': layout})
             RunStore(runtime).transition(run_id, 'running', 'publishing')
             if layout == 'categorized-v1' and hasattr(adapter, 'publish_outputs'):
                 report = adapter.publish_outputs(terminal, output, workflow)
@@ -376,9 +411,24 @@ def _run_workflow(runtime, task, workflow, source, output, *, run_id, offline=Fa
             report.update(flow_id=task.flow_id, run_id=run_id, job_id=job, runtime=__version__, steps=history, snapshot=snapshot, output=str(output), output_layout=layout)
             atomic_json(report_path, report)
             write_delivery_index(output, report)
+            recorder.record('delivery.verified', attributes={'status': 'verified'})
             atomic_json(logs / 'report.json', report)
             return report
         except BaseException as exc:
+            active_attempt = current(runtime).attempt_id
+            if RunStore(runtime).get(run_id)['execution_status'] == 'publishing':
+                try:
+                    ACTIVE.get().event_recorder.record('delivery.failed', severity='ERROR',
+                        attributes={'code': exc.code if isinstance(exc, FlowError) else type(exc).__name__})
+                except Exception:
+                    pass
+            if active_attempt:
+                try:
+                    ACTIVE.get().event_recorder.record('step.failed', severity='ERROR',
+                        attributes={'step_id': ACTIVE.get().step_id or 'unknown',
+                                    'code': exc.code if isinstance(exc, FlowError) else type(exc).__name__})
+                except Exception:
+                    pass
             diagnostic = record_exception(exc, logs, flow_id=task.flow_id, run_id=run_id, job_id=job,
                                           launch_id=launcher_id(runtime), step=ACTIVE.get().step_id)
             cancelled = isinstance(exc, FlowError) and exc.code in {'PROCESS_CANCELLED', 'RUN_CANCEL_REQUESTED'}

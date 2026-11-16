@@ -78,9 +78,14 @@ class Supervisor:
         self.heartbeat_error = None
 
     def __enter__(self):
+        sink = self.context.event_sink if self.context else None
+        if sink:
+            sink.record('run.claim_attempt')
         self.store.claim(self.run_id, token=self.token, pid=os.getpid(),
                          started_at=process_started_at(os.getpid()) or time.time(),
                          lease_seconds=self.lease_seconds)
+        if sink:
+            sink.record('run.claimed')
         self._thread = threading.Thread(target=self._heartbeat, name=f'run-heartbeat-{self.run_id}', daemon=True)
         self._thread.start()
         return self

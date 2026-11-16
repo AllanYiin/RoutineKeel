@@ -22,7 +22,7 @@ def test_hundred_interleaved_worker_contexts_do_not_cross(tmp_path, monkeypatch)
 
     def fake_process(argv, *, log, **kwargs):
         request = json.loads(Path(argv[2]).read_text(encoding='utf-8'))
-        observed.append((request['run_id'], request['attempt_id'], log.parent.name))
+        observed.append((request['run_id'], request['attempt_id'], log.parent.name, request['span_id']))
         Path(request['response_path']).write_text(json.dumps({'run_id': request['run_id']}), encoding='utf-8')
 
     monkeypatch.setattr('flow_base.runtime.run_process', fake_process)
@@ -45,7 +45,10 @@ def test_hundred_interleaved_worker_contexts_do_not_cross(tmp_path, monkeypatch)
     with ThreadPoolExecutor(max_workers=8) as pool:
         list(pool.map(invoke, range(100)))
     assert len(observed) == 100
-    assert set(observed) == {(f'run_{i}', f'attempt_{i}', f'run_{i}') for i in range(100)}
+    assert {(run, attempt, folder) for run, attempt, folder, _ in observed} == {
+        (f'run_{i}', f'attempt_{i}', f'run_{i}') for i in range(100)}
+    assert len({span_id for *_, span_id in observed}) == 100
+    assert all(span_id.startswith('span_') for *_, span_id in observed)
 
 
 def test_context_resets_on_failure_and_rejects_other_runtime(tmp_path):

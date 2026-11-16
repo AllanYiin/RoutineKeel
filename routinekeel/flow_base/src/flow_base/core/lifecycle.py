@@ -198,6 +198,15 @@ class RunStore:
                     raise FlowError('STATE_CONFLICT', 'Supervisor lease 已失效', run_id=run_id)
 
     def request_cancel(self, run_id):
+        with closing(self.runtime.connect()) as lookup:
+            legacy = lookup.execute('SELECT flow_id FROM runs WHERE run_id=?', (run_id,)).fetchone()
+        if legacy:
+            from ..observability.events import EventRecorder
+            recorder = EventRecorder(self.runtime, run_id, self.runtime.logs / legacy['flow_id'] / run_id)
+            recorder.record('run.cancel_requested')
+        else:
+            recorder = None
+        queued_cancelled = False
         with closing(self.runtime.connect()) as db:
             with db:
                 db.execute('BEGIN IMMEDIATE')
@@ -210,8 +219,16 @@ class RunStore:
                     db.execute("UPDATE run_executions SET execution_status='cancelled',state_version=state_version+1,ended_at=? WHERE run_id=? AND execution_status='cancelling'",
                                (utc_now(), run_id))
                     db.execute("UPDATE runs SET status='cancelled',finished=? WHERE run_id=?", (time.time(), run_id))
-                    return row['state_version'] + 2
-                return row['state_version'] + 1
+                    queued_cancelled = True
+                    next_version = row['state_version'] + 2
+                else:
+                    next_version = row['state_version'] + 1
+        if queued_cancelled and recorder:
+            try:
+                recorder.record('run.cancelled')
+            except Exception:
+                pass
+        return next_version
 
     def reconcile(self, identity_matches, *, now=None):
         """Only a verified process identity can keep an expired lease active."""
@@ -236,4 +253,13 @@ class RunStore:
                     if updated.rowcount == 1:
                         db.execute("UPDATE runs SET status='interrupted',finished=? WHERE run_id=?", (time.time(), row['run_id']))
                         changed.append(row['run_id'])
+        for lost_run in changed:
+            with closing(self.runtime.connect()) as lookup:
+                legacy = lookup.execute('SELECT flow_id FROM runs WHERE run_id=?', (lost_run,)).fetchone()
+            if legacy:
+                try:
+                    from ..observability.events import EventRecorder
+                    EventRecorder(self.runtime, lost_run, self.runtime.logs / legacy['flow_id'] / lost_run).record('run.interrupted', severity='ERROR', attributes={'reason': 'lease_expired'})
+                except Exception:
+                    pass
         return changed

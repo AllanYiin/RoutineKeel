@@ -90,6 +90,14 @@ def record_exception(exc, folder, **context):
         atomic_bytes(folder/'exception.log', ('\n'.join(lines)+'\n').encode())
     except OSError as write_error:
         record['diagnostic_write_error'] = type(write_error).__name__
+        try:
+            from .core.run_context import current
+            context = current()
+            if context and context.event_sink:
+                context.event_sink.record('diagnostic.persist_failed', severity='ERROR',
+                                          attributes={'code': type(write_error).__name__})
+        except Exception:
+            pass
     try:
         exc._flow_diagnostic = record
     except (AttributeError,TypeError):

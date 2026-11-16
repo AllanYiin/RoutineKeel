@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Event
 from typing import Any
+import uuid
 
 
 @dataclass
@@ -15,11 +16,13 @@ class RunContext:
     run_id: str
     logdir: Path
     reporter: Any
+    event_sink: Any | None = None
     job_id: str | None = None
     action: str | None = None
     action_payload: dict | None = None
     attempt_id: str | None = None
-    span_id: str | None = None
+    span_id: str | None = field(default_factory=lambda: 'span_' + uuid.uuid4().hex)
+    parent_span_id: str | None = None
     cancel_requested: Event = field(default_factory=Event)
 
 

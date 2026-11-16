@@ -117,5 +117,13 @@ def test_detached_supervisor_finishes_after_client_exits(tmp_path):
         time.sleep(0.1)
     assert row['execution_status'] == 'succeeded', (row, (tmp_path / 'share_logs' / 'supervisor' / run_id / 'error.json').exists())
     assert (tmp_path / 'result/artifacts/result.bin').read_text(encoding='utf-8') == 'detached result'
+    from flow_base.observability.events import EventRecorder
+    with runtime.connect() as db:
+        flow_id = db.execute('SELECT flow_id FROM runs WHERE run_id=?', (run_id,)).fetchone()[0]
+    events = EventRecorder(runtime, run_id, tmp_path / 'share_logs' / flow_id / run_id).read()['events']
+    created = next(event for event in events if event['name'] == 'run.created')
+    claimed = next(event for event in events if event['name'] == 'run.claimed')
+    assert created['process_id'] != claimed['process_id']
+    assert created['run_id'] == claimed['run_id'] == run_id
     with runtime.connect() as db:
         assert db.execute('SELECT count(*) FROM run_executions').fetchone()[0] == 1

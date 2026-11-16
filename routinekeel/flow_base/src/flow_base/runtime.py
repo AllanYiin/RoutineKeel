@@ -157,6 +157,12 @@ def log_tail(log, limit=8000):
 
 def run_process(argv, *, timeout=60, cwd=None, env=None, log: Path | None = None, progress=None, cancel_event=None):
     """No shell evaluation. Bounded subprocesses, with process-tree termination."""
+    from .core.run_context import current
+    run_context = current()
+    sink = run_context.event_sink if run_context else None
+    if sink:
+        sink.record('process.spawn_attempt', attributes={'executable_id': Path(argv[0]).name,
+                                                          'command_fingerprint': digest([str(item) for item in argv])})
     kwargs = {"start_new_session": True} if os.name != "nt" else {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
     if log:
         log.parent.mkdir(parents=True, exist_ok=True)
@@ -189,6 +195,8 @@ def run_process(argv, *, timeout=60, cwd=None, env=None, log: Path | None = None
         if len(pending) > 16384: pending = b''
         progress({'event':'heartbeat'})
     try:
+        if sink:
+            sink.record('process.spawned', attributes={'child_pid': p.pid})
         if (progress is None or not log) and cancel_event is None:
             out, _ = p.communicate(timeout=timeout)
         else:
@@ -217,6 +225,11 @@ def run_process(argv, *, timeout=60, cwd=None, env=None, log: Path | None = None
                 except subprocess.TimeoutExpired:
                     poll_progress()
     except BaseException as e:
+        if sink and isinstance(e, subprocess.TimeoutExpired):
+            try:
+                sink.record('process.timeout', severity='ERROR', attributes={'code': 'PROCESS_TIMEOUT'})
+            except Exception:
+                pass
         if os.name == "nt":
             subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         else:
@@ -233,6 +246,9 @@ def run_process(argv, *, timeout=60, cwd=None, env=None, log: Path | None = None
         if log:
             stream.close()
     text = out.decode("utf-8", errors="replace") if out else ""
+    if sink:
+        sink.record('process.exited', attributes={'status': 'failed' if p.returncode else 'succeeded',
+                                                  'exit_code': p.returncode})
     if p.returncode:
         raise FlowError("PROCESS_FAILED", "Process returned a nonzero exit code", exit_code=p.returncode,
                         executable=str(argv[0]), output=text[-8000:] if text else log_tail(log), log=str(log) if log else None)
@@ -329,10 +345,14 @@ class Runtime:
         revision_id = 'rev_' + digest({'flow_id': flow_id, 'version': flow['version'], 'fingerprint': flow['fingerprint']})[:32]
         spec_hash = spec_hash or digest({'revision_id': revision_id, 'source': str(source), 'output': str(output)})
         run_id = 'run_' + uuid.uuid4().hex
-        return RunStore(self).create(run_id=run_id, job_id=job_id, revision_id=revision_id,
+        actual = RunStore(self).create(run_id=run_id, job_id=job_id, revision_id=revision_id,
                                      spec_hash=spec_hash, idempotency_key=idempotency_key,
                                      flow_id=flow_id, source=source, output=output,
                                      revision_fingerprint=flow['fingerprint'], revision_version=flow['version'])
+        if actual == run_id:
+            from .observability.events import EventRecorder
+            EventRecorder(self, run_id, self.logs / flow_id / run_id).record('run.created')
+        return actual
 
     def update_run(self, run_id, status, *, job_id=None, error=None, finished=False):
         with self.connect() as db:
@@ -347,6 +367,15 @@ class Runtime:
             else:
                 rows = db.execute('SELECT * FROM runs ORDER BY started DESC LIMIT ?', (limit,))
             return [dict(row) for row in rows]
+
+    def events(self, run_id, *, cursor=None, limit=100):
+        self.initialize()
+        with closing(self.connect()) as db:
+            row = db.execute('SELECT flow_id FROM runs WHERE run_id=?', (run_id,)).fetchone()
+        if row is None:
+            raise FlowError('RUN_UNKNOWN', '找不到指定 Run', run_id=run_id)
+        from .observability.events import EventRecorder
+        return EventRecorder(self, run_id, self.logs / row['flow_id'] / run_id).read(cursor=cursor, limit=limit)
 
     @contextmanager
     def lock(self, key, timeout=1):
@@ -461,7 +490,11 @@ class Runtime:
         path = Path(name)
         response = path.with_suffix(".response.json")
         try:
-            metadata = ({'run_id': context.run_id, 'attempt_id': context.attempt_id}
+            from .observability.trace import current_span
+            active_span = current_span()
+            metadata = ({'run_id': context.run_id, 'attempt_id': context.attempt_id,
+                         'span_id': active_span.span_id if active_span else context.span_id,
+                         'parent_span_id': active_span.parent_span_id if active_span else None}
                         if context is not None else {})
             atomic_json(path, {**request, **metadata, "response_path": str(response)})
             env = os.environ.copy()

@@ -226,12 +226,13 @@ class Task:
         from .presentation import ACTIVE, Reporter
         from .core.run_context import RunContext, ACTIVE_RUN
         from types import SimpleNamespace
-        reporter = Reporter(self.manifest.title + '｜' + name, self.flow_id, run_id, log, 1)
+        reporter = Reporter(self.manifest.title + '｜' + name, self.flow_id, run_id, log, 1, runtime)
         from .core.lifecycle import RunStore
         from .execution.supervisor import Supervisor
         action_payload = {'flow_id': self.flow_id, 'run_id': run_id, 'action': name,
                           'folder': self.folder, 'logdir': log}
-        run_token = ACTIVE_RUN.set(RunContext(runtime, run_id, log, reporter, action=name, action_payload=action_payload))
+        run_token = ACTIVE_RUN.set(RunContext(runtime, run_id, log, reporter,
+                                              event_sink=reporter.event_recorder, action=name, action_payload=action_payload))
         reporter_token = ACTIVE.set(reporter)
         store = RunStore(runtime)
         supervisor = None
@@ -240,9 +241,12 @@ class Task:
             supervisor = Supervisor(runtime, run_id, ACTIVE_RUN.get())
             supervisor.__enter__()
             store.transition(run_id, 'preparing', 'running')
+            reporter.event_recorder.record('run.started')
             reporter.start()
+            reporter.event_recorder.record('step.started', attributes={'step_id': name})
             reporter.enter(SimpleNamespace(id=name, handler='adapter.invoke_action'), 1, name)
             result = adapter.invoke_action(runtime, name, parameters)
+            reporter.event_recorder.record('step.finished', attributes={'step_id': name})
             if supervisor.heartbeat_error:
                 raise FlowError('SUPERVISOR_HEARTBEAT', '執行期間無法更新監督程序 lease') from supervisor.heartbeat_error
             if ACTIVE_RUN.get().cancel_requested.is_set():
@@ -250,10 +254,14 @@ class Task:
             status = result.get('status', result.get('decision', 'complete')) if isinstance(result, dict) else 'complete'
             report = {'flow_id': self.flow_id, 'run_id': run_id, 'action': name, 'result': result,
                       'status': status, 'token_usage': reporter.usage.finish(), 'presentation': reporter.references()}
+            reporter.event_recorder.record('delivery.staged')
             atomic_json(log / 'report.json', report)
             store.transition(run_id, 'running', 'publishing')
             store.record_delivery(run_id, log / 'report.json')
+            reporter.event_recorder.record('delivery.verified', attributes={'status': 'verified'})
             store.transition(run_id, 'publishing', 'succeeded', result_status=str(status).lower(), delivery_status='published')
+            reporter.event_recorder.record('delivery.published', attributes={'result_status': str(status).lower()})
+            reporter.event_recorder.record('run.finished', attributes={'result_status': str(status).lower()})
             try:
                 reporter.complete('executed')
                 reporter.end(report)
@@ -271,6 +279,11 @@ class Task:
             code = exc.code if isinstance(exc, FlowError) else type(exc).__name__
             cancelled = isinstance(exc, FlowError) and exc.code in {'PROCESS_CANCELLED', 'RUN_CANCEL_REQUESTED'}
             status = 'cancelled' if cancelled else ('interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed')
+            try:
+                reporter.event_recorder.record('run.interrupted' if isinstance(exc, KeyboardInterrupt) else ('run.cancelled' if cancelled else 'run.failed'),
+                                               severity='ERROR', attributes={'code': code})
+            except Exception:
+                pass
             diagnostic = record_exception(exc, log, flow_id=self.flow_id, run_id=run_id,
                                           action=name, launch_id=launcher_id(runtime))
             store.finish_failure(run_id, interrupted=isinstance(exc, KeyboardInterrupt), cancelled=cancelled, error_id=diagnostic['error_id'])

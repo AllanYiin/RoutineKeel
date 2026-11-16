@@ -33,12 +33,21 @@ def check_resource(runtime, resource):
 
 
 def ensure_resource(runtime: Runtime, resource: Resource, *, offline=False, reserve_bytes=0):
+    from .core.run_context import current
+    run_context = current(runtime)
+    sink = run_context.event_sink if run_context else None
+    if sink:
+        sink.record('resource.verify_started', attributes={'resource_id': resource.id})
     runtime.initialize()
     root = resource_path(runtime, resource)
     with runtime.lock("resource:" + resource_key(resource), timeout=600):
         status = check_resource(runtime, resource)
         if status["ready"]:
+            if sink:
+                sink.record('resource.verified', attributes={'resource_id': resource.id})
             return root
+        if sink:
+            sink.record('resource.invalid', severity='WARNING', attributes={'resource_id': resource.id, 'reason': 'missing_or_hash_mismatch'})
         if offline:
             raise FlowError("OFFLINE_RESOURCE_MISSING", "Required model is not cached", resource=resource.id, missing=status["missing"])
         require_space(root, status["download_bytes"] * 2 + reserve_bytes)
@@ -76,6 +85,8 @@ def ensure_resource(runtime: Runtime, resource: Resource, *, offline=False, rese
                 raise FlowError("DOWNLOAD_FAILED", "Download failed; retry prepare to recover", file=item.path,
                                 reason=type(e).__name__) from e
         atomic_json(root / "resource.json", resource.model_dump())
+        if sink:
+            sink.record('resource.verified', attributes={'resource_id': resource.id})
         return root
 
 

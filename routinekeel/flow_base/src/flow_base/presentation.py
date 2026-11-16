@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import sys
 import time
+from filelock import FileLock
 
 ACTIVE = ContextVar('flow_base_reporter', default=None)
 
@@ -28,8 +29,29 @@ def amount(done, total, unit):
     return f'{done:g}/{total:g} {unit}'
 
 
+def append_console(path, rendered, *, max_bytes=4_000_000, max_segments=4):
+    """Bound per-Run human logs without changing the current console.log path."""
+    data = (rendered + '\n').encode('utf-8')
+    if len(data) > max_bytes:
+        data = data[:max_bytes-64] + b'\n[console entry truncated]\n'
+    with FileLock(path.with_name('console.lock'), timeout=30):
+        if path.exists() and path.stat().st_size + len(data) > max_bytes:
+            segments = sorted(path.parent.glob('console.[0-9][0-9][0-9][0-9][0-9][0-9].log'))
+            last = max((int(item.stem.split('.')[1]) for item in segments), default=0)
+            rotated = path.parent / f'console.{last+1:06}.log'
+            os.replace(path, rotated)
+            segments.append(rotated)
+            while len(segments) > max_segments:
+                segments.pop(0).unlink()
+                with path.open('ab') as marker:
+                    marker.write(b'[earlier console log truncated]\n')
+        with path.open('ab') as output:
+            output.write(data)
+            output.flush()
+
+
 class Reporter:
-    def __init__(self, title, flow_id, run_id, logdir, total_steps):
+    def __init__(self, title, flow_id, run_id, logdir, total_steps, runtime=None):
         self.title, self.flow_id, self.run_id = title, flow_id, run_id
         self.logdir, self.total_steps = Path(logdir), total_steps
         self.started = self.stage_started = time.monotonic()
@@ -41,6 +63,8 @@ class Reporter:
         from .codex_tokens import SessionMonitor
         self.usage = UsageMeter(host=SessionMonitor())
         self.completed_steps = 0
+        from .observability.events import EventRecorder
+        self.event_recorder = EventRecorder(runtime, run_id, self.logdir)
 
     def emit(self, event, lines=(), *, banner=False, **data):
         from .runtime import atomic_json
@@ -48,10 +72,9 @@ class Reporter:
                    'workflow_title': self.title, 'step': self.step_id, 'step_index': self.index,
                    'total_steps': self.total_steps, 'label': self.label,
                    'elapsed_seconds': round(time.monotonic()-self.started, 1), **data}
-        self.logdir.mkdir(parents=True, exist_ok=True)
-        with (self.logdir/'events.jsonl').open('a', encoding='utf-8') as out:
-            out.write(json.dumps(payload, ensure_ascii=False)+'\n')
-        atomic_json(self.logdir/'live_progress.json', payload)
+        self.event_recorder.append_legacy(payload)
+        from .diagnostics import redact
+        atomic_json(self.logdir/'live_progress.json', redact(payload))
         # Keep an uncoloured human copy even when the caller requests JSON/quiet.
         # Preserve adapter-provided multi-line result links instead of flattening them.
         rendered_lines = [clean(part) for line in lines for part in str(line).splitlines()]
@@ -60,8 +83,7 @@ class Reporter:
             if banner:
                 rule = '=' * 72
                 rendered = '\n' + rule + '\n' + rendered + '\n' + rule + '\n'
-            with (self.logdir / 'console.log').open('a', encoding='utf-8') as out:
-                out.write(rendered + '\n')
+            append_console(self.logdir / 'console.log', rendered)
             if banner or event == 'progress':
                 heading = clean(rendered_lines[0]) if rendered_lines else event
                 text = '# ' + heading + '\n\n' + '\n\n'.join(rendered_lines[1:]) + '\n'
@@ -88,6 +110,8 @@ class Reporter:
         return {'console_log': str(self.logdir / 'console.log'),
                 'live_status': str(self.logdir / 'live_status.md'),
                 'events': str(self.logdir / 'events.jsonl'),
+                'flight_events': str(self.logdir / 'flight.jsonl'),
+                'flight_manifest': str(self.logdir / 'flight_manifest.json'),
                 'display_notice': '請將開始、節點與終止狀態轉述在對話正文；終端工具輸出可能被折疊。'}
 
     def start(self):
