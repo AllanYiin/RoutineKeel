@@ -224,12 +224,13 @@ class Task:
         log = runtime.logs / self.flow_id / run_id
         atomic_json(log / 'run.json', {'flow_id': self.flow_id, 'run_id': run_id, 'action': name, 'status': 'running'})
         from .presentation import ACTIVE, Reporter
+        from .core.run_context import RunContext, ACTIVE_RUN
         from types import SimpleNamespace
         reporter = Reporter(self.manifest.title + '｜' + name, self.flow_id, run_id, log, 1)
+        action_payload = {'flow_id': self.flow_id, 'run_id': run_id, 'action': name,
+                          'folder': self.folder, 'logdir': log}
+        run_token = ACTIVE_RUN.set(RunContext(runtime, run_id, log, reporter, action=name, action_payload=action_payload))
         reporter_token = ACTIVE.set(reporter)
-        previous_context = getattr(runtime, 'action_context', None)
-        runtime.action_context = {'flow_id': self.flow_id, 'run_id': run_id, 'action': name,
-                                  'folder': self.folder, 'logdir': log}
         try:
             reporter.start()
             reporter.enter(SimpleNamespace(id=name, handler='adapter.invoke_action'), 1, name)
@@ -258,7 +259,7 @@ class Task:
             raise
         finally:
             ACTIVE.reset(reporter_token)
-            runtime.action_context = previous_context
+            ACTIVE_RUN.reset(run_token)
 
 
 def catalog(workspace):

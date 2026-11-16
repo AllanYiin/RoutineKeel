@@ -13,7 +13,9 @@ import sys
 import tempfile
 import time
 import uuid
+import warnings
 from contextlib import closing, contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
 from filelock import FileLock, Timeout
@@ -240,6 +242,18 @@ class Runtime:
         self.workers = {}
         self.logs = self.home.parent / "share_logs"
         self.secret_names = {"FLOW_BASE_API_KEY"}
+        self._legacy_action_context = ContextVar(f'action_context_{id(self)}', default=None)
+
+    @property
+    def action_context(self):
+        """Compatibility facade for adapters that read action metadata."""
+        from .core.run_context import current
+        context = current(self)
+        return context.action_payload if context and context.action_payload is not None else self._legacy_action_context.get()
+
+    @action_context.setter
+    def action_context(self, value):
+        self._legacy_action_context.set(value)
 
     def record_token_usage(self, request_id, usage=None, *, pending=False):
         """Adapters register provider receipts without sharing prompt/response text."""
@@ -401,7 +415,13 @@ class Runtime:
             atomic_json(location, current)
         return python
 
-    def worker(self, profile, request, *, timeout=60, log=None):
+    def worker(self, profile, request, *, timeout=60, log=None, context=None):
+        from .core.run_context import current
+        context = context or current(self)
+        if context is not None and context.runtime is not self:
+            raise FlowError('RUN_CONTEXT_MISMATCH', 'Worker context belongs to another Runtime')
+        if context is None and log is None:
+            warnings.warn('Worker has no RunContext; pass context explicitly across threads', RuntimeWarning, stacklevel=2)
         _, python = self.environment(profile)
         if not python.is_file():
             raise FlowError("ENV_MISSING", "Run prepare first", profile=profile)
@@ -412,16 +432,18 @@ class Runtime:
         path = Path(name)
         response = path.with_suffix(".response.json")
         try:
-            atomic_json(path, {**request, "response_path": str(response)})
+            metadata = ({'run_id': context.run_id, 'attempt_id': context.attempt_id}
+                        if context is not None else {})
+            atomic_json(path, {**request, **metadata, "response_path": str(response)})
             env = os.environ.copy()
             env.update({"HF_HUB_OFFLINE": "1", "TOKENIZERS_PARALLELISM": "false",
                         "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"})
             # Worker never receives credentials belonging to the LLM service.
             for secret in self.secret_names:
                 env.pop(secret, None)
-            worker_log = log or (getattr(self, 'run_logdir', None) or self.logs / "workers") / (path.stem + ".log")
+            worker_log = log or ((context.logdir if context else self.logs / 'workers') / (path.stem + '.log'))
             from .presentation import ACTIVE
-            reporter = ACTIVE.get()
+            reporter = context.reporter if context else ACTIVE.get()
             run_process([python, self.workers[profile], path], timeout=timeout, env=env, log=worker_log,
                         progress=reporter.progress if reporter else None)
             return read_json(response)

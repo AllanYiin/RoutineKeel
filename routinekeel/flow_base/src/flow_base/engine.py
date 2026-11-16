@@ -4,6 +4,7 @@ from __future__ import annotations
 import dataclasses
 from pathlib import Path
 from .presentation import Reporter, ACTIVE
+from .core.run_context import RunContext, ACTIVE_RUN
 from .diagnostics import record_exception, launcher_id
 
 from . import __version__
@@ -106,6 +107,7 @@ def run_demo(runtime, task, output):
     logs = runtime.logs / task.flow_id / run_id
     from types import SimpleNamespace
     reporter = Reporter(task.manifest.title + '｜示範資料（非正式處理）', task.flow_id, run_id, logs, 1)
+    run_token = ACTIVE_RUN.set(RunContext(runtime, run_id, logs, reporter))
     reporter_token = ACTIVE.set(reporter)
     try:
         reporter.start()
@@ -134,6 +136,7 @@ def run_demo(runtime, task, output):
         raise
     finally:
         ACTIVE.reset(reporter_token)
+        ACTIVE_RUN.reset(run_token)
 
 
 def run_workflow(runtime, task, workflow, source, output=None, *, offline=False, prepared=None):
@@ -142,10 +145,9 @@ def run_workflow(runtime, task, workflow, source, output=None, *, offline=False,
     run_id = runtime.start_run(task.flow_id, source, output)
     logs = runtime.logs / task.flow_id / run_id
     logs.mkdir(parents=True, exist_ok=True)
-    previous_logs = getattr(runtime, 'run_logdir', None)
-    runtime.run_logdir = logs
     atomic_json(logs / 'run.json', {'flow_id': task.flow_id, 'run_id': run_id, 'task': task.manifest.id, 'status': 'starting'})
     reporter = Reporter(task.manifest.title, task.flow_id, run_id, logs, len(workflow.steps))
+    run_token = ACTIVE_RUN.set(RunContext(runtime, run_id, logs, reporter))
     reporter_token = ACTIVE.set(reporter)
     try:
         reporter.start()
@@ -172,7 +174,7 @@ def run_workflow(runtime, task, workflow, source, output=None, *, offline=False,
         raise
     finally:
         ACTIVE.reset(reporter_token)
-        runtime.run_logdir = previous_logs
+        ACTIVE_RUN.reset(run_token)
 
 
 def _run_workflow(runtime, task, workflow, source, output, *, run_id, offline=False, prepared=None):
@@ -199,6 +201,8 @@ def _run_workflow(runtime, task, workflow, source, output, *, run_id, offline=Fa
     if output.is_relative_to((task.folder / 'outputs').resolve()) and output_layout(output, task.manifest.output_layout) == 'categorized-v1':
         output_identity = {'flow_relative': output.relative_to(task.folder.resolve()).as_posix()}
     job = digest({'flow_id': task.flow_id, 'input': input_hash, 'output': output_identity})[:32]
+    from .core.run_context import current
+    current(runtime).job_id = job
     runtime.update_run(run_id, 'waiting', job_id=job)
     work = runtime.home / 'jobs' / task.flow_id / job
     logs = runtime.logs / task.flow_id / run_id
@@ -232,6 +236,7 @@ def _run_workflow(runtime, task, workflow, source, output, *, run_id, offline=Fa
             runtime.update_run(run_id, 'running', job_id=job)
             artifacts = {}
             for index, step in enumerate(workflow.steps, 1):
+                current(runtime).attempt_id = f'{run_id}:{step.id}:{index}'
                 label = adapter.step_title(step) if hasattr(adapter, 'step_title') else step.id
                 ACTIVE.get().enter(step, index, label)
                 deps = {name: artifacts[name] for name in step.needs}
