@@ -118,7 +118,7 @@ def test_hardware_memory_fluctuations_do_not_invalidate_asr_cache():
 
 
 def test_packaged_default_and_sample_both_choose_auto():
-    root=Path(__file__).resolve().parents[1]/'flows/課程影片產生字幕'
+    root=Path(__file__).resolve().parents[1]/'routinekeel/flows/課程影片產生字幕'
     template=json.loads((root/'flow.template.json').read_text())['defaults']
     example=json.loads((root/'settings.example.json').read_text())
     for config in (template,example):

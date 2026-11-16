@@ -37,7 +37,7 @@ def test_action_context_is_scoped_and_status_is_persisted(workspace,monkeypatch,
 
 
 def test_generated_recovery_entry_delegates_without_new_installer(tmp_path):
-    spec=importlib.util.spec_from_file_location('recovery_launcher',ROOT/'flow_base/scripts/flow_base_profile.py')
+    spec=importlib.util.spec_from_file_location('recovery_launcher',ROOT/'routinekeel/flow_base/scripts/flow_base_profile.py')
     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
     (tmp_path/'flow.json').write_text(json.dumps({'actions':['restore-job'],'recovery_action':'restore-job'}))
     module.generate_task(tmp_path)

@@ -23,7 +23,7 @@ def workspace(tmp_path):
 
 
 def cli(workspace, *args, ok=True):
-    env = dict(os.environ, PYTHONPATH=str(ROOT / 'flow_base/src'), PYTHONDONTWRITEBYTECODE='1')
+    env = dict(os.environ, PYTHONPATH=str(ROOT / 'routinekeel/flow_base/src'), PYTHONDONTWRITEBYTECODE='1')
     r = subprocess.run([sys.executable, '-m', 'flow_base', '--workspace', str(workspace), *map(str, args)],
                        env=env, capture_output=True, text=True, timeout=40)
     if ok:
@@ -195,7 +195,7 @@ def test_distributions_never_bundle_environment_or_models():
     for name in ('flow_base', 'ai_flow01', 'ai_flow02'):
         archive_name = {'ai_flow01': 'flow_subtitles', 'ai_flow02': 'flow_copy'}.get(name, name)
         folder = {'ai_flow01': '課程影片產生字幕', 'ai_flow02': '檔案複製範例'}.get(name, name)
-        project = ROOT / folder if name == 'flow_base' else ROOT / 'flows' / folder
+        project = ROOT / 'routinekeel' / folder if name == 'flow_base' else ROOT / 'routinekeel/flows' / folder
         version = tomllib.loads((project/'pyproject.toml').read_text())['project']['version']
         with zipfile.ZipFile(ROOT/'dist/release'/f'{archive_name}-{version}.zip') as z:
             assert all(n.startswith(folder+'/') for n in z.namelist())
@@ -215,7 +215,7 @@ def test_distributions_never_bundle_environment_or_models():
             import io
             with zipfile.ZipFile(io.BytesIO(z.read(folder+'/source.zip'))) as source:
                 assert not any('.venv' in n.split('/') for n in source.namelist())
-    version = tomllib.loads((ROOT/'flow_base/pyproject.toml').read_text())['project']['version']
+    version = tomllib.loads((ROOT/'routinekeel/flow_base/pyproject.toml').read_text())['project']['version']
     with zipfile.ZipFile(ROOT/'dist/wheels'/f'flow_base-{version}-py3-none-any.whl') as z:
         assert not any('subtitles' in n or 'worker.py' in n or 'profiles/' in n for n in z.namelist())
 

@@ -29,8 +29,8 @@
 - 非互動命令的 stdout/stderr 必須保留到執行結束；進入互動聊天前停止 transcript。錯誤另寫結構化紀錄，不序列化完整輸入或 frame locals，遮罩已知環境金鑰。
 - 介面唯一主任務為準備並進入流程入口；狀態與錯誤依 specs/requirements.md 的揭露規則呈現。
 - 從開發工作區執行 python tools/release.py --project flow_base。
-- 以 python base/scripts/apsm_validate.py --project flow_base --strict 檢查 CLI 擴充契約。
-- 測試執行 uv run --project flow_base --group dev pytest tests flows -q。
+- 以 python routinekeel/flow_base/scripts/apsm_validate.py --project routinekeel/flow_base --strict 檢查 CLI 擴充契約。
+- 測試執行 uv run --project routinekeel/flow_base --group dev pytest tests routinekeel/flows -q。
 - PowerShell 測試需設定 FLOW_BASE_TEST_PWSH，未實測 Windows/macOS 雙擊時明示限制。
 
 ## 解耦邊界

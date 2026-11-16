@@ -1,12 +1,12 @@
 # 目錄與協作方式
 
-`flow_base/` 是共用底座的原始碼位置。`flows/` 每個子目錄是一個可獨立發行的流程，存放該流程的程式、模板、相依宣告與測試。目錄名稱直接對應 ZIP 解壓後的名稱，Python 匯入名稱留在各元件的 `src/` 內。
+`routinekeel/` 收納產品原始碼，`routinekeel/flow_base/` 放共用底座。`routinekeel/flows/` 每個子目錄是一個可獨立發行的流程，存放該流程的程式、模板、相依宣告與測試。目錄名稱直接對應 ZIP 解壓後的名稱，Python 匯入名稱留在各元件的 `src/` 內。
 
 | 來源 | Release 附件 | 解壓後的資料夾 |
 | --- | --- | --- |
-| `flow_base/` | `flow_base-<版本>.zip` | `flow_base/` |
-| `flows/課程影片產生字幕/` | `flow_subtitles-<版本>.zip` | `課程影片產生字幕/` |
-| `flows/檔案複製範例/` | `flow_copy-<版本>.zip` | `檔案複製範例/` |
+| `routinekeel/flow_base/` | `flow_base-<版本>.zip` | `flow_base/` |
+| `routinekeel/flows/課程影片產生字幕/` | `flow_subtitles-<版本>.zip` | `課程影片產生字幕/` |
+| `routinekeel/flows/檔案複製範例/` | `flow_copy-<版本>.zip` | `檔案複製範例/` |
 
 GitHub Releases 提供上表的可執行發行包。各 zip 內有啟動器、wheel、文件及對應元件的原始碼快照。平常維護以儲存庫內的原始碼為準。測試用安裝目錄與本機建置結果都在 `dist/`。
 

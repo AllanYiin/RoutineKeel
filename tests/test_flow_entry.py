@@ -13,7 +13,7 @@ from flow_base.runtime import atomic_json
 from flow_base.workspace import Workspace
 from test_workspace import workspace, cli, ROOT
 
-spec = importlib.util.spec_from_file_location('entry_profile', ROOT/'flow_base/scripts/flow_base_profile.py')
+spec = importlib.util.spec_from_file_location('entry_profile', ROOT/'routinekeel/flow_base/scripts/flow_base_profile.py')
 profile = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(profile)
 
@@ -45,7 +45,16 @@ def test_legacy_subtitle_folder_renamed_without_changing_package(workspace):
     assert (workspace/'demo/artifacts/subtitles.srt').is_file()
 
 
-def test_missing_id_is_generated_once_and_module_is_independent(workspace):
+@pytest.mark.parametrize('legacy_journal', [False, True])
+def test_missing_id_is_generated_once_and_module_is_independent(workspace, legacy_journal):
+    import sqlite3
+    if legacy_journal:
+        states = workspace / 'share_states'
+        states.mkdir()
+        with sqlite3.connect(states / 'state.sqlite3') as db:
+            db.execute('CREATE TABLE legacy_fixture (data TEXT)')
+            db.execute("INSERT INTO legacy_fixture VALUES ('keep')")
+
     folder = workspace/'ai_flow02'
     modify(folder, id=None, module='ai_flow02')
     def discover(_):
@@ -55,6 +64,10 @@ def test_missing_id_is_generated_once_and_module_is_independent(workspace):
         results = list(pool.map(discover, range(8)))
     assert len(set(results)) == 1
     assert results[0][0].startswith('workflow_')
+    with sqlite3.connect(workspace / 'share_states/state.sqlite3') as db:
+        assert db.execute('PRAGMA journal_mode').fetchone()[0] == 'wal'
+        if legacy_journal:
+            assert db.execute('SELECT data FROM legacy_fixture').fetchone()[0] == 'keep'
     folder.rename(workspace/'備份工具')
     task = Workspace(workspace).task('備份工具')
     assert (task.manifest.id, task.flow_id) == results[0]
@@ -76,7 +89,7 @@ def test_invalid_module_is_rejected(workspace, module):
 
 
 def run_chat(workspace, folder, text, *args):
-    env = dict(os.environ, PYTHONPATH=str(ROOT/'flow_base/src'), PYTHONDONTWRITEBYTECODE='1')
+    env = dict(os.environ, PYTHONPATH=str(ROOT/'routinekeel/flow_base/src'), PYTHONDONTWRITEBYTECODE='1')
     return subprocess.run([sys.executable, '-m', 'flow_base', '--workspace', str(workspace),
                            'launch', '--folder', str(folder), *args], input=text,
                           capture_output=True, text=True, env=env, timeout=40)

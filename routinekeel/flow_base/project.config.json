@@ -1,6 +1,6 @@
 {
   "name": "flow_base",
-  "version": "0.2.10",
+  "version": "0.2.11",
   "usage_scene": "scene_b_shared_tool",
   "project_profile": {
     "user_type": "small_team",

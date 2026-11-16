@@ -1,4 +1,4 @@
-# flow_base 0.2.10
+# flow_base 0.2.11
 
 **學員使用：解壓縮後，開啟 `flow_base` 資料夾，Windows 雙擊 `run_app.bat`、macOS 雙擊 `run_app.command`，Linux 執行 `run_app.sh`。** 不必先安裝 uv、Python、PowerShell 7 或手動執行 pip。Windows 使用內建 Windows PowerShell；命令視窗會顯示準備進度，完成後進入共用自然語言入口。
 
@@ -13,6 +13,10 @@ Windows 的 run_app.bat 只為本次 PowerShell 程序設定 ExecutionPolicy Byp
 0.2.2 修正 Windows PATH 同時包含多個 uv.exe 時，PowerShell 將多個路徑誤當成一個執行檔的問題。依 PATH 順序逐一執行 `uv --version`，只選一個通過檢查的完整路徑；顯示選定路徑後才進行環境修復。無需刪除電腦既有的 uv 安裝。
 
 單一工作區、底座安裝一次、任務各自一包。`flow_base` 不包含任何字幕辨識程式、ASR 依賴或模型；任務包才宣告自己的能力、設定與依賴。底座提供共用環境管理、資源校驗、流程登錄、執行紀錄、快取、預算帳本與自然語言入口。
+
+## 0.2.11 共用狀態初始化
+
+同一個工作區首次被多個執行命令開啟時，底座會協調 SQLite 的初始化，避免同時切換日誌模式而中斷。既有工作狀態可繼續使用。
 
 ## 0.2.10 醒目生命週期與 Codex Session 用量
 
