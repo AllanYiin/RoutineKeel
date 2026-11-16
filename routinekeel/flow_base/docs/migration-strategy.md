@@ -10,7 +10,9 @@
 
 `Runtime.initialize()` 於 `state.initialize.lock` 下執行 v001。舊版 `flows/runs/steps/requests` 原表與資料保留；新增 `workflow_revisions`、`jobs`、`run_executions`、`step_attempts`、`artifact_sets`、`deliveries`、`diagnostics`、`event_index`。舊 `runs` 繼續由原 API 讀寫，`legacy_run_status` view 另提供推定的狀態映射：`starting→preparing`、`waiting→queued`、`complete→succeeded`，同時保留 `original_status`。推定值不能用來宣稱舊成果已通過新驗收。
 
-Stage 3 的 v002 增加 idempotency、supervisor 程序身分、heartbeat 與 lease 欄位；從 v001 升級時另建立 `state.sqlite3.before-v002.sqlite3` 與 `.sha256`。Run、Step Attempt 的新狀態寫入從 Stage 3 開始接入實際執行；舊 `runs` 保留為 CLI history 相容資料。`user_version=2` 是目前最高版本。
+Stage 3 的 v002 增加 idempotency、supervisor 程序身分、heartbeat 與 lease 欄位；從 v001 升級時另建立 `state.sqlite3.before-v002.sqlite3` 與 `.sha256`。Run、Step Attempt 的新狀態寫入從 Stage 3 開始接入實際執行；舊 `runs` 保留為 CLI history 相容資料。
+
+Stage 7 的 v003 讓 `artifact_sets` 可選關聯 `step_attempt_id` 與 `cache_key`，並限制同一 Run 同時存在一筆 staged／published Delivery。從 v002 升級前建立 `state.sqlite3.before-v003.sqlite3` 與 `.sha256`。目前最高 `PRAGMA user_version=3`；舊四表及舊成果不在 migration 中搬移或刪除。
 
 首次升級舊資料庫前，使用 SQLite backup API 產生 `share_states/state.sqlite3.before-v001.sqlite3` 與同名 `.sha256`；在備份存在且 checksum 相符時重試不覆蓋備份。未知較新 schema、遷移 checksum 不符或舊表必要欄位缺失會拒絕升級。每次 migration 在單一交易內建表與寫入 `PRAGMA user_version`、`schema_migrations`；中斷時交易回滾。
 

@@ -214,7 +214,23 @@ class Runtime:
                     db.execute("PRAGMA journal_mode=WAL")
             from .core.lifecycle import RunStore
             from .execution.supervisor import identity_matches
-            RunStore(self).reconcile(identity_matches)
+            store = RunStore(self)
+            store.reconcile(identity_matches)
+            from .storage.delivery import delivery_root, recover_transactions
+            with closing(self.connect()) as db:
+                outputs = [row[0] for row in db.execute('SELECT DISTINCT r.output FROM runs r JOIN deliveries d ON d.run_id=r.run_id WHERE r.output IS NOT NULL')]
+            for name in outputs:
+                try:
+                    output = Path(name).resolve()
+                    if not (delivery_root(output) / 'transactions').is_dir():
+                        continue
+                    path = self.home / 'locks' / (digest('output:' + str(output)) + '.lock')
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    with FileLock(path, timeout=0.1):
+                        recover_transactions(output, store)
+                except (FlowError, OSError, Timeout):
+                    # Read-only history remains available; a later output lock retries.
+                    continue
 
     def connect(self):
         db = sqlite3.connect(self.home / "state.sqlite3", timeout=30)

@@ -93,10 +93,14 @@ def test_workflow_failure_details_reach_every_run_record(workspace, monkeypatch)
     run_folder = next((workspace/'share_logs'/task.flow_id).glob('run_*'))
     error = read_json(run_folder/'error.json')
     assert 'record_id=20' in error['message']
-    for path in [run_folder/'failure.json', run_folder/'report.json', output/'report.json']:
+    for path in [run_folder/'failure.json', run_folder/'report.json']:
         saved = read_json(path)['error_details']
         assert saved['error_id'] == error['error_id']
         assert 'invalid word timeline' in saved['message']
+    from flow_base.storage.delivery import staging_path
+    staged_failure = staging_path(output, error['run_id']) / 'failure.json'
+    assert read_json(staged_failure)['error_details']['error_id'] == error['error_id']
+    assert not (output / 'report.json').exists()  # a failed first Run is not a published Delivery
     events = [json.loads(line) for line in (run_folder/'events.jsonl').read_text().splitlines()]
     assert events[-1]['error_details']['error_id'] == error['error_id']
     assert read_json(run_folder/'run.json')['status'] == 'failed'

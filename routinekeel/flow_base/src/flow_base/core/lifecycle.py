@@ -7,6 +7,8 @@ import hashlib
 import json
 from contextlib import closing
 from datetime import datetime, timezone
+from pathlib import Path
+from pathlib import PurePosixPath
 
 from ..runtime import FlowError
 
@@ -37,6 +39,31 @@ ATTEMPT_TRANSITIONS = {
 
 def utc_now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def manifest_reference(runtime, path):
+    path = Path(path).resolve()
+    reference = {'path': str(path)}  # retained for old diagnostic readers
+    try:
+        reference['workspace_relative'] = path.relative_to(runtime.home.parent.resolve()).as_posix()
+    except ValueError:
+        pass
+    return reference
+
+
+def resolve_manifest_reference(runtime, value):
+    reference = json.loads(value) if isinstance(value, str) else value
+    relative = reference.get('workspace_relative')
+    if relative:
+        parts = PurePosixPath(relative)
+        if parts.is_absolute() or '..' in parts.parts or '\\' in relative or ':' in relative:
+            raise FlowError('DELIVERY_PATH', 'Manifest 相對位置不安全')
+        root = runtime.home.parent.resolve()
+        path = root.joinpath(*parts.parts).resolve()
+        if not path.is_relative_to(root):
+            raise FlowError('DELIVERY_PATH', 'Manifest 越出工作區')
+        return path
+    return Path(reference['path']).resolve()
 
 
 class RunStore:
@@ -132,7 +159,7 @@ class RunStore:
                     if delivery is None:
                         raise FlowError('DELIVERY_REQUIRED', 'Run 成功前必須有可驗證交付', run_id=run_id)
                     from pathlib import Path
-                    manifest = Path(json.loads(delivery['manifest_json'])['path'])
+                    manifest = resolve_manifest_reference(self.runtime, delivery['manifest_json'])
                     if not manifest.is_file() or hashlib.sha256(manifest.read_bytes()).hexdigest() != delivery['manifest_sha256']:
                         raise FlowError('DELIVERY_INVALID', '正式交付清單遺失或內容已變更', run_id=run_id)
                 ended = utc_now() if target in TERMINAL else None
@@ -158,12 +185,97 @@ class RunStore:
                 row = db.execute('SELECT job_id,execution_status FROM run_executions WHERE run_id=?', (run_id,)).fetchone()
                 if row is None or row['execution_status'] != 'publishing':
                     raise FlowError('STATE_CONFLICT', '只能在發布階段登記交付', run_id=run_id)
-                db.execute('INSERT INTO artifact_sets VALUES(?,?,?,?,?)',
-                           (artifact_set_id, run_id, json.dumps({'path': str(path)}, ensure_ascii=False),
+                db.execute('INSERT INTO artifact_sets(artifact_set_id,run_id,manifest_json,manifest_sha256,created_at) VALUES(?,?,?,?,?)',
+                           (artifact_set_id, run_id, json.dumps(manifest_reference(self.runtime, path), ensure_ascii=False),
                             hashlib.sha256(content).hexdigest(), utc_now()))
                 db.execute('INSERT INTO deliveries VALUES(?,?,?,?,?,?,?)',
                            (delivery_id, row['job_id'], run_id, artifact_set_id, 'published', utc_now(), None))
         return delivery_id
+
+    def record_step_artifact_set(self, run_id, attempt_id, cache_key, manifest_path):
+        path = manifest_path.resolve()
+        content = path.read_bytes()
+        identifier = 'artset_' + uuid.uuid4().hex
+        with closing(self.runtime.connect()) as db:
+            with db:
+                db.execute('INSERT INTO artifact_sets(artifact_set_id,run_id,manifest_json,manifest_sha256,created_at,step_attempt_id,cache_key) VALUES(?,?,?,?,?,?,?)',
+                           (identifier, run_id, json.dumps(manifest_reference(self.runtime, path), ensure_ascii=False),
+                            hashlib.sha256(content).hexdigest(), utc_now(), attempt_id, cache_key))
+        return identifier
+
+    def stage_delivery(self, run_id, manifest_path):
+        path = manifest_path.resolve()
+        content = path.read_bytes()
+        checksum = hashlib.sha256(content).hexdigest()
+        with closing(self.runtime.connect()) as db:
+            with db:
+                db.execute('BEGIN IMMEDIATE')
+                run = db.execute('SELECT job_id,execution_status FROM run_executions WHERE run_id=?', (run_id,)).fetchone()
+                if run is None or run['execution_status'] != 'publishing':
+                    raise FlowError('RUN_CANCEL_REQUESTED' if run and run['execution_status'] == 'cancelling' else 'STATE_CONFLICT',
+                                    '只能在 publishing 狀態建立 Delivery', run_id=run_id)
+                prior = db.execute("SELECT d.delivery_id,a.manifest_sha256 FROM deliveries d JOIN artifact_sets a ON a.artifact_set_id=d.artifact_set_id WHERE d.run_id=? AND d.status='staged'", (run_id,)).fetchone()
+                if prior:
+                    if prior['manifest_sha256'] == checksum:
+                        return prior['delivery_id']
+                    raise FlowError('DELIVERY_CONFLICT', '同一 Run 的 staging manifest 已變更', run_id=run_id)
+                artifact_set_id = 'artset_' + uuid.uuid4().hex
+                delivery_id = 'delivery_' + uuid.uuid4().hex
+                db.execute('INSERT INTO artifact_sets(artifact_set_id,run_id,manifest_json,manifest_sha256,created_at) VALUES(?,?,?,?,?)',
+                           (artifact_set_id, run_id, json.dumps(manifest_reference(self.runtime, path), ensure_ascii=False), checksum, utc_now()))
+                db.execute('INSERT INTO deliveries(delivery_id,job_id,run_id,artifact_set_id,status,published_at,superseded_by) VALUES(?,?,?,?,?,?,?)',
+                           (delivery_id, run['job_id'], run_id, artifact_set_id, 'staged', None, None))
+                return delivery_id
+
+    def publish_delivery(self, delivery_id, *, complete_run=False, result_status=None):
+        with closing(self.runtime.connect()) as db:
+            with db:
+                db.execute('BEGIN IMMEDIATE')
+                row = db.execute('SELECT d.job_id,d.run_id,d.status,a.manifest_json,a.manifest_sha256,x.execution_status FROM deliveries d JOIN artifact_sets a ON a.artifact_set_id=d.artifact_set_id JOIN run_executions x ON x.run_id=d.run_id WHERE d.delivery_id=?', (delivery_id,)).fetchone()
+                if row is None or row['status'] != 'staged':
+                    raise FlowError('STATE_CONFLICT', '只有 staged Delivery 可發布', delivery_id=delivery_id)
+                if row['execution_status'] != 'publishing':
+                    raise FlowError('RUN_CANCEL_REQUESTED' if row['execution_status'] == 'cancelling' else 'STATE_CONFLICT',
+                                    'Run 已離開 publishing，拒絕發布交付', run_id=row['run_id'])
+                from pathlib import Path
+                manifest = resolve_manifest_reference(self.runtime, row['manifest_json'])
+                if not manifest.is_file() or hashlib.sha256(manifest.read_bytes()).hexdigest() != row['manifest_sha256']:
+                    raise FlowError('DELIVERY_INVALID', '交付清單已遺失或變更', delivery_id=delivery_id)
+                db.execute("UPDATE deliveries SET status='superseded',superseded_by=? WHERE job_id=? AND status='published'",
+                           (delivery_id, row['job_id']))
+                db.execute("UPDATE deliveries SET status='published',published_at=? WHERE delivery_id=? AND status='staged'",
+                           (utc_now(), delivery_id))
+                if complete_run:
+                    updated = db.execute("UPDATE run_executions SET execution_status='succeeded',state_version=state_version+1,result_status=?,delivery_status='published',ended_at=? WHERE run_id=? AND execution_status='publishing'",
+                                         (result_status or 'unknown', utc_now(), row['run_id']))
+                    if updated.rowcount != 1:
+                        raise FlowError('STATE_CONFLICT', 'Run 終態更新競爭失敗', run_id=row['run_id'])
+                    db.execute("UPDATE runs SET status='complete',finished=? WHERE run_id=?", (time.time(), row['run_id']))
+                return row['run_id']
+
+    def abort_delivery(self, delivery_id):
+        with closing(self.runtime.connect()) as db:
+            with db:
+                db.execute("UPDATE deliveries SET status='aborted' WHERE delivery_id=? AND status='staged'",
+                           (delivery_id,))
+
+    def relocate_published_manifests(self, job_id, output, snapshot):
+        """Keep pre-Stage7 DB delivery hashes valid when legacy root becomes a mirror."""
+        output, snapshot = Path(output).resolve(), Path(snapshot).resolve()
+        moved = 0
+        with closing(self.runtime.connect()) as db:
+            with db:
+                rows = db.execute("SELECT a.artifact_set_id,a.manifest_json,a.manifest_sha256 FROM deliveries d JOIN artifact_sets a ON a.artifact_set_id=d.artifact_set_id WHERE d.job_id=? AND d.status='published'", (job_id,)).fetchall()
+                for row in rows:
+                    original = resolve_manifest_reference(self.runtime, row['manifest_json'])
+                    if not original.is_relative_to(output):
+                        continue
+                    replacement = snapshot / original.relative_to(output)
+                    if replacement.is_file() and hashlib.sha256(replacement.read_bytes()).hexdigest() == row['manifest_sha256']:
+                        db.execute('UPDATE artifact_sets SET manifest_json=? WHERE artifact_set_id=?',
+                                   (json.dumps(manifest_reference(self.runtime, replacement), ensure_ascii=False), row['artifact_set_id']))
+                        moved += 1
+        return moved
 
     def finish_failure(self, run_id, *, interrupted=False, cancelled=False, error_id=None):
         row = self.get(run_id)

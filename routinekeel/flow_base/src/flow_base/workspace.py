@@ -13,7 +13,7 @@ import keyword
 from pathlib import Path, PurePosixPath
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, model_validator, field_validator
 
 from .contracts import Contract
 from .runtime import FlowError, Runtime, atomic_json, read_json, sha256
@@ -23,6 +23,7 @@ class Manifest(Contract):
     schema_version: Literal[1] = 1
     runtime_api: Literal['0.2'] = '0.2'
     output_layout: Literal['flat-v1', 'categorized-v1'] = 'flat-v1'
+    outputs: dict[str, str] = Field(default_factory=dict)
     id: str | None = Field(default=None, pattern=r'^[A-Za-z][A-Za-z0-9_.-]{0,127}$')
     module: str | None = Field(default=None, pattern=r'^[A-Za-z_][A-Za-z0-9_]*$')
     llm_policy: Literal['optional', 'forbidden'] = 'optional'
@@ -39,6 +40,15 @@ class Manifest(Contract):
     parameter_paths: list[str] = Field(default_factory=list)
     rules: list[dict] = Field(default_factory=list)
     defaults: dict = Field(default_factory=dict)
+
+    @field_validator('outputs')
+    @classmethod
+    def safe_named_outputs(cls, value):
+        for name, step_id in value.items():
+            if (not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}', name) or name in {'.', '..'} or
+                    not re.fullmatch(r'[a-z][a-z0-9_-]{0,31}', step_id)):
+                raise ValueError('Manifest outputs require safe names and Step IDs')
+        return value
 
     @model_validator(mode='after')
     def validate_module(self):

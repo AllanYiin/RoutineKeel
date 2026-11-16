@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import PurePosixPath
+import re
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -54,6 +55,28 @@ class Step(Contract):
     handler: str = Field(pattern=r"^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$")
     needs: list[str] = Field(default_factory=list)
     parameters: dict = Field(default_factory=dict)
+    cacheable: bool | None = None  # None preserves the legacy handler policy.
+    side_effects: Literal['none', 'local_write', 'external'] | None = None
+    retry_policy: Literal['manual', 'none'] | None = None
+    output_artifacts: list[str] = Field(default_factory=list)
+
+    @field_validator('output_artifacts')
+    @classmethod
+    def safe_output_artifacts(cls, values):
+        if len(values) != len(set(values)):
+            raise ValueError('Duplicate output artifact path')
+        for value in values:
+            path = PurePosixPath(value)
+            if (not value or value in {'.', '..'} or path.as_posix() != value or
+                    path.is_absolute() or '..' in path.parts or '\\' in value or ':' in value):
+                raise ValueError('Output artifact paths must be relative POSIX paths')
+        return values
+
+    @model_validator(mode='after')
+    def side_effect_policy(self):
+        if self.side_effects == 'external' and self.cacheable is True:
+            raise ValueError('External side effects cannot be cached')
+        return self
 
 
 class LLM(Contract):
@@ -91,6 +114,7 @@ class Workflow(Contract):
     id: str = Field(pattern=r'^[a-z][a-z0-9_-]{0,63}$')
     steps: list[Step] = Field(min_length=1)
     options: Contract = Field(default_factory=Contract)
+    outputs: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode='after')
     def graph(self):
@@ -99,6 +123,14 @@ class Workflow(Contract):
             if step.id in seen or not set(step.needs) <= seen:
                 raise ValueError('Steps must have unique IDs in dependency order')
             seen.add(step.id)
+        if self.outputs:
+            nonterminal = {dependency for step in self.steps for dependency in step.needs}
+            terminals = seen - nonterminal
+            for name, step_id in self.outputs.items():
+                if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}', name) or name in {'.', '..'}:
+                    raise ValueError('Workflow output names must be safe identifiers')
+                if step_id not in terminals:
+                    raise ValueError('Workflow outputs must reference terminal steps')
         return self
 
 

@@ -8,9 +8,9 @@ from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import v001, v002
+from . import v001, v002, v003
 
-MIGRATIONS = (v001, v002)
+MIGRATIONS = (v001, v002, v003)
 
 
 def _tables(db):
@@ -69,6 +69,9 @@ def migrate(db: sqlite3.Connection, path: Path, *, existed: bool):
         extra = {row[1] for row in db.execute('PRAGMA table_info(run_executions)')}
         if not {'idempotency_key', 'supervisor_pid', 'supervisor_started_at', 'heartbeat_at'} <= extra:
             raise FlowError('SCHEMA_MISMATCH', '已標記升級的資料庫缺少認領欄位')
+        artifact_columns = {row[1] for row in db.execute('PRAGMA table_info(artifact_sets)')}
+        if not {'step_attempt_id', 'cache_key'} <= artifact_columns:
+            raise FlowError('SCHEMA_MISMATCH', '已標記升級的資料庫缺少 ArtifactSet 關聯欄位')
         return
 
     # Do not overwrite a previous recovery point. An old backup remains usable
