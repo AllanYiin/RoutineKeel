@@ -15,8 +15,8 @@ def test_guidance_keeps_domain_policy_out_of_base(tmp_path):
     base=tmp_path/'flow_base';base.mkdir()
     flow=tmp_path/'自訂 中文流程';flow.mkdir()
     guide.write_workspace_guide(tmp_path)
-    guide.write_package_guide(base,ROOT/'flow_base')
-    guide.write_package_guide(flow,ROOT/'flows/課程影片產生字幕')
+    guide.write_package_guide(base,ROOT/'routinekeel/flow_base')
+    guide.write_package_guide(flow,ROOT/'routinekeel/flows/課程影片產生字幕')
     common=(base/'AGENTS.md').read_text()
     domain=(flow/'AGENTS.md').read_text()
     assert 'catalog' in common and 'plan' in common and 'run' in common
@@ -27,7 +27,7 @@ def test_guidance_keeps_domain_policy_out_of_base(tmp_path):
 
 
 def test_generic_flow_gets_guide_without_domain_source(tmp_path):
-    guide.write_package_guide(tmp_path,ROOT/'flows/檔案複製範例')
+    guide.write_package_guide(tmp_path,ROOT/'routinekeel/flows/檔案複製範例')
     text=(tmp_path/'AGENTS.md').read_text()
     assert '../flow_base/AGENTS.md' in text and 'large-v3' not in text
 
@@ -37,7 +37,7 @@ def test_agent_cli_from_task_directory_executes_selected_flow(tmp_path):
     shutil.copytree(ROOT/'dist/workspace/檔案複製範例',task_dir)
     source=tmp_path/'input.txt';source.write_text('agent uses installed flow')
     output=tmp_path/'out'
-    env=dict(os.environ,PYTHONPATH=str(ROOT/'flow_base/src'),PYTHONDONTWRITEBYTECODE='1')
+    env=dict(os.environ,PYTHONPATH=str(ROOT/'routinekeel/flow_base/src'),PYTHONDONTWRITEBYTECODE='1')
     def call(*args):
         p=subprocess.run([sys.executable,'-m','flow_base','--workspace',str(tmp_path),*args],
              cwd=task_dir,env=env,text=True,capture_output=True,timeout=40)

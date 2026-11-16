@@ -33,7 +33,7 @@ jobs:
         shell: bash
         run: |
           export FLOW_BASE_TEST_PWSH="$(command -v pwsh)"
-          uv run --locked --project flow_base --group dev pytest tests flows -q
+          uv run --locked --project routinekeel/flow_base --group dev pytest tests routinekeel/flows -q
           (cd dist/release && sha256sum -c SHA256SUMS)
       - name: Keep verified release assets
         if: github.event.action == 'closed' || github.event_name == 'workflow_dispatch'

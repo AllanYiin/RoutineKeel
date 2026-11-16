@@ -13,7 +13,7 @@ import sys
 import tempfile
 import time
 import uuid
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
 
 from filelock import FileLock, Timeout
@@ -253,7 +253,11 @@ class Runtime:
 
     def initialize(self):
         self.home.mkdir(parents=True, exist_ok=True)
-        with self.connect() as db:
+        # Journal mode belongs to the database. Serialize the initial transition
+        # across processes; ordinary connections must not try to change it.
+        with FileLock(self.home / 'state.initialize.lock', timeout=30), closing(self.connect()) as db:
+            if db.execute("PRAGMA journal_mode").fetchone()[0] != "wal":
+                db.execute("PRAGMA journal_mode=WAL")
             db.executescript("""
             CREATE TABLE IF NOT EXISTS steps(
               cache_key TEXT PRIMARY KEY, status TEXT NOT NULL, artifact TEXT,
@@ -278,7 +282,6 @@ class Runtime:
         db = sqlite3.connect(self.home / "state.sqlite3", timeout=30)
         db.row_factory = sqlite3.Row
         db.execute("PRAGMA busy_timeout=30000")
-        db.execute("PRAGMA journal_mode=WAL")
         db.execute("PRAGMA foreign_keys=ON")
         return db
 

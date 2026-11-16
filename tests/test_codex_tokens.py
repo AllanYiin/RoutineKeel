@@ -179,7 +179,7 @@ def test_only_metadata_is_retained_and_reported(tmp_path):
 def test_cli_standalone_and_runtime_command(tmp_path):
     path = session(tmp_path, new())
     root = Path(__file__).resolve().parents[1]
-    env = dict(os.environ, PYTHONPATH=str(root / 'flow_base/src'))
+    env = dict(os.environ, PYTHONPATH=str(root / 'routinekeel/flow_base/src'))
     for module, extra in [('flow_base.codex_tokens', []), ('flow_base', ['tokens'])]:
         result = subprocess.run([sys.executable, '-m', module, *extra, '--file', str(path)],
                                 env=env, capture_output=True, text=True, timeout=10)

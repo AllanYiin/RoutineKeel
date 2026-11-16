@@ -15,7 +15,8 @@ from agent_guidance import write_package_guide, write_workspace_guide
 
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / 'dist'
-BASE = ROOT / 'flow_base'
+PRODUCT = ROOT / 'routinekeel'
+BASE = PRODUCT / 'flow_base'
 
 
 def sha(path):
@@ -57,7 +58,7 @@ def project_info(path):
 
 
 def discover_projects():
-    flows = [p for p in sorted((ROOT / 'flows').iterdir())
+    flows = [p for p in sorted((PRODUCT / 'flows').iterdir())
              if (p / 'flow.template.json').is_file()]
     projects = [BASE, *flows]
     names, archives = set(), set()
@@ -120,7 +121,7 @@ def build_project(path, staging):
     if path == BASE:
         write_bootstrap(dest, wheel, version)
         run([sys.executable, str(launcher), '--root', str(dest), '--flow-base-package'])
-        sources = [(BASE, 'flow_base/'), (ROOT / 'tools', 'tools/')]
+        sources = [(BASE, 'routinekeel/flow_base/'), (ROOT / 'tools', 'tools/')]
     else:
         manifest = json.loads((path / 'flow.template.json').read_text(encoding='utf-8'))
         if manifest['version'] != version or (manifest.get('module') or manifest.get('id')) != name:
@@ -131,7 +132,7 @@ def build_project(path, staging):
         for doc in ('settings.example.json', 'WORKFLOW_AUDIT.md', 'PROVENANCE.md'):
             if (path / doc).is_file():
                 shutil.copyfile(path / doc, dest / doc)
-        sources = [(path, f'flows/{path.name}/')]
+        sources = [(path, f'routinekeel/flows/{path.name}/')]
     source_archive(dest / 'source.zip', sources)
 
     output = staging / 'release' / f'{archive_name}-{version}.zip'
