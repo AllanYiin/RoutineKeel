@@ -2,6 +2,8 @@
 
 **學員使用：解壓縮後，開啟 `flow_base` 資料夾，Windows 雙擊 `run_app.bat`、macOS 雙擊 `run_app.command`，Linux 執行 `run_app.sh`。** 不必先安裝 uv、Python、PowerShell 7 或手動執行 pip。Windows 使用內建 Windows PowerShell；命令視窗會顯示準備進度，完成後進入共用自然語言入口。
 
+想用圖形工作台時，開啟同資料夾的 `open_ui.bat`（Windows）、`open_ui.command`（macOS），或執行 `open_ui.sh`（Linux）。可選檔、預先檢查、開始／取消、查看歷史、成果與錯誤；原有 `run_app` 入口仍可照常使用。部分格式沒有內建內容預覽時，工作台會明確顯示檔名、大小與原因。詳細操作見同資料夾的 `user-guide.md`。
+
 找不到 uv 時，底層啟動器會按 OS／CPU 架構下載固定版本、校驗 SHA-256，再以它取得 Python 3.12。uv 存在但無法執行時，Windows 會嘗試後續候選及私有下載。首次啟動需要網路；後續使用快取。macOS/Linux 在沒有 uv 時需要 curl 或 wget，以及 unzip。
 
 Windows 的 run_app.bat 只為本次 PowerShell 程序設定 ExecutionPolicy Bypass，不修改系統全域政策；組織強制政策仍可能阻擋。macOS 初次可能需依系統提示允許執行；Linux 能否直接雙擊由桌面／檔案管理器設定決定。ZIP 保留 POSIX 執行權限，但部分解壓工具可能移除權限，此時需恢復 run_app.command／run_app.sh 的可執行權限。這些作業系統限制不能由啟動器保證跳過。

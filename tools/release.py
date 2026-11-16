@@ -98,6 +98,20 @@ def write_bootstrap(dest, wheel, version):
     (dest / 'start.sh').chmod(0o755)
 
 
+def write_ui_launchers(dest):
+    """Expose the optional local UI through the existing bootstrap scripts."""
+    wrappers = {
+        'open_ui.bat': '@echo off\r\ncall "%~dp0run_app.bat" ui %*\r\n',
+        'open_ui.sh': '#!/bin/sh\nHERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec sh "$HERE/run_app.sh" ui "$@"\n',
+        'open_ui.command': '#!/bin/sh\nHERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec sh "$HERE/run_app.command" ui "$@"\n',
+    }
+    for name, body in wrappers.items():
+        target = dest / name
+        target.write_text(body, encoding='ascii', newline='')
+        if name.endswith(('.sh', '.command')):
+            target.chmod(0o755)
+
+
 def build_project(path, staging):
     name, version, archive_name = project_info(path)
     wheels = staging / 'wheels'
@@ -121,6 +135,8 @@ def build_project(path, staging):
     if path == BASE:
         write_bootstrap(dest, wheel, version)
         run([sys.executable, str(launcher), '--root', str(dest), '--flow-base-package'])
+        write_ui_launchers(dest)
+        shutil.copyfile(path / 'docs/user-guide.md', dest / 'user-guide.md')
         sources = [(BASE, 'routinekeel/flow_base/'), (ROOT / 'tools', 'tools/')]
     else:
         manifest = json.loads((path / 'flow.template.json').read_text(encoding='utf-8'))
@@ -139,7 +155,15 @@ def build_project(path, staging):
     with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as archive:
         for file in sorted(dest.iterdir()):
             if file.is_file():
-                archive.write(file, f'{path.name}/{file.name}')
+                member = f'{path.name}/{file.name}'
+                if file.suffix in {'.sh', '.command'}:
+                    info = zipfile.ZipInfo(member)
+                    info.create_system = 3
+                    info.external_attr = 0o100755 << 16
+                    info.compress_type = zipfile.ZIP_DEFLATED
+                    archive.writestr(info, file.read_bytes())
+                else:
+                    archive.write(file, member)
     with zipfile.ZipFile(output) as archive:
         if archive.testzip() is not None:
             raise ValueError(f'Corrupted release file: {output}')

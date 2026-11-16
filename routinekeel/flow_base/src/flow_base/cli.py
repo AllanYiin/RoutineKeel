@@ -23,6 +23,7 @@ def parser():
     p.add_argument('--workspace', type=Path, help='工作區根目錄；啟動腳本會自動設定')
     commands = p.add_subparsers(dest='command')
     commands.add_parser('list', help='列出同層含 flow.json 的流程，不載入任務程式')
+    commands.add_parser('ui', help='開啟本機圖形工作台；無圖形環境時仍可用 CLI')
     from .codex_tokens import add_arguments
     add_arguments(commands.add_parser('tokens', help='讀取指定 Codex Session 的最新累計用量'))
     commands.add_parser('inspect', help='檢查作業系統、CPU、GPU、Python 與空間')
@@ -299,6 +300,16 @@ def main(argv=None):
         getattr(args, 'input', None), getattr(args, 'output', None)])
     try:
         command = args.command or ('chat' if sys.stdin.isatty() else 'list')
+        if command == 'ui':
+            try:
+                from .ui.app import run_ui
+                run_ui(workspace.root)
+                return 0
+            except Exception as exc:
+                if isinstance(exc, (ImportError, OSError)) or type(exc).__name__ == 'TclError':
+                    print('本機圖形介面無法啟動；可使用原有 CLI。' + str(exc), file=sys.stderr)
+                    return 2
+                raise
         if command == 'tokens':
             from .codex_tokens import query
             result = query(args)
