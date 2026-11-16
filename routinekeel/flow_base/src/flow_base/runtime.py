@@ -6,9 +6,7 @@ import json
 import os
 import platform
 import shutil
-import signal
 import sqlite3
-import subprocess
 import sys
 import tempfile
 import time
@@ -155,104 +153,11 @@ def log_tail(log, limit=8000):
         return ''
 
 
-def run_process(argv, *, timeout=60, cwd=None, env=None, log: Path | None = None, progress=None, cancel_event=None):
-    """No shell evaluation. Bounded subprocesses, with process-tree termination."""
-    from .core.run_context import current
-    run_context = current()
-    sink = run_context.event_sink if run_context else None
-    if sink:
-        sink.record('process.spawn_attempt', attributes={'executable_id': Path(argv[0]).name,
-                                                          'command_fingerprint': digest([str(item) for item in argv])})
-    kwargs = {"start_new_session": True} if os.name != "nt" else {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
-    if log:
-        log.parent.mkdir(parents=True, exist_ok=True)
-    offset = log.stat().st_size if log and log.exists() else 0
-    pending = b""
-    stream = log.open("ab") if log else subprocess.PIPE
-    try:
-        p = subprocess.Popen([str(x) for x in argv], cwd=cwd, env=env, stdin=subprocess.DEVNULL,
-                             stdout=stream, stderr=subprocess.STDOUT, **kwargs)
-    except OSError as e:
-        if log:
-            stream.close()
-        raise FlowError("PROCESS_START", str(e), executable=str(argv[0])) from e
-    def poll_progress():
-        nonlocal offset, pending
-        if not log or progress is None: return
-        with log.open('rb') as reader:
-            reader.seek(offset)
-            block = reader.read(65536)
-            offset = reader.tell()
-        pending += block
-        while b'\n' in pending:
-            line, pending = pending.split(b'\n',1)
-            if len(line) > 16384: continue
-            try:
-                data = json.loads(line)
-            except (ValueError, UnicodeError):
-                continue
-            if isinstance(data,dict) and data.get('event') == 'progress': progress(data)
-        if len(pending) > 16384: pending = b''
-        progress({'event':'heartbeat'})
-    try:
-        if sink:
-            sink.record('process.spawned', attributes={'child_pid': p.pid})
-        if (progress is None or not log) and cancel_event is None:
-            out, _ = p.communicate(timeout=timeout)
-        else:
-            deadline = time.monotonic() + timeout
-            while True:
-                if cancel_event is not None and cancel_event.is_set():
-                    if os.name == 'nt':
-                        p.terminate()
-                    else:
-                        os.killpg(p.pid, signal.SIGTERM)
-                    try:
-                        p.wait(timeout=10)
-                    except subprocess.TimeoutExpired:
-                        if os.name == 'nt':
-                            subprocess.run(['taskkill', '/PID', str(p.pid), '/T', '/F'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                        else:
-                            os.killpg(p.pid, signal.SIGKILL)
-                        p.wait()
-                    raise FlowError('PROCESS_CANCELLED', 'Worker 已停止，取消請求已確認', log=str(log) if log else None)
-                remaining = deadline-time.monotonic()
-                if remaining <= 0: raise subprocess.TimeoutExpired(argv,timeout)
-                try:
-                    out, _ = p.communicate(timeout=min(0.5,remaining))
-                    poll_progress()
-                    break
-                except subprocess.TimeoutExpired:
-                    poll_progress()
-    except BaseException as e:
-        if sink and isinstance(e, subprocess.TimeoutExpired):
-            try:
-                sink.record('process.timeout', severity='ERROR', attributes={'code': 'PROCESS_TIMEOUT'})
-            except Exception:
-                pass
-        if os.name == "nt":
-            subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        else:
-            try:
-                os.killpg(p.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-        p.wait()
-        if not isinstance(e, subprocess.TimeoutExpired):
-            raise
-        raise FlowError("PROCESS_TIMEOUT", "Process exceeded its time limit", timeout=timeout,
-                        output=log_tail(log), log=str(log) if log else None) from e
-    finally:
-        if log:
-            stream.close()
-    text = out.decode("utf-8", errors="replace") if out else ""
-    if sink:
-        sink.record('process.exited', attributes={'status': 'failed' if p.returncode else 'succeeded',
-                                                  'exit_code': p.returncode})
-    if p.returncode:
-        raise FlowError("PROCESS_FAILED", "Process returned a nonzero exit code", exit_code=p.returncode,
-                        executable=str(argv[0]), output=text[-8000:] if text else log_tail(log), log=str(log) if log else None)
-    return text
+def run_process(argv, *, timeout=60, cwd=None, env=None, log: Path | None = None, progress=None, cancel_event=None, grace_seconds=10, max_log_bytes=4_000_000, max_log_segments=4):
+    from .execution.process import run_process as controlled
+    return controlled(argv, timeout=timeout, cwd=cwd, env=env, log=log, progress=progress,
+                      cancel_event=cancel_event, grace_seconds=grace_seconds,
+                      max_log_bytes=max_log_bytes, max_log_segments=max_log_segments)
 
 
 def inspect_environment(home: Path, output: Path | None = None):
@@ -497,12 +402,8 @@ class Runtime:
                          'parent_span_id': active_span.parent_span_id if active_span else None}
                         if context is not None else {})
             atomic_json(path, {**request, **metadata, "response_path": str(response)})
-            env = os.environ.copy()
-            env.update({"HF_HUB_OFFLINE": "1", "TOKENIZERS_PARALLELISM": "false",
-                        "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"})
-            # Worker never receives credentials belonging to the LLM service.
-            for secret in self.secret_names:
-                env.pop(secret, None)
+            from .execution.process import worker_environment
+            env = worker_environment()
             worker_log = log or ((context.logdir if context else self.logs / 'workers') / (path.stem + '.log'))
             from .presentation import ACTIVE
             reporter = context.reporter if context else ACTIVE.get()

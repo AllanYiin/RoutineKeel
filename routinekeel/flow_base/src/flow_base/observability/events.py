@@ -19,7 +19,8 @@ from .trace import current_span
 ATTRIBUTE_KEYS = frozenset({'profile', 'executable_id', 'command_fingerprint', 'cache_key',
                             'artifact_hash', 'status', 'code', 'resource_id', 'duration_ms',
                             'bytes', 'output_layout', 'step_id', 'result_status', 'reason',
-                            'child_pid', 'exit_code'})
+                            'child_pid', 'exit_code', 'process_started_at',
+                            'peak_rss_bytes', 'merged'})
 _PROCESS_MONOTONIC_ORIGIN = time.monotonic()
 
 

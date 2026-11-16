@@ -195,7 +195,7 @@ def test_process_timeout_has_preceding_spawn_evidence(tmp_path):
             run_process([sys.executable, '-c', 'import time; time.sleep(2)'], timeout=0.1)
     assert error.value.code == 'PROCESS_TIMEOUT'
     assert [event['name'] for event in recorder.read()['events']] == [
-        'process.spawn_attempt', 'process.spawned', 'process.timeout']
+        'process.spawn_attempt', 'process.spawned', 'process.timeout', 'process.exited']
 
 
 def test_resource_check_records_invalid_before_offline_failure(tmp_path):

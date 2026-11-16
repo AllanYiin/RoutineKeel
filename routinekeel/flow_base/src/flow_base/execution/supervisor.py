@@ -48,8 +48,11 @@ def process_started_at(pid: int) -> float | None:
             kernel.CloseHandle(handle)
     if sys.platform.startswith('linux'):
         try:
-            stat = open(f'/proc/{pid}/stat', encoding='ascii').read()
-            start_ticks = int(stat[stat.rfind(') ')+2:].split()[19])
+            stat = Path(f'/proc/{pid}/stat').read_text(encoding='ascii')
+            fields = stat[stat.rfind(') ')+2:].split()
+            if fields[0] == 'Z':
+                return None
+            start_ticks = int(fields[19])
             with open('/proc/stat', encoding='ascii') as source:
                 boot = next(int(line.split()[1]) for line in source if line.startswith('btime '))
             return boot + start_ticks / os.sysconf('SC_CLK_TCK')
