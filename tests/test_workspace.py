@@ -163,10 +163,10 @@ def test_archive_escape_is_rejected(workspace):
 
 
 def test_plugin_cache_tamper_is_repaired(workspace):
-    cli(workspace, 'plan', '--task', 'ai_flow02')
+    cli(workspace, 'prepare', '--task', 'ai_flow02')
     file = next((workspace/'share_states/plugins').glob('*/ai_flow02/adapter.py'))
     file.write_text('raise RuntimeError("tamper")')
-    assert cli(workspace, 'plan', '--task', 'ai_flow02')['result']['ready_to_prepare']
+    assert cli(workspace, 'prepare', '--task', 'ai_flow02')['result']['ok']
     assert 'tamper' not in file.read_text()
 
 

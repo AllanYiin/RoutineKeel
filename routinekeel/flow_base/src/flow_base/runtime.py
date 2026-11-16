@@ -250,7 +250,7 @@ class Runtime:
                 db.execute('UPDATE flows SET version=?,fingerprint=?,title=?,updated=? WHERE flow_id=?',
                            (version, fingerprint, title, now, flow_id))
             else:
-                flow_id = 'flow_' + uuid.uuid4().hex
+                flow_id = 'flow_' + digest({'task_id': task_id})[:32]
                 db.execute('INSERT INTO flows VALUES(?,?,?,?,?,?,?)',
                            (flow_id, task_id, version, fingerprint, title, now, now))
         return flow_id

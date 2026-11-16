@@ -110,13 +110,22 @@ class Supervisor:
 
 
 def start_detached(workspace, task, workflow, source, output=None, *, overrides=None,
-                   offline=False, idempotency_key=None):
+                   offline=False, idempotency_key=None, spec_hash=None):
     """Reserve a Run, then launch an on-demand supervisor independent of the caller."""
-    from ..engine import reserve_workflow_run
+    from ..engine import reserve_workflow_run, _execution_identity
+    from ..outputs import choose_output
 
     runtime = workspace.runtime
-    run_id, output, spec_hash = reserve_workflow_run(runtime, task, workflow, source, output,
-                                                    offline=offline, idempotency_key=idempotency_key)
+    if workflow is None:
+        if not spec_hash:
+            raise FlowError('RUN_SPEC_INVALID', '獨立啟動需要已驗證的計畫指紋')
+        output = choose_output(runtime, task, source, output)
+        job_id, _, _ = _execution_identity(runtime, task, source, output)
+        run_id = runtime.start_run(task.flow_id, source, output, job_id=job_id,
+                                   spec_hash=spec_hash, idempotency_key=idempotency_key)
+    else:
+        run_id, output, spec_hash = reserve_workflow_run(runtime, task, workflow, source, output,
+                                                        offline=offline, idempotency_key=idempotency_key)
     specification = {'schema_version': 1, 'task': task.manifest.id, 'source': str(Path(source).resolve()),
                      'output': str(Path(output).resolve()), 'overrides': overrides or {},
                      'offline': offline, 'spec_hash': spec_hash}

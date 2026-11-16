@@ -10,6 +10,8 @@ import tempfile
 import zipfile
 import uuid
 import keyword
+import sqlite3
+from contextlib import closing, nullcontext
 from pathlib import Path, PurePosixPath
 from typing import Literal
 
@@ -74,7 +76,7 @@ class Workspace:
         self.runtime.initialize()
         self.runtime.logs.mkdir(parents=True, exist_ok=True)
 
-    def discover(self):
+    def discover(self, *, read_only=False):
         result = {}
         if not self.root.is_dir():
             return result
@@ -88,25 +90,47 @@ class Workspace:
                 raise FlowError('TASK_FOLDER', '流程資料夾及 flow.json 不得是符號連結', path=str(folder))
             manifest = Manifest.model_validate(read_json(path))
             if manifest.id is None:
-                with self.runtime.lock('manifest:' + str(path), timeout=30):
-                    data = read_json(path)
+                from .runtime import digest
+                generated = 'workflow_' + digest({'folder': folder.name, 'module': manifest.python_module,
+                                                   'package': manifest.sha256})[:32]
+                if read_only:
+                    data = manifest.model_dump()
+                    data['id'] = generated
                     manifest = Manifest.model_validate(data)
-                    if manifest.id is None:
-                        data['id'] = 'workflow_' + uuid.uuid4().hex
-                        atomic_json(path, data)
+                else:
+                    with self.runtime.lock('manifest:' + str(path), timeout=30):
+                        data = read_json(path)
                         manifest = Manifest.model_validate(data)
+                        if manifest.id is None:
+                            data['id'] = generated
+                            atomic_json(path, data)
+                            manifest = Manifest.model_validate(data)
             if manifest.id in result:
                 raise FlowError('TASK_DUPLICATE', '兩個資料夾包含同一流程識別碼；請保留一份，避免混用歷史',
                                 folders=[str(result[manifest.id].folder), str(folder)])
             task = Task(folder, manifest)
             result[manifest.id] = task
-        for task in result.values():
-            m = task.manifest
-            task.flow_id = self.runtime.register_flow(m.id, m.version, task.fingerprint, m.title)
+        if read_only:
+            from .runtime import digest
+            known = {}
+            database = self.runtime.home / 'state.sqlite3'
+            if database.is_file():
+                try:
+                    with closing(sqlite3.connect(database.as_uri() + '?mode=ro&immutable=1', uri=True)) as db:
+                        known = dict(db.execute('SELECT task_id,flow_id FROM flows'))
+                except sqlite3.Error:
+                    pass
+            for task in result.values():
+                task.flow_id = known.get(task.manifest.id) or 'flow_' + digest({'task_id': task.manifest.id})[:32]
+                task.flow_id_status = 'registered' if task.manifest.id in known else 'provisional'
+        else:
+            for task in result.values():
+                m = task.manifest
+                task.flow_id = self.runtime.register_flow(m.id, m.version, task.fingerprint, m.title)
         return result
 
-    def task(self, name):
-        tasks = self.discover()
+    def task(self, name, *, read_only=False):
+        tasks = self.discover(read_only=read_only)
         for task in tasks.values():
             if task.flow_id == name:
                 return task
@@ -142,15 +166,18 @@ class Task:
         from .runtime import digest
         return digest(self.manifest.model_dump())
 
-    def load(self, runtime):
+    def load(self, runtime, *, cache_root=None):
         if self._adapter:
             return self._adapter
         m = self.manifest
         wheel = self.folder / m.package
         if not wheel.is_file() or wheel.is_symlink() or sha256(wheel) != m.sha256:
             raise FlowError('TASK_INTEGRITY', 'Task package is missing or differs from flow.json', task=m.id)
-        root = runtime.home / 'plugins' / m.sha256
-        with runtime.lock('plugin:' + m.sha256, timeout=60):
+        if cache_root is not None:
+            Path(cache_root).mkdir(parents=True, exist_ok=True)
+        root = (Path(cache_root) if cache_root is not None else runtime.home / 'plugins') / m.sha256
+        lock = nullcontext() if cache_root is not None else runtime.lock('plugin:' + m.sha256, timeout=60)
+        with lock:
             # Validate the extracted copy as well; a wheel hash alone does not protect cache edits.
             with zipfile.ZipFile(wheel) as z:
                 members = z.infolist()

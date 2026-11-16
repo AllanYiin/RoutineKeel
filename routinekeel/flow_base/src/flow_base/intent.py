@@ -32,7 +32,7 @@ def assign(target, path, value):
 
 def local_intent(workspace, text, *, source=None, output=None, selected=None):
     """Bounded phrase matching. Broader language requires host-agent or LLM routing."""
-    tasks = {selected.manifest.id: selected} if selected else workspace.discover()
+    tasks = {selected.manifest.id: selected} if selected else workspace.discover(read_only=True)
     matches = [selected] if selected else [t for t in tasks.values() if any(
         k.casefold() in text.casefold() for k in [t.manifest.id, t.manifest.title, t.folder.name, *t.manifest.keywords])]
     intent = Intent(input=str(source) if source else None, output=str(output) if output else None)

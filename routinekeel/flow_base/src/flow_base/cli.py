@@ -8,13 +8,13 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from . import __version__
-from .engine import plan, run_workflow
-from .intent import Intent, local_intent, model_intent, resolve
-from .resources import export_resources, import_resources
+from .intent import Intent, local_intent, model_intent
 from .runtime import FlowError, inspect_environment, read_json, atomic_json
 from .workspace import Workspace, catalog
 from .diagnostics import cli_error
 from .observability.diagnostics import guard_secondary
+from .core.service import WorkflowService
+from .core.types import PlanRequest, StartRequest
 
 
 def parser():
@@ -85,18 +85,34 @@ def parser():
 
 
 def route(workspace, intent, execute=False, offline=False, *, base_overrides=None):
-    task, workflow, source, output, questions = resolve(workspace, intent, base_overrides=base_overrides)
+    from .engine import merge
+    from .outputs import choose_output
+    service = WorkflowService(workspace, authorized_external_paths=[intent.input, intent.output])
+    if not intent.task:
+        questions = intent.questions or ['請指定工作流程。']
+        return {'status': 'needs_input', 'intent': intent.model_dump(), 'questions': questions, 'executed': False}
+    task = workspace.task(intent.task, read_only=not execute)
+    task.validate_intent_overrides(intent.overrides)
+    questions = list(intent.questions)
+    if not intent.input:
+        questions.append('請提供輸入檔案路徑，或使用 --input。')
+    source = service._path(intent.input, allow_external=True) if intent.input else None
+    output = choose_output(workspace.runtime, task, source, intent.output)
     if questions:
         return {'status': 'needs_input', 'intent': intent.model_dump(), 'questions': questions, 'executed': False}
+    overrides = merge(base_overrides or {}, intent.overrides)
     if execute:
-        return run_workflow(workspace.runtime, task, workflow, source, output, offline=offline)
+        return service.run_workflow_sync(StartRequest(task=task.manifest.id, source=source,
+            output=output, overrides=overrides, offline=offline, allow_external_paths=True))
+    planned = service.plan_workflow(PlanRequest(task=task.manifest.id, source=source,
+        output=output, overrides=overrides, offline=offline, allow_external_paths=True))
     return {'status': 'planned', 'intent': intent.model_dump(), 'output': str(output),
-            'plan': plan(workspace.runtime, task, workflow, source, output), 'executed': False}
+            'plan': planned.plan, 'executed': False}
 
 
 def chat(workspace, selected=None, *, overrides=None, offline=False):
     print('flow_base：請描述需求。/list 列流程、/input 路徑 補輸入、/output 路徑 改輸出、/router llm 啟用已設定模型、/quit 離開。預設為離線常用語句模式。')
-    available = catalog(workspace)
+    available = WorkflowService(workspace).list_workflows()
     if selected:
         print('目前流程：' + selected.manifest.title)
         print('請輸入 /input 檔案路徑，或描述需求；檢查計畫後輸入 /run 開始。')
@@ -118,7 +134,7 @@ def chat(workspace, selected=None, *, overrides=None, offline=False):
             break
         try:
             if line == '/list':
-                emit(catalog(workspace))
+                emit(WorkflowService(workspace).list_workflows())
             elif line in {'/router llm', '/router local'}:
                 if line == '/router llm' and selected and selected.manifest.llm_policy == 'forbidden':
                     raise FlowError('LOCAL_LLM_FORBIDDEN', '這個流程禁止 LLM API 呼叫；請用本機語句模式。')
@@ -162,12 +178,13 @@ def launch(workspace, args):
     import uuid
     task = workspace.task_at(args.folder)
     runtime = workspace.runtime
+    service = WorkflowService(workspace)
     if args.action:
         parameters = read_json(args.params) if args.params else {}
         if not isinstance(parameters, dict):
             raise FlowError('TASK_ACTION_PARAMETERS', '能力參數必須是 JSON object')
         print('正在執行流程能力：' + args.action, file=sys.stderr, flush=True)
-        return task.invoke_action(runtime, args.action, parameters)
+        return service.invoke_action(task.manifest.id, args.action, parameters)
     launch_id = 'launch_' + uuid.uuid4().hex
     state_path = runtime.home / 'launcher' / (launch_id + '.json')
     state = {'launch_id': launch_id, 'flow_id': task.flow_id, 'title': task.manifest.title, 'status': 'preparing'}
@@ -175,15 +192,10 @@ def launch(workspace, args):
     try:
         config = read_json(args.config) if args.config else {}
         print('正在準備流程：' + task.manifest.title, flush=True)
-        adapter = task.load(runtime)
-        workflow = task.configuration(runtime, config)
-        if hasattr(adapter, 'describe'):
-            for line in adapter.describe(workflow):
-                print(line, flush=True)
-        prepared = adapter.prepare(runtime, workflow, args.offline)
-        verified = adapter.verify(runtime, workflow)
-        if prepared.get('ok') is False or verified.get('ok') is False:
-            raise FlowError('TASK_PREPARE', '流程環境驗證未通過', verification=verified)
+        launched = service.launch_prepare(task.manifest.id, overrides=config, offline=args.offline)
+        for line in launched['description']:
+            print(line, flush=True)
+        prepared, verified = launched['prepared'], launched['verified']
     except (Exception, KeyboardInterrupt) as exc:
         primary = cli_error(runtime, exc)
         state.update(status='failed', error=primary['error'])
@@ -283,15 +295,17 @@ def main(argv=None):
     args = parser().parse_args(argv)
     workspace = Workspace(args.workspace)
     runtime = workspace.runtime
+    service = WorkflowService(workspace, authorized_external_paths=[
+        getattr(args, 'input', None), getattr(args, 'output', None)])
     try:
         command = args.command or ('chat' if sys.stdin.isatty() else 'list')
         if command == 'tokens':
             from .codex_tokens import query
             result = query(args)
         elif command == 'list':
-            result = catalog(workspace)
+            result = service.list_workflows()
         elif command == 'catalog':
-            result = {'runtime_api': '0.2', 'tasks': catalog(workspace), 'intent_schema': Intent.model_json_schema(),
+            result = {'runtime_api': '0.2', 'tasks': service.list_workflows(), 'intent_schema': Intent.model_json_schema(),
                       'execution': 'dispatch --intent intent.json --execute', 'policy': 'Select installed IDs and declared parameter_paths only; no generated code.'}
         elif command in {'doctor', 'diagnose', 'logs', 'explain-error', 'export-diagnostics'}:
             return diagnostic_command(workspace, args)
@@ -299,12 +313,9 @@ def main(argv=None):
             result = inspect_environment(runtime.home)
         elif command == 'action':
             parameters = read_json(args.params)
-            if not isinstance(parameters, dict):
-                raise FlowError('TASK_ACTION_PARAMETERS', '能力參數必須是 JSON object')
-            result = workspace.task(args.task).invoke_action(runtime, args.name, parameters)
+            result = service.invoke_action(args.task, args.name, parameters)
         elif command == 'history':
-            flow_id = workspace.task(args.task).flow_id if args.task else None
-            result = runtime.history(flow_id, max(1, min(args.limit, 1000)))
+            result = service.history(args.task, args.limit)
         elif command == 'chat':
             result = chat(workspace, workspace.task(args.task) if args.task else None)
         elif command == 'launch':
@@ -325,32 +336,35 @@ def main(argv=None):
             if command == 'ask' and args.router == 'local':
                 result['routing_mode'] = 'offline_phrase_rules'
                 result['routing_note'] = '常用語句比對並非完整語意理解；複雜需求請用宿主 Agent dispatch 或 --router llm。執行前請檢查參數。'
-        else:
-            task = workspace.task(args.task)
-            adapter = task.load(runtime)
+        elif command == 'plan':
             config = read_json(args.config) if args.config else {}
-            workflow = task.configuration(runtime, config)
-            def local(path):
-                return (workspace.root / path).resolve() if path is not None else None
-            source, output = local(args.input), local(args.output)
-            if command == 'plan':
-                result = plan(runtime, task, workflow, source, output)
-            elif command == 'prepare':
-                result = adapter.prepare(runtime, workflow, args.offline)
-            elif command == 'verify':
-                result = adapter.verify(runtime, workflow)
-            elif command == 'run':
-                result = run_workflow(runtime, task, workflow, source, output, offline=args.offline)
-            elif command == 'demo':
-                if not hasattr(adapter, 'demo'):
-                    raise FlowError('TASK_CAPABILITY', 'This task does not provide a demo')
-                from .engine import run_demo
-                result = run_demo(runtime, task, output)
-            else:
-                if not hasattr(adapter, 'resources'):
-                    raise FlowError('TASK_CAPABILITY', 'This task has no downloadable resources')
-                resources = adapter.resources()
-                result = export_resources(runtime, output, args.resource, resources) if command == 'cache-export' else import_resources(runtime, source, resources)
+            result = service.plan_workflow(PlanRequest(task=args.task, source=args.input,
+                output=args.output, overrides=config, offline=args.offline,
+                allow_external_paths=True)).plan
+        elif command == 'run':
+            config = read_json(args.config) if args.config else {}
+            result = service.run_workflow_sync(StartRequest(task=args.task, source=args.input,
+                output=args.output, overrides=config, offline=args.offline,
+                allow_external_paths=True))
+        elif command == 'prepare':
+            config = read_json(args.config) if args.config else {}
+            result = service.prepare_workflow(args.task, overrides=config, offline=args.offline)
+        elif command == 'verify':
+            config = read_json(args.config) if args.config else {}
+            result = service.verify_workflow(args.task, overrides=config)
+        elif command == 'demo':
+            config = read_json(args.config) if args.config else {}
+            result = service.demo_workflow(args.task, args.output, overrides=config)
+        elif command == 'cache-export':
+            config = read_json(args.config) if args.config else {}
+            result = service.transfer_cache(args.task, direction='export', output=args.output,
+                                            resources=args.resource, overrides=config)
+        elif command == 'cache-import':
+            config = read_json(args.config) if args.config else {}
+            result = service.transfer_cache(args.task, direction='import', source=args.input,
+                                            overrides=config)
+        else:
+            raise FlowError('INVALID_CONFIGURATION', '未知命令')
         emit({'ok': True, 'result': result})
         return 0
     except FlowError as exc:

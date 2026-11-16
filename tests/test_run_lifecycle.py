@@ -30,6 +30,9 @@ def test_idempotency_busy_and_spec_immutability(tmp_path):
         store.create(job_id='job', revision_id='rev', spec_hash='spec-b', idempotency_key='same')
     assert error.value.code == 'IDEMPOTENCY_CONFLICT'
     with pytest.raises(FlowError) as error:
+        store.create(job_id='another-job', revision_id='rev', spec_hash='spec-a', idempotency_key='same')
+    assert error.value.code == 'IDEMPOTENCY_CONFLICT'
+    with pytest.raises(FlowError) as error:
         store.create(job_id='other', revision_id='rev', spec_hash='spec-a')
     assert error.value.code == 'BUSY'
     assert store.get(run_id)['execution_spec_hash'] == 'spec-a'

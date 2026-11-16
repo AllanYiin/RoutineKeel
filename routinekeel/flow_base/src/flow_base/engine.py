@@ -93,10 +93,11 @@ def plan(runtime, task, workflow, source=None, output=None):
     for step in workflow.steps:
         if step.handler not in adapter.handlers:
             result['blocked'].append({'code': 'HANDLER_MISSING', 'handler': step.handler})
-    if workflow.outputs != task.manifest.outputs:
+    declared_outputs = getattr(workflow, 'outputs', {})
+    if declared_outputs != task.manifest.outputs:
         result['blocked'].append({'code': 'OUTPUT_DECLARATION',
                                   'message': 'Workflow outputs 必須與已安裝 Manifest 的宣告一致'})
-    if not workflow.outputs:
+    if not declared_outputs:
         result['warnings'] = [*result.get('warnings', []),
                               '沿用最後 Step 作為 legacy 單一輸出；新流程請宣告具名 outputs。']
     result['ready_to_prepare'] = not result['blocked']
@@ -127,7 +128,14 @@ def _execution_identity(runtime, task, source, output):
 def _execution_spec_hash(runtime, task, workflow, input_hash, output, offline):
     adapter = task.load(runtime)
     profile_key = adapter.profile_key(runtime, workflow)
-    return digest({'revision': task.fingerprint, 'workflow': workflow.model_dump(),
+    effective = workflow.model_dump()
+    selection = effective.get('execution_selection')
+    if isinstance(selection, dict):
+        # Free RAM/disk/VRAM and probe timestamps are evidence, not execution
+        # semantics. Keep the requested and selected policy for identity.
+        effective['execution_selection'] = {key: selection[key] for key in
+            ('policy_version', 'requested', 'selected') if key in selection}
+    return digest({'revision': task.fingerprint, 'workflow': effective,
                    'input_hash': input_hash, 'output': str(Path(output).resolve()),
                    'profile_key': profile_key, 'offline': offline})
 
@@ -395,7 +403,7 @@ def _run_workflow(runtime, task, workflow, source, output, *, run_id, offline=Fa
                               'job': job if adapter.job_scoped(step.handler) else None})
                 cacheable = (step.cacheable if step.cacheable is not None else
                              step.side_effects in {None, 'none'})
-                declared_set = bool(step.output_artifacts) or step.id in workflow.outputs.values()
+                declared_set = bool(step.output_artifacts) or step.id in getattr(workflow, 'outputs', {}).values()
                 store.set_attempt_cache_key(current(runtime).attempt_id, key)
                 with runtime.lock('step:' + key, timeout=600):
                     artifact = runtime.cached(key) if cacheable else None
@@ -446,7 +454,7 @@ def _run_workflow(runtime, task, workflow, source, output, *, run_id, offline=Fa
                 raise FlowError('RUN_CANCEL_REQUESTED', '已確認取消；停止成果發布')
             recorder.record('delivery.staged', attributes={'output_layout': layout})
             RunStore(runtime).transition(run_id, 'running', 'publishing')
-            if workflow.outputs:
+            if getattr(workflow, 'outputs', {}):
                 from .outputs import publish_named_outputs
                 report = publish_named_outputs(stage, workflow, artifacts, layout)
             elif layout == 'categorized-v1' and hasattr(adapter, 'publish_outputs'):
@@ -455,7 +463,7 @@ def _run_workflow(runtime, task, workflow, source, output, *, run_id, offline=Fa
                 report = adapter.publish(terminal, artifact_directory(stage, layout), workflow)
             report['token_usage'] = ACTIVE.get().usage.finish()
             report['presentation'] = ACTIVE.get().references()
-            if not workflow.outputs:
+            if not getattr(workflow, 'outputs', {}):
                 report.setdefault('compatibility_warnings', []).append('此流程沿用最後 Step 的 legacy 輸出映射。')
             report.update(flow_id=task.flow_id, run_id=run_id, job_id=job, runtime=__version__, steps=history, snapshot=snapshot, output=str(output), output_layout=layout)
             atomic_json(report_path, report)

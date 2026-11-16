@@ -122,12 +122,12 @@ class RunStore:
             with db:
                 db.execute('BEGIN IMMEDIATE')
                 if idempotency_key is not None:
-                    prior = db.execute('SELECT run_id,execution_spec_hash FROM run_executions WHERE job_id=? AND idempotency_key=?',
-                                       (job_id, idempotency_key)).fetchone()
+                    prior = db.execute('SELECT run_id,job_id,execution_spec_hash FROM run_executions WHERE idempotency_key=?',
+                                       (idempotency_key,)).fetchall()
                     if prior:
-                        if prior['execution_spec_hash'] == spec_hash:
-                            return prior['run_id']
-                        raise FlowError('IDEMPOTENCY_CONFLICT', '相同請求識別碼對應不同執行規格', job_id=job_id)
+                        if len(prior) == 1 and prior[0]['job_id'] == job_id and prior[0]['execution_spec_hash'] == spec_hash:
+                            return prior[0]['run_id']
+                        raise FlowError('IDEMPOTENCY_CONFLICT', '同一工作區的請求識別碼對應不同工作或規格', job_id=job_id)
                 busy = db.execute("SELECT run_id FROM run_executions WHERE execution_status IN ('created','queued','preparing','running','publishing','cancelling') LIMIT 1").fetchone()
                 if busy:
                     raise FlowError('BUSY', '此工作區已有寫入型 Run', run_id=busy['run_id'])
