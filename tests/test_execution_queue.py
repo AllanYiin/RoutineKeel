@@ -105,3 +105,18 @@ def test_two_independent_workers_never_duplicate_a_queued_run(workspace):
     status = service.get_workflow_status(execution_id)
     assert status['status'] == 'succeeded'
     assert sum(row['run_id'] == status['run_id'] for row in service.history()) == 1
+
+
+def test_input_changed_while_queued_fails_without_creating_run(workspace):
+    source = workspace / 'input.txt'
+    source.write_text('planned version', encoding='utf-8')
+    service = WorkflowService(workspace)
+    execution_id = service.submit_workflow(SubmitRequest(task='ai_flow02', source=source,
+        output=workspace / 'result')).execution_id
+    source.write_text('changed after submit', encoding='utf-8')
+    assert run_queue_worker(workspace, once=True, poll_interval=0.1)['processed'] == 1
+    status = service.get_workflow_status(execution_id)
+    assert status['status'] == 'failed' and status['run_id'] is None
+    assert status['error_code'] == 'RUN_SPEC_MISMATCH'
+    assert not service.history()
+    assert not (workspace / 'result').exists()

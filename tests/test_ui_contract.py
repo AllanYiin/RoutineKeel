@@ -4,15 +4,18 @@ import shutil
 import socket
 import struct
 import time
-import tkinter as tk
 import zlib
+
+try:
+    import tkinter as tk
+except ImportError:
+    tk = None
 
 import pytest
 
 from flow_base.core.lifecycle import RunStore
 from flow_base.diagnostics import record_exception
 from flow_base.runtime import FlowError
-from flow_base.ui.app import DesktopApp
 from flow_base.ui.model import LocalUIModel, error_card, fit_dimensions, parse_overrides, preview_file
 from flow_base.workspace import Workspace
 from test_workspace import workspace
@@ -96,11 +99,16 @@ def test_ui_error_card_cancel_and_scrubbed_export(workspace):
     assert 'PRIVATE_MARKER' not in target.read_text(encoding='utf-8')
 
 
+@pytest.mark.skipif(tk is None, reason='Tk is not installed')
 def test_tk_window_renders_real_preview_and_does_not_connect_network(workspace, monkeypatch):
+    from flow_base.ui.app import DesktopApp
     def refuse_network(*_args, **_kwargs):
         raise AssertionError('UI startup must be offline')
     monkeypatch.setattr(socket.socket, 'connect', refuse_network)
-    root = tk.Tk()
+    try:
+        root = tk.Tk()
+    except tk.TclError as exc:
+        pytest.skip(f'Tk display unavailable: {type(exc).__name__}')
     root.withdraw()
     try:
         app = DesktopApp(workspace, root=root)

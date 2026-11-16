@@ -2,49 +2,49 @@
 
 ## SNAPSHOT — 當前狀態
 
-最後更新：2026-11-17T07:30+08:00
+最後更新：2026-11-17T07:55+08:00
 交接狀態：verified
 
 ### 目標與授權範圍
 
-依 RoutineKeel 底座階段規劃及使用者最新 MCP 佇列修訂，完成 Stage 0–13 並逐階段驗證提交。
+依 RoutineKeel 底座階段規劃及使用者核定的 MCP 佇列修訂完成 Stage 0–13，逐階段驗證提交。
 
 ### 目前進度
 
-Stage 0–9 已提交，Stage 9 9ead2a4；Stage 11 Tk UI 已提交 ad753e0。Stage 10 依使用者最新「提交→execution_id→SQLite佇列→獨立 queue-worker→按 ID 查詢」規劃完成 Windows／WSL Linux 本機驗證，準備獨立提交。Stage 12/13 整合與文件草稿仍未達 macOS／GitHub CI／發行 Gate，未提交。原有 .idea/ 七個 staged 檔案屬使用者變更。
+Stage 0–11 已提交（Stage10 16d0fd6，Stage11 ad753e0）。Stage12 Windows／WSL Linux 本機整合與發行包建置已通過，測試報告與手動 Windows/macOS CI 矩陣是未提交候選；正式 GitHub Actions、macOS 與使用者走查未執行，Stage12 DoD 尚未完成。Stage13 README／架構／回滾／已知問題／release checklist 草稿未提交。原有 .idea/ 七個 staged 檔案屬使用者變更。
 
 ### 下一步
 
-用獨立 Git index 只提交 Stage 10 檔案並排除 Stage 12/13 WIP 與 .idea；再依修訂規格完成 Stage 12 跨平台／正式 CI 與 Stage 13 文件、冷啟動及交付 Gate。
+只提交 Stage12 本機整合候選（不宣稱完整 Stage12 DoD），保留 Stage13 草稿與 .idea。需取得使用者同意與可用 GitHub 認證後，推送候選並執行原 Ubuntu CI 與手動 Windows/macOS 矩陣；核對結果後完成 Stage12，最後處理 Stage13 發行 Gate。
 
 ### DECISIONS
 
-- MCP stdio 只做驗證、入列、用 execution_id 查進度／結果／取消；run_id 由獨立 queue-worker 實際啟動時建立。MCP Client 不派生執行程序。
-- queue-worker 由使用者另行啟動，單工作區 FileLock、SQLite v004 佇列、交易認領與 execution:idempotency；未啟動時明示 queued。無 HTTP、無自動安裝 OS 服務。
-- 工作區內路徑及已安裝流程為 MCP 第一版界線；外部附件先匯入工作區；原生 MCP Tasks 延後到宿主能力確認。
-- flow_base 版本升至 0.2.12；發行包含 queue_worker 三平台入口、mcp-local.md 及選配 --install-mcp。
+- Stage10 MCP 僅入列與用 execution_id 查詢，獨立 queue-worker 執行；v004 佇列與可選 SDK 已提交。
+- Stage12 對正式 Workflow／Action／Demo 補 Step Attempt 前後事件，100 次混合 Run/Action 各自核對 ID 與成果；20 交付故障點與四類秘密標記持續驗證。
+- Windows POSIX sh 案例明確 skip，Linux 仍執行；修正 free_bytes 查現有目錄、宿主用量測試假設、字幕隔離 Python UTF-8；Windows ZIP POSIX 執行權限與冷啟動版本已修。
+- M7 以 C: NVMe 為 SSD 測試根；E: 為 USB 外接磁碟，不能當 SSD 證據。
 
 ### LANDMINES
 
-- macOS 真機／Finder、GitHub Actions 原 CI 與手動矩陣仍未執行，Stage 12/13 不可宣稱完成。
-- M7 Windows 5,000 Run p95 32.16ms，但 E: SSD 屬性因 CIM 被拒未知。
-- Stage 12/13 WIP 與 .idea staged 必須在 Stage10 提交時排除；資料庫 v004 回退舊版須還原 before-v004 備份。
+- GitHub CLI 目前 token invalid；本機不能直接推送或觸發原 CI。GitHub Actions macOS runner 可能消耗付費 CI 額度，未取得執行授權。
+- macOS Finder、Tk、程序控制與正式 CI 未實際驗證，Stage12/13 不可宣稱完成。
+- Stage12 候選與 Stage13 草稿不能混同提交；.idea staged 屬使用者。
 
 ### 證據索引
 
-- routinekeel/flow_base/specs/requirements.md Stage10 修訂與 specs/mcp-queue-v1.md
-- src/flow_base/core/queue.py、execution/queue_worker.py、storage/migrations/v004.py、adapters/mcp_stdio.py
-- tests/test_execution_queue.py、tests/test_mcp_stdio.py、tests/test_integration_mcp_cli.py
-- dist/release/flow_base-0.2.12.zip 手動 wheel/launcher/source 檢查及乾淨包端到端
-- git status 顯示 Stage12/13 WIP 與使用者 .idea staged
+- routinekeel/flow_base/docs/test-report.md AC/M 對照與測試命令
+- tests/test_integration_recovery.py、test_integration_atomic_publish.py、test_security_diagnostics.py、bench_run_status.py
+- Stage10 commit 16d0fd6；git status 顯示 Stage12/13 WIP 與 .idea staged
+- 手動 CI 矩陣 .github/workflows/platform-checks.yml
+- gh auth status default token invalid
 
 ### VALIDATION
 
-- Stage10 Windows 專項與完整回歸 — PASS：tests/test_execution_queue.py tests/test_mcp_stdio.py tests/test_integration_mcp_cli.py 共 10 passed；新 netstat 無 TCP listening port 1 passed；完整 Windows 379 passed、21 skipped、0 failed。
-- Stage10 WSL Linux 完整回歸 — PASS：OpenClawGateway /tmp 隔離副本建置 Valid YES、387 passed、12 skipped；在 Windows-only netstat 測試加入前，該測試於 Linux 條件 skip。
-- Stage10 發行包端到端 — PASS：乾淨 flow_base 0.2.12 ZIP 的 --install-mcp exit0、wheel import 0.2.12、獨立 Worker + 官方 SDK 提交後關閉 Client 並重連查到 succeeded/run_id/正確成果，Worker exit0。
-- SQLite v004 — PASS：tests/test_db_migrations.py 11 passed，含 v003→v004 備份與舊 Run 不改寫；worker crash before queue link 後以同一 run_id 恢復。
-- Stage12/13 macOS／GitHub CI — NOT_RUN：尚未推送或觸發 CI，macOS 實機不可用。
+- Windows 完整回歸 — PASS：目前程式碼 382 passed、21 skipped、0 failed，耗時 212.82 秒；包含 v004 缺表、輸入漂移、100 次混合與 MCP。
+- WSL Linux 完整回歸 — PASS：OpenClawGateway /tmp 隔離副本建置 Valid YES、390 passed、13 skipped，耗時 94.33 秒。
+- M7 SSD 延遲 — PASS：Get-Partition C | Get-Disk 確認 C: 位於 NVMe Micron；5,000 Run／200 次查詢 p95 9.78ms <200ms。
+- Stage12 macOS／GitHub CI — NOT_RUN：手動矩陣 .github/workflows/platform-checks.yml 已寫但未推送／觸發；gh auth status 顯示 token invalid。
+- Stage13 文件 — NOT_RUN：草稿存在並有相對連結檢查 0 缺失，仍未完成正式發布與使用者走查。
 
 # HISTORY
 
@@ -116,3 +116,10 @@ Windows 368 passed/1 MCP fail/21 skipped，WSL Linux 378 passed/12 skipped。乾
 <!-- devnote-review:ddadb3a34d453b3b76b4fbc5 -->
 
 依最新使用者規劃修訂 Stage10：MCP 只入列與按 execution_id 查詢，獨立 queue-worker 執行，SQLite v004 建立 Run 前持久化 ID。Windows 全測 379 passed/21 skipped，WSL Linux 387 passed/12 skipped；乾淨發行包的 Client 關閉重連測試成功。Stage12/13 macOS與CI仍待。
+
+
+## [2026-11-17T07:55+08:00] Stage12 本機整合矩陣通過
+
+<!-- devnote-review:e6cf94e48fa759422a982144 -->
+
+Stage12 新增 Action/Demo 失敗事件、佇列輸入漂移、v004 缺表與 100 次混合 Step 前後事件驗證；Windows 382 passed/21 skipped，WSL Linux 390 passed/13 skipped。C: NVMe 的 5,000 Run p95 9.78ms。正式 GitHub/macOS CI 未執行，Stage12 候選待提交與外部 Gate。

@@ -9,6 +9,9 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.skipif(os.name == 'nt' or shutil.which('sh') is None,
+                                reason='POSIX sh is required')
+
 ROOT = Path(__file__).resolve().parents[1]
 
 

@@ -273,6 +273,8 @@ class Task:
         reporter_token = ACTIVE.set(reporter)
         store = RunStore(runtime)
         supervisor = None
+        attempt_id = None
+        attempt_finished = False
         try:
             store.transition(run_id, 'created', 'queued')
             supervisor = Supervisor(runtime, run_id, ACTIVE_RUN.get())
@@ -280,9 +282,14 @@ class Task:
             store.transition(run_id, 'preparing', 'running')
             reporter.event_recorder.record('run.started')
             reporter.start()
+            attempt_id = store.create_attempt(run_id, name)
+            ACTIVE_RUN.get().attempt_id = attempt_id
+            store.transition_attempt(attempt_id, 'pending', 'running')
             reporter.event_recorder.record('step.started', attributes={'step_id': name})
             reporter.enter(SimpleNamespace(id=name, handler='adapter.invoke_action'), 1, name)
             result = adapter.invoke_action(runtime, name, parameters)
+            store.transition_attempt(attempt_id, 'running', 'succeeded')
+            attempt_finished = True
             reporter.event_recorder.record('step.finished', attributes={'step_id': name})
             if supervisor.heartbeat_error:
                 raise FlowError('SUPERVISOR_HEARTBEAT', '執行期間無法更新監督程序 lease') from supervisor.heartbeat_error
@@ -317,6 +324,12 @@ class Task:
             code = exc.code if isinstance(exc, FlowError) else type(exc).__name__
             cancelled = isinstance(exc, FlowError) and exc.code in {'PROCESS_CANCELLED', 'RUN_CANCEL_REQUESTED'}
             status = 'cancelled' if cancelled else ('interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed')
+            if attempt_id and not attempt_finished:
+                try:
+                    reporter.event_recorder.record('step.failed', severity='ERROR',
+                                                   attributes={'step_id': name, 'code': code})
+                except Exception:
+                    pass
             try:
                 reporter.event_recorder.record('run.interrupted' if isinstance(exc, KeyboardInterrupt) else ('run.cancelled' if cancelled else 'run.failed'),
                                                severity='ERROR', attributes={'code': code})
@@ -324,6 +337,9 @@ class Task:
                 pass
             diagnostic = record_exception(exc, log, flow_id=self.flow_id, run_id=run_id,
                                           action=name, launch_id=launcher_id(runtime))
+            guard_secondary(exc, diagnostic, 'finish_attempt', lambda: store.finish_attempt_failure(
+                attempt_id, interrupted=isinstance(exc, KeyboardInterrupt), cancelled=cancelled,
+                error_id=diagnostic['error_id']), runtime=runtime)
             guard_secondary(exc, diagnostic, 'finish_failure', lambda: store.finish_failure(run_id,
                 interrupted=isinstance(exc, KeyboardInterrupt), cancelled=cancelled, error_id=diagnostic['error_id']), runtime=runtime)
             state = guard_secondary(exc, diagnostic, 'read_run_status', lambda: store.get(run_id), runtime=runtime)

@@ -138,7 +138,8 @@ def test_worker_script_loads_review_modules_in_isolated_python(review_fixture):
     request=out/'request.json';response=out/'response.json'
     core.write_json(request,{'action':'review_operation','operation':'build','output_dir':str(out),
         'source_audio':str(out/'audio.wav'),'response_path':str(response)})
-    result=subprocess.run([sys.executable,'-I',worker.__file__,str(request)],capture_output=True,text=True)
+    result=subprocess.run([sys.executable,'-X','utf8','-I',worker.__file__,str(request)],
+                          capture_output=True,text=True,encoding='utf-8')
     assert result.returncode==0,result.stderr
     assert core.read_json(response)['review']=='review.html'
     assert (out/d['archive']).is_file()

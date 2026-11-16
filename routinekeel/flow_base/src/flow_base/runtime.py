@@ -100,7 +100,9 @@ def default_home() -> Path:
 
 
 def existing_parent(path: Path):
-    while not path.exists():
+    while not path.is_dir():
+        if path.parent == path:
+            raise OSError('找不到可用的磁碟目錄')
         path = path.parent
     return path
 

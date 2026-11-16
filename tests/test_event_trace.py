@@ -4,8 +4,10 @@ import os
 import shutil
 import subprocess
 import sys
+from contextlib import closing
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -15,7 +17,8 @@ from flow_base.core.run_context import RunContext, activate
 from flow_base.runtime import run_process
 from flow_base.runtime import FlowError, Runtime
 from flow_base.workspace import Workspace
-from flow_base.engine import run_workflow
+from flow_base.engine import run_demo, run_workflow
+from test_workspace import workspace
 from flow_base.contracts import AssetFile, Resource
 from flow_base.resources import ensure_resource
 from flow_base.diagnostics import record_exception
@@ -263,3 +266,23 @@ def test_failed_step_or_delivery_has_timeline(tmp_path, monkeypatch, failure_sit
             if name == 'ai_flow02' or name.startswith('ai_flow02.'):
                 sys.modules.pop(name)
         sys.modules.update(previous)
+
+
+def test_demo_failure_has_attempt_and_before_after_events(workspace, monkeypatch):
+    ws = Workspace(workspace)
+    task = ws.task('ai_flow02')
+    def fail(*_args):
+        raise RuntimeError('demo fixture failed')
+    monkeypatch.setattr(task, 'load', lambda _runtime: SimpleNamespace(demo=fail))
+    with pytest.raises(RuntimeError, match='demo fixture failed'):
+        run_demo(ws.runtime, task, workspace / 'demo-failure')
+    run_id = ws.runtime.history()[0]['run_id']
+    with closing(ws.runtime.connect()) as db:
+        attempt = db.execute('SELECT attempt_id,status FROM step_attempts WHERE run_id=?',
+                             (run_id,)).fetchone()
+    assert attempt['status'] == 'failed'
+    events = ws.runtime.events(run_id, limit=100)['events']
+    names = [event['name'] for event in events]
+    assert names.index('step.started') < names.index('step.failed') < names.index('run.failed')
+    assert all(event['step_attempt_id'] == attempt['attempt_id'] for event in events
+               if event['name'] in {'step.started', 'step.failed'})

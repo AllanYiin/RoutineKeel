@@ -199,3 +199,13 @@ def test_v003_upgrade_adds_queue_without_rewriting_existing_runs(tmp_path):
         assert db.execute('PRAGMA user_version').fetchone()[0] == 4
         assert db.execute('SELECT status FROM runs').fetchone()[0] == 'complete'
         assert db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='execution_queue'").fetchone()
+
+
+def test_marked_v004_without_queue_table_refuses_use(tmp_path):
+    runtime = Runtime(tmp_path / 'share_states')
+    runtime.initialize()
+    with runtime.connect() as db:
+        db.execute('DROP TABLE execution_queue')
+    with pytest.raises(FlowError) as error:
+        runtime.initialize()
+    assert error.value.code == 'SCHEMA_MISMATCH'
