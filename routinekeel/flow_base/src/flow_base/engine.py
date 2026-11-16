@@ -9,6 +9,7 @@ from .core.run_context import RunContext, ACTIVE_RUN
 from .core.lifecycle import RunStore
 from .execution.supervisor import Supervisor
 from .diagnostics import record_exception, launcher_id
+from .observability.diagnostics import guard_secondary
 
 from . import __version__
 from .runtime import FlowError, Runtime, atomic_json, digest, read_json, require_space, sha256, event
@@ -189,18 +190,26 @@ def run_demo(runtime, task, output):
         except Exception:
             pass
         diagnostic = record_exception(exc, logs, flow_id=task.flow_id, run_id=run_id, launch_id=launcher_id(runtime))
-        store.finish_failure(run_id, interrupted=isinstance(exc, KeyboardInterrupt), cancelled=cancelled, error_id=diagnostic['error_id'])
-        status = store.get(run_id)['execution_status']
-        reporter.fail(code, diagnostic['message'], interrupted=isinstance(exc, KeyboardInterrupt), diagnostic=diagnostic)
-        runtime.update_run(run_id, status, error=code, finished=True)
-        atomic_json(logs / 'failure.json', {'flow_id': task.flow_id, 'run_id': run_id, 'status': status, 'error': code, 'error_details': diagnostic,
-                                                'token_usage': reporter.usage.finish(), 'presentation': reporter.references()})
+        guard_secondary(exc, diagnostic, 'finish_failure', lambda: store.finish_failure(run_id,
+            interrupted=isinstance(exc, KeyboardInterrupt), cancelled=cancelled, error_id=diagnostic['error_id']), runtime=runtime)
+        state = guard_secondary(exc, diagnostic, 'read_run_status', lambda: store.get(run_id), runtime=runtime)
+        status = state['execution_status'] if state else status
+        guard_secondary(exc, diagnostic, 'reporter.fail', lambda: reporter.fail(code, diagnostic['message'],
+            interrupted=isinstance(exc, KeyboardInterrupt), diagnostic=diagnostic), runtime=runtime)
+        guard_secondary(exc, diagnostic, 'update_run', lambda: runtime.update_run(run_id, status, error=code, finished=True), runtime=runtime)
+        guard_secondary(exc, diagnostic, 'failure.json', lambda: atomic_json(logs / 'failure.json',
+            {'flow_id': task.flow_id, 'run_id': run_id, 'status': status, 'error': code, 'error_details': diagnostic,
+             'token_usage': reporter.usage.finish(), 'presentation': reporter.references()}), runtime=runtime)
         if isinstance(exc, FlowError):
-            exc.details.update(flow_id=task.flow_id, run_id=run_id)
+            guard_secondary(exc, diagnostic, 'attach_error_ids',
+                lambda: exc.details.update(flow_id=task.flow_id, run_id=run_id), runtime=runtime)
         raise
     finally:
         if supervisor is not None:
-            supervisor.__exit__(None, None, None)
+            try:
+                supervisor.__exit__(None, None, None)
+            except BaseException as cleanup_error:
+                record_exception(cleanup_error, logs / 'cleanup', runtime=runtime, run_id=run_id)
         ACTIVE.reset(reporter_token)
         ACTIVE_RUN.reset(run_token)
 
@@ -274,20 +283,29 @@ def run_workflow(runtime, task, workflow, source, output=None, *, offline=False,
             pass
         diagnostic = record_exception(exc, logs, flow_id=task.flow_id, run_id=run_id,
                                       launch_id=launcher_id(runtime), step=reporter.step_id)
-        store.finish_failure(run_id, interrupted=isinstance(exc, KeyboardInterrupt), cancelled=cancelled, error_id=diagnostic['error_id'])
-        status = store.get(run_id)['execution_status']
-        reporter.fail(code, diagnostic['message'], interrupted=isinstance(exc, KeyboardInterrupt), diagnostic=diagnostic)
-        runtime.update_run(run_id, status, error=code, finished=True)
-        atomic_json(logs / 'run.json', {'flow_id': task.flow_id, 'run_id': run_id, 'task': task.manifest.id,
-                                       'status': status, 'error': code})
-        atomic_json(logs / 'failure.json', {'flow_id': task.flow_id, 'run_id': run_id, 'status': status, 'error': code, 'error_details': diagnostic,
-                                                'token_usage': reporter.usage.finish(), 'presentation': reporter.references()})
+        guard_secondary(exc, diagnostic, 'finish_failure', lambda: store.finish_failure(run_id,
+            interrupted=isinstance(exc, KeyboardInterrupt), cancelled=cancelled, error_id=diagnostic['error_id']), runtime=runtime)
+        state = guard_secondary(exc, diagnostic, 'read_run_status', lambda: store.get(run_id), runtime=runtime)
+        status = state['execution_status'] if state else status
+        guard_secondary(exc, diagnostic, 'reporter.fail', lambda: reporter.fail(code, diagnostic['message'],
+            interrupted=isinstance(exc, KeyboardInterrupt), diagnostic=diagnostic), runtime=runtime)
+        guard_secondary(exc, diagnostic, 'update_run', lambda: runtime.update_run(run_id, status, error=code, finished=True), runtime=runtime)
+        guard_secondary(exc, diagnostic, 'run.json', lambda: atomic_json(logs / 'run.json',
+            {'flow_id': task.flow_id, 'run_id': run_id, 'task': task.manifest.id,
+             'status': status, 'error': code}), runtime=runtime)
+        guard_secondary(exc, diagnostic, 'failure.json', lambda: atomic_json(logs / 'failure.json',
+            {'flow_id': task.flow_id, 'run_id': run_id, 'status': status, 'error': code, 'error_details': diagnostic,
+             'token_usage': reporter.usage.finish(), 'presentation': reporter.references()}), runtime=runtime)
         if isinstance(exc, FlowError):
-            exc.details.update(flow_id=task.flow_id, run_id=run_id)
+            guard_secondary(exc, diagnostic, 'attach_error_ids',
+                lambda: exc.details.update(flow_id=task.flow_id, run_id=run_id), runtime=runtime)
         raise
     finally:
         if supervisor is not None:
-            supervisor.__exit__(None, None, None)
+            try:
+                supervisor.__exit__(None, None, None)
+            except BaseException as cleanup_error:
+                record_exception(cleanup_error, logs / 'cleanup', runtime=runtime, run_id=run_id)
         ACTIVE.reset(reporter_token)
         ACTIVE_RUN.reset(run_token)
 
@@ -415,8 +433,12 @@ def _run_workflow(runtime, task, workflow, source, output, *, run_id, offline=Fa
             atomic_json(logs / 'report.json', report)
             return report
         except BaseException as exc:
-            active_attempt = current(runtime).attempt_id
-            if RunStore(runtime).get(run_id)['execution_status'] == 'publishing':
+            run_context = current(runtime)
+            active_attempt = run_context.attempt_id if run_context else None
+            diagnostic = record_exception(exc, logs, runtime=runtime, flow_id=task.flow_id, run_id=run_id, job_id=job,
+                                          launch_id=launcher_id(runtime), step=ACTIVE.get().step_id)
+            state = guard_secondary(exc, diagnostic, 'read_run_status', lambda: RunStore(runtime).get(run_id), runtime=runtime)
+            if state and state['execution_status'] == 'publishing':
                 try:
                     ACTIVE.get().event_recorder.record('delivery.failed', severity='ERROR',
                         attributes={'code': exc.code if isinstance(exc, FlowError) else type(exc).__name__})
@@ -429,15 +451,14 @@ def _run_workflow(runtime, task, workflow, source, output, *, run_id, offline=Fa
                                     'code': exc.code if isinstance(exc, FlowError) else type(exc).__name__})
                 except Exception:
                     pass
-            diagnostic = record_exception(exc, logs, flow_id=task.flow_id, run_id=run_id, job_id=job,
-                                          launch_id=launcher_id(runtime), step=ACTIVE.get().step_id)
             cancelled = isinstance(exc, FlowError) and exc.code in {'PROCESS_CANCELLED', 'RUN_CANCEL_REQUESTED'}
-            RunStore(runtime).finish_attempt_failure(current(runtime).attempt_id,
-                interrupted=isinstance(exc, KeyboardInterrupt), cancelled=cancelled, error_id=diagnostic['error_id'])
+            guard_secondary(exc, diagnostic, 'finish_attempt_failure', lambda: RunStore(runtime).finish_attempt_failure(active_attempt,
+                interrupted=isinstance(exc, KeyboardInterrupt), cancelled=cancelled, error_id=diagnostic['error_id']), runtime=runtime)
             failure = {'job_id': job, 'status': 'cancelled' if cancelled else ('interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed'),
                        'flow_id': task.flow_id, 'run_id': run_id, 'output_layout': layout,
                        'error': exc.code if isinstance(exc, FlowError) else type(exc).__name__, 'error_details': diagnostic, 'steps': history,
-                       'token_usage': ACTIVE.get().usage.finish(), 'presentation': ACTIVE.get().references()}
-            atomic_json(report_path, failure)
-            atomic_json(logs / 'report.json', failure)
+                       'token_usage': guard_secondary(exc, diagnostic, 'usage.finish', lambda: ACTIVE.get().usage.finish(), runtime=runtime),
+                       'presentation': guard_secondary(exc, diagnostic, 'reporter.references', lambda: ACTIVE.get().references(), runtime=runtime)}
+            guard_secondary(exc, diagnostic, 'output_report', lambda: atomic_json(report_path, failure), runtime=runtime)
+            guard_secondary(exc, diagnostic, 'run_report', lambda: atomic_json(logs / 'report.json', failure), runtime=runtime)
             raise

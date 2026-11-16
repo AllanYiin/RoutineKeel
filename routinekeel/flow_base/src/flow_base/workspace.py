@@ -276,6 +276,7 @@ class Task:
             return report
         except BaseException as exc:
             from .diagnostics import record_exception, launcher_id
+            from .observability.diagnostics import guard_secondary
             code = exc.code if isinstance(exc, FlowError) else type(exc).__name__
             cancelled = isinstance(exc, FlowError) and exc.code in {'PROCESS_CANCELLED', 'RUN_CANCEL_REQUESTED'}
             status = 'cancelled' if cancelled else ('interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed')
@@ -286,18 +287,27 @@ class Task:
                 pass
             diagnostic = record_exception(exc, log, flow_id=self.flow_id, run_id=run_id,
                                           action=name, launch_id=launcher_id(runtime))
-            store.finish_failure(run_id, interrupted=isinstance(exc, KeyboardInterrupt), cancelled=cancelled, error_id=diagnostic['error_id'])
-            status = store.get(run_id)['execution_status']
-            reporter.fail(code, diagnostic['message'], interrupted=isinstance(exc, KeyboardInterrupt), diagnostic=diagnostic)
-            runtime.update_run(run_id, status, error=code, finished=True)
-            atomic_json(log / 'failure.json', {'flow_id': self.flow_id, 'run_id': run_id, 'action': name,
-                                             'error': code, 'error_details': diagnostic, 'token_usage': reporter.usage.finish(),
-                                             'presentation': reporter.references()})
-            atomic_json(log / 'run.json', {'flow_id': self.flow_id, 'run_id': run_id, 'action': name, 'status': status})
+            guard_secondary(exc, diagnostic, 'finish_failure', lambda: store.finish_failure(run_id,
+                interrupted=isinstance(exc, KeyboardInterrupt), cancelled=cancelled, error_id=diagnostic['error_id']), runtime=runtime)
+            state = guard_secondary(exc, diagnostic, 'read_run_status', lambda: store.get(run_id), runtime=runtime)
+            status = state['execution_status'] if state else status
+            guard_secondary(exc, diagnostic, 'reporter.fail', lambda: reporter.fail(code, diagnostic['message'],
+                interrupted=isinstance(exc, KeyboardInterrupt), diagnostic=diagnostic), runtime=runtime)
+            guard_secondary(exc, diagnostic, 'update_run', lambda: runtime.update_run(run_id, status, error=code, finished=True), runtime=runtime)
+            guard_secondary(exc, diagnostic, 'failure.json', lambda: atomic_json(log / 'failure.json',
+                {'flow_id': self.flow_id, 'run_id': run_id, 'action': name, 'error': code,
+                 'error_details': diagnostic, 'token_usage': reporter.usage.finish(),
+                 'presentation': reporter.references()}), runtime=runtime)
+            guard_secondary(exc, diagnostic, 'run.json', lambda: atomic_json(log / 'run.json',
+                {'flow_id': self.flow_id, 'run_id': run_id, 'action': name, 'status': status}), runtime=runtime)
             raise
         finally:
             if supervisor is not None:
-                supervisor.__exit__(None, None, None)
+                try:
+                    supervisor.__exit__(None, None, None)
+                except BaseException as cleanup_error:
+                    from .diagnostics import record_exception
+                    record_exception(cleanup_error, log / 'cleanup', runtime=runtime, run_id=run_id)
             ACTIVE.reset(reporter_token)
             ACTIVE_RUN.reset(run_token)
 

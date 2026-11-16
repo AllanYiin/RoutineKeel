@@ -6,6 +6,10 @@ import os
 import re
 import traceback
 import uuid
+import sys
+import sqlite3
+from contextlib import closing
+from datetime import datetime, timezone
 from pathlib import Path
 from pydantic import ValidationError
 from .runtime import FlowError, atomic_json, atomic_bytes
@@ -27,6 +31,8 @@ def redact(value):
         if len(secret) >= 8 and re.search(r'(?i)(api.?key|secret|password|access.?token|auth.?token)',name):
             result = result.replace(secret, '[REDACTED]')
     result = re.sub(r'(?i)(Bearer\s+)[A-Za-z0-9._~+/=-]+', r'\1[REDACTED]', result)
+    result = re.sub(r'(?i)\b(api[_-]?key|password|secret|access[_-]?token)\s*[:=]\s*\S+',
+                    r'\1=[REDACTED]', result)
     return result[:16000]
 
 
@@ -64,43 +70,120 @@ def launcher_id(runtime):
     return identifier
 
 
-def record_exception(exc, folder, **context):
-    previous = getattr(exc,'_flow_diagnostic',{})
-    record = {**previous, **describe_exception(exc), **redact(context)}
-    record.setdefault('error_id','error_'+uuid.uuid4().hex)
+def record_exception(exc, folder, *, runtime=None, parent_error_id=None, **context):
+    """Best-effort evidence. Every failure mode returns a minimal primary record."""
+    from .observability.diagnostics import cause_evidence
+
+    try:
+        previous = getattr(exc, '_flow_diagnostic', {})
+        if not isinstance(previous, dict):
+            previous = {}
+    except BaseException:
+        previous = {}
+    error_id = previous.get('error_id') or context.get('error_id') or 'error_' + uuid.uuid4().hex
+    code = exc.code if isinstance(exc, FlowError) else type(exc).__name__
+    try:
+        described = describe_exception(exc)
+    except BaseException:
+        described = {'code': code, 'exception_type': type(exc).__name__,
+                     'message': 'Exception details unavailable', 'stack': []}
+    try:
+        safe_context = redact(context)
+    except BaseException:
+        safe_context = {}
+    record = {**previous, **described, **safe_context, 'error_id': error_id}
+    if parent_error_id:
+        record['parent_error_id'] = parent_error_id
+    try:
+        record['cause_status'], record['evidence'] = cause_evidence(exc)
+    except BaseException:
+        record['cause_status'], record['evidence'] = 'unknown', []
     record['causes'] = []
-    cause = exc.__cause__ or (None if exc.__suppress_context__ else exc.__context__)
-    seen = {id(exc)}
-    while cause is not None and id(cause) not in seen and len(record['causes']) < 8:
-        seen.add(id(cause));record['causes'].append(describe_exception(cause))
-        cause = cause.__cause__ or (None if cause.__suppress_context__ else cause.__context__)
+    try:
+        cause = exc.__cause__ or (None if exc.__suppress_context__ else exc.__context__)
+        seen = {id(exc)}
+        while cause is not None and id(cause) not in seen and len(record['causes']) < 8:
+            seen.add(id(cause))
+            try:
+                record['causes'].append(describe_exception(cause))
+            except BaseException:
+                record['causes'].append({'code': type(cause).__name__, 'exception_type': type(cause).__name__,
+                                         'message': 'Cause details unavailable', 'stack': []})
+            cause = cause.__cause__ or (None if cause.__suppress_context__ else cause.__context__)
+    except BaseException:
+        pass
     folder = Path(folder)
-    record['diagnostic_json'] = str(folder/'error.json')
-    record['exception_log'] = str(folder/'exception.log')
-    lines = [record['error_id'], record['exception_type']+': '+record['message']]
-    for item in [record,*record['causes']]:
+    record['diagnostic_json'] = str(folder / 'error.json')
+    record['exception_log'] = str(folder / 'exception.log')
+    lines = [error_id, record['exception_type'] + ': ' + record['message']]
+    for item in [record, *record['causes']]:
         if item is not record:
-            lines.append('Caused by '+item['exception_type']+': '+item['message'])
-        for frame in item['stack']:
+            lines.append('Caused by ' + item['exception_type'] + ': ' + item['message'])
+        for frame in item.get('stack', []):
             lines.append(f'  File "{frame["file"]}", line {frame["line"]}, in {frame["function"]}')
         if item.get('validation_errors'):
-            lines.append(json.dumps(item['validation_errors'],ensure_ascii=False,indent=2))
-    try:
-        atomic_json(folder/'error.json',record)
-        atomic_bytes(folder/'exception.log', ('\n'.join(lines)+'\n').encode())
-    except OSError as write_error:
-        record['diagnostic_write_error'] = type(write_error).__name__
+            try:
+                lines.append(json.dumps(item['validation_errors'], ensure_ascii=False, indent=2))
+            except BaseException:
+                pass
+
+    record['diagnostic_persistence'] = 'run_log'
+    json_saved = False
+    text_saved = False
+    for path, write in ((folder / 'error.json', lambda: atomic_json(folder / 'error.json', record)),
+                        (folder / 'exception.log', lambda: atomic_bytes(folder / 'exception.log', ('\n'.join(lines)+'\n').encode()))):
+        try:
+            write()
+            if path.name == 'error.json':
+                json_saved = True
+            else:
+                text_saved = True
+        except BaseException as write_error:
+            record['diagnostic_write_error'] = type(write_error).__name__
+            try:
+                from .core.run_context import current
+                active = current()
+                if active and active.event_sink:
+                    active.event_sink.record('diagnostic.persist_failed', severity='ERROR',
+                                             attributes={'code': type(write_error).__name__})
+            except BaseException:
+                pass
+
+    if runtime is None:
         try:
             from .core.run_context import current
-            context = current()
-            if context and context.event_sink:
-                context.event_sink.record('diagnostic.persist_failed', severity='ERROR',
-                                          attributes={'code': type(write_error).__name__})
-        except Exception:
+            active = current()
+            runtime = active.runtime if active else None
+        except BaseException:
+            runtime = None
+    db_saved = False
+    if runtime is not None:
+        try:
+            database = runtime.home / 'state.sqlite3'
+            if database.is_file():
+                with closing(runtime.connect()) as db:
+                    with db:
+                        db.execute('PRAGMA busy_timeout=250')
+                        db.execute('INSERT OR IGNORE INTO diagnostics(error_id,run_id,step_attempt_id,code,cause_status,diagnostic_path,occurred_at) VALUES(?,?,?,?,?,?,?)',
+                                   (error_id, record.get('run_id'), record.get('step_attempt_id'),
+                                    code, record['cause_status'], record['diagnostic_json'] if json_saved else None,
+                                    datetime.now(timezone.utc).isoformat()))
+                db_saved = True
+        except BaseException as db_error:
+            record['diagnostic_db_error'] = type(db_error).__name__
+    if not json_saved:
+        record['diagnostic_json'] = None
+        record['diagnostic_persistence'] = 'run_log' if text_saved else ('db_only' if db_saved else 'stderr_only')
+    if not text_saved:
+        record['exception_log'] = None
+    if not json_saved and not text_saved and not db_saved:
+        try:
+            print(f'[{error_id}] {code}: 診斷儲存失敗；原始錯誤仍保留。', file=sys.stderr, flush=True)
+        except BaseException:
             pass
     try:
         exc._flow_diagnostic = record
-    except (AttributeError,TypeError):
+    except BaseException:
         pass
     return record
 
@@ -109,12 +192,12 @@ def cli_error(runtime, exc, code=None):
     prior = getattr(exc,'_flow_diagnostic',{})
     error_id = prior.get('error_id','error_'+uuid.uuid4().hex)
     folder = runtime.logs/'launcher'/launcher_id(runtime)/error_id
-    diagnostic = record_exception(exc,folder,launch_id=launcher_id(runtime),error_id=error_id)
-    if prior.get('run_diagnostic_json') or (prior.get('run_id') and prior.get('diagnostic_json')):
-        diagnostic['run_diagnostic_json'] = prior.get('run_diagnostic_json', prior['diagnostic_json'])
+    diagnostic = record_exception(exc,folder,runtime=runtime,launch_id=launcher_id(runtime),error_id=error_id)
+    if prior.get('run_diagnostic_json') or (prior.get('run_id') and prior.get('diagnostic_json') and prior.get('diagnostic_persistence') == 'run_log'):
+        diagnostic['run_diagnostic_json'] = prior.get('run_diagnostic_json') or prior.get('diagnostic_json')
         # The returned link is also persisted for an operator reading the file later.
         try:atomic_json(folder/'error.json',diagnostic)
-        except OSError:pass
+        except BaseException:pass
     error = {'code':code or diagnostic['code'], 'message':diagnostic['message'],
              'details':diagnostic.get('details',{}), 'diagnostic':diagnostic}
     return {'ok':False,'error':error}

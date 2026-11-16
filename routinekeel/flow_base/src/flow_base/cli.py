@@ -14,6 +14,7 @@ from .resources import export_resources, import_resources
 from .runtime import FlowError, inspect_environment, read_json, atomic_json
 from .workspace import Workspace, catalog
 from .diagnostics import cli_error
+from .observability.diagnostics import guard_secondary
 
 
 def parser():
@@ -136,7 +137,7 @@ def chat(workspace, selected=None, *, overrides=None, offline=False):
                     print('輸入 /run 執行這個計畫，或輸入新的需求。')
         except (FlowError, ValueError, OSError, KeyError) as exc:
             pending = None
-            emit(cli_error(workspace.runtime, exc))
+            emit_error(workspace.runtime, exc)
     return {'status': 'closed'}
 
 
@@ -167,10 +168,15 @@ def launch(workspace, args):
         if prepared.get('ok') is False or verified.get('ok') is False:
             raise FlowError('TASK_PREPARE', '流程環境驗證未通過', verification=verified)
     except (Exception, KeyboardInterrupt) as exc:
-        state.update(status='failed', error=cli_error(runtime, exc)['error'])
-        atomic_json(state_path, state)
-        atomic_json(runtime.logs / 'launcher' / (launch_id + '.json'), state)
-        print('流程準備失敗；排除錯誤後重新開啟同一入口即可。紀錄：' + str(state_path), file=sys.stderr)
+        primary = cli_error(runtime, exc)
+        state.update(status='failed', error=primary['error'])
+        diagnostic = primary['error']['diagnostic']
+        guard_secondary(exc, diagnostic, 'launcher_state', lambda: atomic_json(state_path, state), runtime=runtime)
+        guard_secondary(exc, diagnostic, 'launcher_log',
+                        lambda: atomic_json(runtime.logs / 'launcher' / (launch_id + '.json'), state), runtime=runtime)
+        guard_secondary(exc, diagnostic, 'launcher_notice',
+                        lambda: print('流程準備失敗；排除錯誤後重新開啟同一入口即可。紀錄：' + str(state_path), file=sys.stderr),
+                        runtime=runtime)
         raise
     state.update(status='ready')
     atomic_json(state_path, state)
@@ -182,6 +188,24 @@ def launch(workspace, args):
 
 def emit(value):
     print(json.dumps(value, ensure_ascii=False, indent=2))
+
+
+def emit_error(runtime, exc, code=None):
+    """A broken diagnostic or output channel cannot replace the original error."""
+    try:
+        result = cli_error(runtime, exc, code)
+    except BaseException:
+        original_code = exc.code if isinstance(exc, FlowError) else type(exc).__name__
+        result = {'ok': False, 'error': {'code': code or original_code,
+                  'message': '錯誤診斷暫時無法保存', 'details': {}, 'diagnostic': {'error_id': 'unavailable'}}}
+    try:
+        emit(result)
+    except BaseException:
+        try:
+            print(f"{result['error']['code']}: {result['error']['diagnostic']['error_id']}", file=sys.stderr)
+        except BaseException:
+            pass
+    return result
 
 
 def main(argv=None):
@@ -257,14 +281,14 @@ def main(argv=None):
         emit({'ok': True, 'result': result})
         return 0
     except FlowError as exc:
-        emit(cli_error(runtime, exc))
+        emit_error(runtime, exc)
         return 2
     except (ValidationError, ValueError, OSError, KeyError, ImportError) as exc:
-        emit(cli_error(runtime, exc, 'INPUT_OR_ENVIRONMENT'))
+        emit_error(runtime, exc, 'INPUT_OR_ENVIRONMENT')
         return 2
     except KeyboardInterrupt as exc:
-        emit(cli_error(runtime, exc, 'INTERRUPTED'))
+        emit_error(runtime, exc, 'INTERRUPTED')
         return 130
     except Exception as exc:
-        emit(cli_error(runtime, exc, 'UNEXPECTED_ERROR'))
+        emit_error(runtime, exc, 'UNEXPECTED_ERROR')
         return 1

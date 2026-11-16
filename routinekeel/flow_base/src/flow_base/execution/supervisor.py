@@ -138,8 +138,11 @@ def start_detached(workspace, task, workflow, source, output=None, *, overrides=
                                          stdin=subprocess.DEVNULL, stdout=output_stream, stderr=subprocess.STDOUT,
                                          cwd=workspace.root, close_fds=True, **kwargs)
         except OSError as exc:
-            RunStore(runtime).finish_failure(run_id)
-            runtime.update_run(run_id, 'failed', error='SUPERVISOR_START', finished=True)
+            from ..diagnostics import record_exception
+            from ..observability.diagnostics import guard_secondary
+            primary = record_exception(exc, logdir, runtime=runtime, run_id=run_id)
+            guard_secondary(exc, primary, 'finish_failure', lambda: RunStore(runtime).finish_failure(run_id), runtime=runtime)
+            guard_secondary(exc, primary, 'update_run', lambda: runtime.update_run(run_id, 'failed', error='SUPERVISOR_START', finished=True), runtime=runtime)
             raise FlowError('SUPERVISOR_START', '無法啟動本機 Run supervisor', run_id=run_id) from exc
         return {'run_id': run_id, 'status': 'created', 'supervisor_pid': child.pid}
 
@@ -166,12 +169,14 @@ def main(argv=None):
                               offline=spec['offline'], reserved_run_id=args.run_id)
         return 0 if result else 1
     except BaseException as exc:
+        from ..observability.diagnostics import guard_secondary
         logdir = runtime.logs / 'supervisor' / args.run_id
-        diagnostic = record_exception(exc, logdir, run_id=args.run_id)
-        RunStore(runtime).finish_failure(args.run_id, interrupted=isinstance(exc, KeyboardInterrupt),
-                                         error_id=diagnostic['error_id'])
-        runtime.update_run(args.run_id, 'interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed',
-                           error=diagnostic['code'], finished=True)
+        diagnostic = record_exception(exc, logdir, runtime=runtime, run_id=args.run_id)
+        guard_secondary(exc, diagnostic, 'finish_failure', lambda: RunStore(runtime).finish_failure(args.run_id,
+            interrupted=isinstance(exc, KeyboardInterrupt), error_id=diagnostic['error_id']), runtime=runtime)
+        guard_secondary(exc, diagnostic, 'update_run', lambda: runtime.update_run(args.run_id,
+            'interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed',
+            error=diagnostic['code'], finished=True), runtime=runtime)
         return 130 if isinstance(exc, KeyboardInterrupt) else 1
 
 
