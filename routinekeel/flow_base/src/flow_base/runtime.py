@@ -255,28 +255,14 @@ class Runtime:
         self.home.mkdir(parents=True, exist_ok=True)
         # Journal mode belongs to the database. Serialize the initial transition
         # across processes; ordinary connections must not try to change it.
-        with FileLock(self.home / 'state.initialize.lock', timeout=30), closing(self.connect()) as db:
-            if db.execute("PRAGMA journal_mode").fetchone()[0] != "wal":
-                db.execute("PRAGMA journal_mode=WAL")
-            db.executescript("""
-            CREATE TABLE IF NOT EXISTS steps(
-              cache_key TEXT PRIMARY KEY, status TEXT NOT NULL, artifact TEXT,
-              artifact_hash TEXT, updated REAL NOT NULL);
-            CREATE TABLE IF NOT EXISTS requests(
-              id TEXT PRIMARY KEY, job TEXT NOT NULL, cache_key TEXT NOT NULL,
-              reserved INTEGER NOT NULL, charged INTEGER, status TEXT NOT NULL,
-              response TEXT, created REAL NOT NULL);
-            CREATE INDEX IF NOT EXISTS requests_job ON requests(job);
-            CREATE TABLE IF NOT EXISTS flows(
-              flow_id TEXT PRIMARY KEY, task_id TEXT NOT NULL UNIQUE,
-              version TEXT NOT NULL, fingerprint TEXT NOT NULL, title TEXT NOT NULL,
-              created REAL NOT NULL, updated REAL NOT NULL);
-            CREATE TABLE IF NOT EXISTS runs(
-              run_id TEXT PRIMARY KEY, flow_id TEXT NOT NULL REFERENCES flows(flow_id),
-              job_id TEXT, status TEXT NOT NULL, source TEXT, output TEXT,
-              started REAL NOT NULL, finished REAL, error TEXT);
-            CREATE INDEX IF NOT EXISTS runs_flow ON runs(flow_id, started);
-            """)
+        with FileLock(self.home / 'state.initialize.lock', timeout=30):
+            database = self.home / 'state.sqlite3'
+            existed = database.exists()
+            with closing(self.connect()) as db:
+                from .storage.migrations import migrate
+                migrate(db, database, existed=existed)
+                if db.execute("PRAGMA journal_mode").fetchone()[0] != "wal":
+                    db.execute("PRAGMA journal_mode=WAL")
 
     def connect(self):
         db = sqlite3.connect(self.home / "state.sqlite3", timeout=30)
