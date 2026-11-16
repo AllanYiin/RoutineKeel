@@ -64,6 +64,23 @@ def parser():
     c.add_argument('--intent', type=Path, required=True)
     c.add_argument('--execute', action='store_true')
     c.add_argument('--offline', action='store_true')
+    for name, help_text in (
+        ('doctor', '唯讀檢查本機環境與狀態'),
+        ('diagnose', '依 run_id 查執行、診斷與最後事件'),
+        ('logs', '列出指定 Run 的本機紀錄'),
+        ('explain-error', '依 error_id 或錯誤碼顯示白話說明'),
+        ('export-diagnostics', '預覽或明確匯出已遮罩診斷')):
+        c = commands.add_parser(name, help=help_text)
+        c.add_argument('--format', choices=['human', 'json'], default='human')
+        if name in {'diagnose', 'logs', 'export-diagnostics'}:
+            c.add_argument('run_id')
+        elif name == 'explain-error':
+            c.add_argument('identifier')
+        if name == 'logs':
+            c.add_argument('--tail', type=int, default=0, help='明確顯示至多 100 行已遮罩 console 尾端')
+        if name == 'export-diagnostics':
+            c.add_argument('--output', type=Path, help='明確指定新的本機 JSON 檔案')
+            c.add_argument('--confirm', action='store_true', help='已檢視預覽並確認匯出')
     return p
 
 
@@ -208,6 +225,60 @@ def emit_error(runtime, exc, code=None):
     return result
 
 
+def diagnostic_command(workspace, args):
+    from .observability.commands import (doctor, diagnose, logs, explain_error_id,
+                                          export_preview, human_text)
+    runtime = workspace.runtime
+    try:
+        if args.command == 'doctor':
+            result = doctor(workspace)
+        elif args.command == 'diagnose':
+            result = diagnose(runtime, args.run_id)
+        elif args.command == 'logs':
+            result = logs(runtime, args.run_id, tail=args.tail)
+        elif args.command == 'explain-error':
+            result = explain_error_id(runtime, args.identifier)
+        else:
+            result = export_preview(runtime, args.run_id,
+                                    destination=args.output, confirm=args.confirm)
+        if args.format == 'json':
+            emit({'ok': True, 'result': result})
+        else:
+            print(human_text(args.command, result))
+        return 1 if (args.command == 'doctor' and result.get('status') == 'needs_attention') or (
+            args.command == 'diagnose' and result.get('execution_status') in {'failed','interrupted','cancelled'}) else 0
+    except FlowError as exc:
+        if args.format == 'json':
+            emit_error(runtime, exc)
+        else:
+            try:
+                error = cli_error(runtime, exc)
+                explanation = error['error'].get('user_explanation') or {}
+                error_id = error['error']['diagnostic']['error_id']
+            except BaseException:
+                from .observability.errors import explain_exception
+                explanation = explain_exception(exc)
+                error_id = 'unavailable'
+            print('問題：' + explanation.get('user_title', '診斷查詢失敗'), file=sys.stderr)
+            print(explanation.get('user_message', '請記下錯誤編號。'), file=sys.stderr)
+            if explanation.get('suggested_actions'):
+                print('下一步：' + explanation['suggested_actions'][0], file=sys.stderr)
+            print('錯誤編號：' + error_id, file=sys.stderr)
+        return 2
+    except Exception as exc:
+        if args.format == 'json':
+            emit_error(runtime, exc, 'UNEXPECTED_ERROR')
+        else:
+            try:
+                result = cli_error(runtime, exc, 'UNEXPECTED_ERROR')
+                error_id = result['error']['diagnostic']['error_id']
+            except BaseException:
+                error_id = 'unavailable'
+            print('診斷功能發生未預期錯誤；請記下錯誤編號交給維護者。', file=sys.stderr)
+            print('錯誤編號：' + error_id, file=sys.stderr)
+        return 3
+
+
 def main(argv=None):
     args = parser().parse_args(argv)
     workspace = Workspace(args.workspace)
@@ -222,6 +293,8 @@ def main(argv=None):
         elif command == 'catalog':
             result = {'runtime_api': '0.2', 'tasks': catalog(workspace), 'intent_schema': Intent.model_json_schema(),
                       'execution': 'dispatch --intent intent.json --execute', 'policy': 'Select installed IDs and declared parameter_paths only; no generated code.'}
+        elif command in {'doctor', 'diagnose', 'logs', 'explain-error', 'export-diagnostics'}:
+            return diagnostic_command(workspace, args)
         elif command == 'inspect':
             result = inspect_environment(runtime.home)
         elif command == 'action':

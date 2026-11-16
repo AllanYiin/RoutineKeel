@@ -15,6 +15,8 @@ PUBLIC_CODES = CONFIRMED_CODES | frozenset({'PROCESS_FAILED', 'UNEXPECTED_ERROR'
     'DELIVERY_FAILED', 'PERMISSION_DENIED', 'SCHEMA_MISMATCH', 'SCHEMA_TOO_NEW',
     'BUSY', 'RUN_CANCEL_REQUESTED', 'PROCESS_CANCELLED', 'WORKER_CRASHED',
     'DIAGNOSTIC_PERSIST_FAILED'})
+from .errors import ALIASES, STANDARD
+PUBLIC_CODES = PUBLIC_CODES | frozenset(ALIASES) | frozenset(STANDARD)
 ERROR_ID = re.compile(r'^error_[a-f0-9]{32}$')
 EXCEPTION_TYPES = frozenset({'FlowError', 'ValidationError', 'ValueError', 'KeyError',
     'TypeError', 'RuntimeError', 'OSError', 'FileNotFoundError', 'PermissionError',

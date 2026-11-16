@@ -200,4 +200,9 @@ def cli_error(runtime, exc, code=None):
         except BaseException:pass
     error = {'code':code or diagnostic['code'], 'message':diagnostic['message'],
              'details':diagnostic.get('details',{}), 'diagnostic':diagnostic}
+    try:
+        from .observability.errors import explain_exception
+        error['user_explanation'] = explain_exception(exc, diagnostic)
+    except BaseException:
+        pass
     return {'ok':False,'error':error}

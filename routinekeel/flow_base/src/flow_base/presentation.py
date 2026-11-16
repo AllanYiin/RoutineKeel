@@ -190,12 +190,24 @@ class Reporter:
     def fail(self, code, message, interrupted=False, diagnostic=None):
         self.finished = True
         label = '工作流已中斷' if interrupted else '工作流執行失敗'
+        from .observability.errors import explain_error
+        from .observability.diagnostics import safe_export
+        explanation = explain_error(code, cause_status=(diagnostic or {}).get('cause_status', 'unknown'))
+        confidence = {'confirmed': '已確認', 'suspected': '可能', 'unknown': '尚未確認'}[explanation['cause_status']]
+        error_id = (diagnostic or {}).get('error_id', '未取得')
+        event_details = safe_export(diagnostic) if diagnostic else None
+        if event_details is not None:
+            event_details['message'] = explanation['user_message']
         from .usage import usage_lines
         tokens = self.usage.finish()
         self.emit('workflow_interrupted' if interrupted else 'workflow_failed',
             ['F L O W _ B A S E   >>>   WORKFLOW STOP', f'【FLOW_BASE｜{label}】 {self.title}', f'停在：{self.label}',
-             f'原因：{code}｜{message}', f'紀錄：{self.logdir}', '未宣告工作流完成。', *usage_lines(tokens)],
-            banner=True, error=code, error_message=message, error_details=diagnostic,
+             f'原因：{explanation["user_title"]}｜{explanation["user_message"]}',
+             f'確定程度：{confidence}｜錯誤碼：{code}｜錯誤編號：{error_id}',
+             '下一步：' + explanation['suggested_actions'][0],
+             f'紀錄：{self.logdir}', '未宣告工作流完成。', *usage_lines(tokens)],
+            banner=True, error=code, error_message=explanation['user_message'],
+            error_details=event_details,
             status='interrupted' if interrupted else 'failed',token_usage=tokens)
 
     def resource_event(self, name, data):
