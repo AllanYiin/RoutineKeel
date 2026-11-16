@@ -155,7 +155,7 @@ def log_tail(log, limit=8000):
         return ''
 
 
-def run_process(argv, *, timeout=60, cwd=None, env=None, log: Path | None = None, progress=None):
+def run_process(argv, *, timeout=60, cwd=None, env=None, log: Path | None = None, progress=None, cancel_event=None):
     """No shell evaluation. Bounded subprocesses, with process-tree termination."""
     kwargs = {"start_new_session": True} if os.name != "nt" else {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
     if log:
@@ -189,11 +189,25 @@ def run_process(argv, *, timeout=60, cwd=None, env=None, log: Path | None = None
         if len(pending) > 16384: pending = b''
         progress({'event':'heartbeat'})
     try:
-        if progress is None or not log:
+        if (progress is None or not log) and cancel_event is None:
             out, _ = p.communicate(timeout=timeout)
         else:
             deadline = time.monotonic() + timeout
             while True:
+                if cancel_event is not None and cancel_event.is_set():
+                    if os.name == 'nt':
+                        p.terminate()
+                    else:
+                        os.killpg(p.pid, signal.SIGTERM)
+                    try:
+                        p.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        if os.name == 'nt':
+                            subprocess.run(['taskkill', '/PID', str(p.pid), '/T', '/F'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        else:
+                            os.killpg(p.pid, signal.SIGKILL)
+                        p.wait()
+                    raise FlowError('PROCESS_CANCELLED', 'Worker 已停止，取消請求已確認', log=str(log) if log else None)
                 remaining = deadline-time.monotonic()
                 if remaining <= 0: raise subprocess.TimeoutExpired(argv,timeout)
                 try:
@@ -277,6 +291,9 @@ class Runtime:
                 migrate(db, database, existed=existed)
                 if db.execute("PRAGMA journal_mode").fetchone()[0] != "wal":
                     db.execute("PRAGMA journal_mode=WAL")
+            from .core.lifecycle import RunStore
+            from .execution.supervisor import identity_matches
+            RunStore(self).reconcile(identity_matches)
 
     def connect(self):
         db = sqlite3.connect(self.home / "state.sqlite3", timeout=30)
@@ -301,12 +318,21 @@ class Runtime:
                            (flow_id, task_id, version, fingerprint, title, now, now))
         return flow_id
 
-    def start_run(self, flow_id, source, output):
+    def start_run(self, flow_id, source, output, *, job_id=None, spec_hash=None, idempotency_key=None):
+        from .core.lifecycle import RunStore
+        self.initialize()
+        with closing(self.connect()) as db:
+            flow = db.execute('SELECT version,fingerprint FROM flows WHERE flow_id=?', (flow_id,)).fetchone()
+        if flow is None:
+            raise FlowError('FLOW_UNKNOWN', '找不到已登錄工作流', flow_id=flow_id)
+        job_id = job_id or digest({'flow_id': flow_id, 'source': str(source), 'output': str(output)})[:32]
+        revision_id = 'rev_' + digest({'flow_id': flow_id, 'version': flow['version'], 'fingerprint': flow['fingerprint']})[:32]
+        spec_hash = spec_hash or digest({'revision_id': revision_id, 'source': str(source), 'output': str(output)})
         run_id = 'run_' + uuid.uuid4().hex
-        with self.connect() as db:
-            db.execute('INSERT INTO runs VALUES(?,?,?,?,?,?,?,?,?)',
-                       (run_id, flow_id, None, 'starting', str(source), str(output), time.time(), None, None))
-        return run_id
+        return RunStore(self).create(run_id=run_id, job_id=job_id, revision_id=revision_id,
+                                     spec_hash=spec_hash, idempotency_key=idempotency_key,
+                                     flow_id=flow_id, source=source, output=output,
+                                     revision_fingerprint=flow['fingerprint'], revision_version=flow['version'])
 
     def update_run(self, run_id, status, *, job_id=None, error=None, finished=False):
         with self.connect() as db:
@@ -408,8 +434,11 @@ class Runtime:
                 argv += ["--offline"]
             from .presentation import ACTIVE
             reporter = ACTIVE.get()
+            from .core.run_context import current
+            context = current(self)
             run_process(argv, cwd=root, env=env, timeout=1800, log=self.logs / "install" / (self.profile_key(profile) + ".log"),
-                        progress=reporter.progress if reporter else None)
+                        progress=reporter.progress if reporter else None,
+                        cancel_event=context.cancel_requested if context else None)
             if not python.is_file():
                 raise FlowError("ENV_INVALID", "Profile Python was not created")
             atomic_json(location, current)
@@ -445,7 +474,8 @@ class Runtime:
             from .presentation import ACTIVE
             reporter = context.reporter if context else ACTIVE.get()
             run_process([python, self.workers[profile], path], timeout=timeout, env=env, log=worker_log,
-                        progress=reporter.progress if reporter else None)
+                        progress=reporter.progress if reporter else None,
+                        cancel_event=context.cancel_requested if context else None)
             return read_json(response)
         finally:
             path.unlink(missing_ok=True)

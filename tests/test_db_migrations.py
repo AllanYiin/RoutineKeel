@@ -25,7 +25,7 @@ def test_empty_database_initializes_once(tmp_path):
     runtime.initialize()
     runtime.initialize()
     with runtime.connect() as db:
-        assert db.execute('PRAGMA user_version').fetchone()[0] == 1
+        assert db.execute('PRAGMA user_version').fetchone()[0] == 2
         assert db.execute('SELECT version,checksum FROM schema_migrations').fetchall()[0]['checksum'] == v001.CHECKSUM
         assert db.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
 
@@ -79,7 +79,7 @@ def test_two_initializers_share_one_migration(tmp_path):
     with ThreadPoolExecutor(max_workers=2) as pool:
         list(pool.map(lambda _: Runtime(home).initialize(), range(2)))
     with Runtime(home).connect() as db:
-        assert db.execute('SELECT count(*) FROM schema_migrations').fetchone()[0] == 1
+        assert db.execute('SELECT count(*) FROM schema_migrations').fetchone()[0] == 2
         assert db.execute('SELECT count(*) FROM runs').fetchone()[0] == 1
 
 
@@ -112,3 +112,25 @@ def test_marked_schema_missing_new_table_refuses_use(tmp_path):
     with pytest.raises(FlowError) as error:
         runtime.initialize()
     assert error.value.code == 'SCHEMA_MISMATCH'
+
+
+def test_v001_database_upgrades_to_v002_with_own_backup(tmp_path):
+    home = tmp_path / 'share_states'
+    home.mkdir()
+    database = home / 'state.sqlite3'
+    with sqlite3.connect(database) as db:
+        db.execute('CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL, checksum TEXT NOT NULL)')
+        v001.apply(db)
+        db.execute('INSERT INTO schema_migrations VALUES(1,?,?)', ('2026-01-01', v001.CHECKSUM))
+        db.execute('PRAGMA user_version=1')
+        db.execute("INSERT INTO flows VALUES('flow_old','task','0.1.0','hash','Title',1,1)")
+    runtime = Runtime(home)
+    runtime.initialize()
+    backup = home / 'state.sqlite3.before-v002.sqlite3'
+    assert backup.is_file()
+    with sqlite3.connect(backup) as old:
+        assert old.execute('PRAGMA user_version').fetchone()[0] == 1
+    with runtime.connect() as db:
+        assert db.execute('PRAGMA user_version').fetchone()[0] == 2
+        assert db.execute('SELECT count(*) FROM flows').fetchone()[0] == 1
+        assert db.execute('SELECT count(*) FROM schema_migrations').fetchone()[0] == 2

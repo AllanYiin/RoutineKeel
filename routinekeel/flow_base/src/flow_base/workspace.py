@@ -227,29 +227,54 @@ class Task:
         from .core.run_context import RunContext, ACTIVE_RUN
         from types import SimpleNamespace
         reporter = Reporter(self.manifest.title + '｜' + name, self.flow_id, run_id, log, 1)
+        from .core.lifecycle import RunStore
+        from .execution.supervisor import Supervisor
         action_payload = {'flow_id': self.flow_id, 'run_id': run_id, 'action': name,
                           'folder': self.folder, 'logdir': log}
         run_token = ACTIVE_RUN.set(RunContext(runtime, run_id, log, reporter, action=name, action_payload=action_payload))
         reporter_token = ACTIVE.set(reporter)
+        store = RunStore(runtime)
+        supervisor = None
         try:
+            store.transition(run_id, 'created', 'queued')
+            supervisor = Supervisor(runtime, run_id, ACTIVE_RUN.get())
+            supervisor.__enter__()
+            store.transition(run_id, 'preparing', 'running')
             reporter.start()
             reporter.enter(SimpleNamespace(id=name, handler='adapter.invoke_action'), 1, name)
             result = adapter.invoke_action(runtime, name, parameters)
+            if supervisor.heartbeat_error:
+                raise FlowError('SUPERVISOR_HEARTBEAT', '執行期間無法更新監督程序 lease') from supervisor.heartbeat_error
+            if ACTIVE_RUN.get().cancel_requested.is_set():
+                raise FlowError('RUN_CANCEL_REQUESTED', '已確認取消；停止成果發布')
             status = result.get('status', result.get('decision', 'complete')) if isinstance(result, dict) else 'complete'
             report = {'flow_id': self.flow_id, 'run_id': run_id, 'action': name, 'result': result,
                       'status': status, 'token_usage': reporter.usage.finish(), 'presentation': reporter.references()}
             atomic_json(log / 'report.json', report)
-            reporter.complete('executed')
-            reporter.end(report)
-            runtime.update_run(run_id, status, finished=True)
-            atomic_json(log / 'run.json', {'flow_id': self.flow_id, 'run_id': run_id, 'action': name, 'status': status})
+            store.transition(run_id, 'running', 'publishing')
+            store.record_delivery(run_id, log / 'report.json')
+            store.transition(run_id, 'publishing', 'succeeded', result_status=str(status).lower(), delivery_status='published')
+            try:
+                reporter.complete('executed')
+                reporter.end(report)
+                runtime.update_run(run_id, status, finished=True)
+                atomic_json(log / 'run.json', {'flow_id': self.flow_id, 'run_id': run_id, 'action': name, 'status': status})
+            except Exception as post_error:
+                from .diagnostics import record_exception
+                try:
+                    report['post_delivery_diagnostic'] = record_exception(post_error, log / 'post_delivery', run_id=run_id)['diagnostic_json']
+                except Exception:
+                    report['post_delivery_diagnostic'] = 'unavailable'
             return report
         except BaseException as exc:
             from .diagnostics import record_exception, launcher_id
             code = exc.code if isinstance(exc, FlowError) else type(exc).__name__
-            status = 'interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed'
+            cancelled = isinstance(exc, FlowError) and exc.code in {'PROCESS_CANCELLED', 'RUN_CANCEL_REQUESTED'}
+            status = 'cancelled' if cancelled else ('interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed')
             diagnostic = record_exception(exc, log, flow_id=self.flow_id, run_id=run_id,
                                           action=name, launch_id=launcher_id(runtime))
+            store.finish_failure(run_id, interrupted=isinstance(exc, KeyboardInterrupt), cancelled=cancelled, error_id=diagnostic['error_id'])
+            status = store.get(run_id)['execution_status']
             reporter.fail(code, diagnostic['message'], interrupted=isinstance(exc, KeyboardInterrupt), diagnostic=diagnostic)
             runtime.update_run(run_id, status, error=code, finished=True)
             atomic_json(log / 'failure.json', {'flow_id': self.flow_id, 'run_id': run_id, 'action': name,
@@ -258,6 +283,8 @@ class Task:
             atomic_json(log / 'run.json', {'flow_id': self.flow_id, 'run_id': run_id, 'action': name, 'status': status})
             raise
         finally:
+            if supervisor is not None:
+                supervisor.__exit__(None, None, None)
             ACTIVE.reset(reporter_token)
             ACTIVE_RUN.reset(run_token)
 

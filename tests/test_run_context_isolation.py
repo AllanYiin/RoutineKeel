@@ -13,6 +13,7 @@ from flow_base.runtime import FlowError, Runtime
 def test_hundred_interleaved_worker_contexts_do_not_cross(tmp_path, monkeypatch):
     runtime = Runtime(tmp_path / 'share_states')
     runtime.logs = tmp_path / 'share_logs'
+    (runtime.home / 'requests').mkdir(parents=True)
     python = tmp_path / 'python.exe'
     python.touch()
     runtime.workers['profile'] = tmp_path / 'worker.py'

@@ -8,18 +8,18 @@ from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import v001
+from . import v001, v002
 
-MIGRATIONS = (v001,)
+MIGRATIONS = (v001, v002)
 
 
 def _tables(db):
     return {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
 
 
-def _backup(db, path: Path):
+def _backup(db, path: Path, target_version: int):
     """Use SQLite backup API so a WAL database is captured consistently."""
-    destination = path.with_name(path.name + '.before-v001.sqlite3')
+    destination = path.with_name(path.name + f'.before-v{target_version:03}.sqlite3')
     temporary = destination.with_name(destination.name + '.tmp')
     checksum_path = destination.with_name(destination.name + '.sha256')
     if destination.exists():
@@ -66,18 +66,22 @@ def migrate(db: sqlite3.Connection, path: Path, *, existed: bool):
         missing = v001.NEW_TABLES - tables
         if missing:
             raise FlowError('SCHEMA_MISMATCH', '已標記升級的資料庫缺少必要資料表', missing=sorted(missing))
+        extra = {row[1] for row in db.execute('PRAGMA table_info(run_executions)')}
+        if not {'idempotency_key', 'supervisor_pid', 'supervisor_started_at', 'heartbeat_at'} <= extra:
+            raise FlowError('SCHEMA_MISMATCH', '已標記升級的資料庫缺少認領欄位')
         return
 
     # Do not overwrite a previous recovery point. An old backup remains usable
     # after a failed attempt, and the transaction below is safe to retry.
     if existed and tables:
-        backup = path.with_name(path.name + '.before-v001.sqlite3')
+        target_version = version + 1
+        backup = path.with_name(path.name + f'.before-v{target_version:03}.sqlite3')
         checksum_file = backup.with_name(backup.name + '.sha256')
         if backup.exists():
             if not checksum_file.exists() or hashlib.sha256(backup.read_bytes()).hexdigest() != checksum_file.read_text(encoding='ascii').strip():
                 raise FlowError('SCHEMA_BACKUP_INVALID', '既有遷移備份的 checksum 不符，拒絕繼續升級')
         else:
-            _backup(db, path)
+            _backup(db, path, target_version)
     try:
         db.execute('BEGIN IMMEDIATE')
         db.execute('CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL, checksum TEXT NOT NULL)')
