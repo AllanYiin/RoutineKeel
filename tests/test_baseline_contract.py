@@ -1,7 +1,17 @@
 """Stage 0 smoke checks for existing public CLI and error envelope."""
 import json
+import tomllib
+from pathlib import Path
+
+import flow_base
 
 from flow_base.cli import main
+
+
+def test_runtime_version_matches_package_metadata():
+    root = Path(__file__).resolve().parents[1]
+    project = tomllib.loads((root / 'routinekeel/flow_base/pyproject.toml').read_text(encoding='utf-8'))
+    assert flow_base.__version__ == project['project']['version']
 
 
 def _last_json(capsys):

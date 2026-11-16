@@ -101,3 +101,11 @@ requirements.txt 從 pyproject.toml 固定依賴生成供維護參考；安裝�
 - 以指定檔案或已驗證 Thread ID 綁定 Codex rollout。支援新版 token_usage_record、舊版 token_count 及宿主轉送的 App Server 通知，取最新累計，不重複相加；不得自動選最新視窗。
 - 同一來源起訖收據計算觀測增量，缺失／重設／跨來源標示 unknown。沒有新收據的增量 0 不代表整輪無耗用。終止快照固定，提供可追查的數值來源但不複製對話內容。
 - 宿主及流程 API 用量分開，沒有身分或可讀收據不阻斷流程，不估計未回報用量。不新增底座對領域程式的相依。
+
+## Stage 10：MCP 持久化佇列修訂
+
+依使用者後續決定，MCP 只負責短時間的驗證、提交、查詢與取消；正式流程由**另外啟動**的本機 `queue-worker` 領取。`submit_workflow` 在 SQLite 入列成功後立即回 `execution_id` 與 `queued`，此時不得虛構 `run_id`；Worker 開始時才由既有底座建立 `run_id`。同一提交鍵與相同規格回原 `execution_id`，規格不同則拒絕。Worker 不由 MCP 程序派生；未啟動 Worker 時任務維持 queued，須明確顯示等待原因，不假裝正在執行。
+
+MCP 工具以 `execution_id` 提供 `get_workflow_status`、`get_workflow_result`、`cancel_workflow`；每次呼叫可由新 MCP 連線或新對話獨立完成。進度與結果只讀本機持久化狀態，保留 `REVIEW_REQUIRED` 等審閱結果，不把處理完成說成人工核准。排隊可直接取消；執行中僅提出取消請求，直到 Run 終態才回報確認停止。第一版一次只執行一件，Worker 對佇列認領使用 SQLite 交易、單工作區 lock 與 lease；崩潰後重啟不得重複啟動同一規格。
+
+本機 MCP 仍只用 stdio，無 HTTP Port、遠端驗證、任意 shell 或診斷自動上傳。佇列第一版只接受工作區內輸入及輸出；外部附件須先由使用者明確匯入工作區。MCP 2026-07-28 的無 Session 協定屬通訊層，工作持久化是 RoutineKeel SQLite 的責任；不以協定無狀態推論作業系統程序會自行存活。原生 MCP Tasks 僅在確認宿主支援 `io.modelcontextprotocol/tasks` 後另行映射，普通工具先可用。技術契約、白話流程、驗收與回滾見 [mcp-queue-v1.md](mcp-queue-v1.md)。

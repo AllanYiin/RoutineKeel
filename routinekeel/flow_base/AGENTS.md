@@ -20,6 +20,7 @@
 - 禁止將多個 Get-Command 結果當成一個執行檔；先實際驗證選定 uv。
 - 不把 .venv、模型、憑證、日誌或測試用 PowerShell 打包。
 - 使用相對工作區位置；主流程不以自然語言組合 shell 命令。
+- MCP 只提交與查詢 SQLite 佇列；`queue-worker` 由使用者另行啟動，不由 MCP 子程序派生，也不安裝常駐 HTTP／OS 服務。
 
 ## 專案特例
 

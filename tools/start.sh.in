@@ -97,4 +97,8 @@ if [ ! -f "$marker" ] || [ "$(cat "$marker")" != "$expected" ] || ! valid_runtim
   trap - EXIT HUP INT TERM
 fi
 if [ "${1:-}" = '--bootstrap-only' ]; then exit 0; fi
+if [ "${1:-}" = '--install-mcp' ]; then
+  "$UV" pip install --no-config --python "$python" --no-build 'mcp==2.3.0'
+  exit $?
+fi
 exec "$python" -I -m flow_base --workspace "$FLOW_BASE_WORKSPACE" "$@"

@@ -46,6 +46,21 @@ class StartRequest(PlanRequest):
     expected_spec_hash: str | None = Field(default=None, pattern=r'^[a-f0-9]{64}$')
 
 
+class SubmitRequest(StartRequest):
+    """A durable queue request; execution_id exists before a Run is created."""
+
+
+class SubmitResult(Immutable):
+    contract_version: Literal['1.0'] = '1.0'
+    execution_id: str
+    status: Literal['queued', 'dispatching', 'running', 'cancel_requested',
+                    'succeeded', 'failed', 'interrupted', 'cancelled']
+    run_id: str | None = None
+    submitted_at: str
+    execution_spec_hash: str
+    poll_after_ms: int | None = 1000
+
+
 class StartResult(Immutable):
     contract_version: Literal['1.0'] = '1.0'
     run_id: str

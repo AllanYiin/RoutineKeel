@@ -13,7 +13,7 @@ from pathlib import Path
 
 from ..runtime import FlowError, atomic_json, read_json
 from ..workspace import Workspace, catalog
-from .types import PlanRequest, PlanResult, StartRequest, StartResult
+from .types import PlanRequest, PlanResult, StartRequest, StartResult, SubmitRequest, SubmitResult
 
 RUN_ID = re.compile(r'^run_[a-f0-9]{32}$')
 
@@ -174,6 +174,93 @@ class WorkflowService:
         return StartResult(run_id=launched['run_id'], status=launched['status'],
                            submitted_at=datetime.now(timezone.utc).isoformat(),
                            execution_spec_hash=planned.execution_spec_hash)
+
+    def submit_workflow(self, request):
+        """Validate, persist and return an ID without launching code in this process."""
+        from .queue import QueueStore
+
+        request = SubmitRequest.model_validate(request)
+        planned = self.plan_workflow(PlanRequest(**request.model_dump(
+            exclude={'idempotency_key', 'expected_spec_hash'})))
+        if planned.plan.get('blocked') or not planned.plan.get('ready_to_prepare'):
+            raise FlowError('PREFLIGHT_BLOCKED', '請先處理計畫中的阻礙',
+                            blockers=planned.plan.get('blocked') or [])
+        if not planned.execution_spec_hash:
+            raise FlowError('PREFLIGHT_BLOCKED', '缺少可驗證的執行規格')
+        if request.expected_spec_hash and request.expected_spec_hash != planned.execution_spec_hash:
+            raise FlowError('RUN_SPEC_MISMATCH', '輸入或設定已改變；請重新檢查計畫')
+        source = self._path(request.source, allow_external=request.allow_external_paths)
+        output = self._path(planned.plan.get('output'), allow_external=request.allow_external_paths)
+        if source is None or not source.is_file() or output is None:
+            raise FlowError('INPUT_NOT_FOUND', '請提供現有的輸入檔案與成果位置')
+        if not source.is_relative_to(self.workspace.root) or not output.is_relative_to(self.workspace.root):
+            raise FlowError('PERMISSION_DENIED', '跨程序佇列只接受工作區內檔案與成果路徑')
+        row = QueueStore(self.workspace.runtime).submit(
+            workflow_id=request.task, flow_id=planned.plan['flow_id'], source=source,
+            output=output, overrides=request.overrides, offline=request.offline,
+            spec_hash=planned.execution_spec_hash, idempotency_key=request.idempotency_key)
+        return SubmitResult(execution_id=row['execution_id'], status=row['status'],
+                            run_id=row['run_id'], submitted_at=row['submitted_at'],
+                            execution_spec_hash=row['execution_spec_hash'],
+                            poll_after_ms=None if row['status'] in {'succeeded','failed','interrupted','cancelled'} else 1000)
+
+    def get_workflow_status(self, execution_id):
+        from .queue import QueueStore, TERMINAL
+
+        row = QueueStore(self.workspace.runtime).get(execution_id)
+        status = row['status']
+        run = None
+        if row['run_id']:
+            run = self.get_run_status(row['run_id'])
+            if run['execution_status'] in TERMINAL:
+                status = run['execution_status']
+        progress = None
+        current_step = None
+        if row['run_id']:
+            path = self.workspace.runtime.logs / row['flow_id'] / row['run_id'] / 'live_progress.json'
+            try:
+                live = read_json(path)
+                current_step = live.get('step_id') if isinstance(live.get('step_id'), str) else None
+                value = live.get('progress')
+                if isinstance(value, dict):
+                    progress = {key: value[key] for key in ('completed', 'total')
+                                if type(value.get(key)) in (int, float) and value[key] >= 0}
+            except (OSError, ValueError, TypeError):
+                pass
+        return {'contract_version': self.contract_version, 'execution_id': execution_id,
+                'status': status, 'run_id': row['run_id'], 'current_step': current_step,
+                'progress': progress, 'result_status': run['result_status'] if run else None,
+                'error_id': run['error_id'] if run else None,
+                'error_code': row['error_code'], 'submitted_at': row['submitted_at'],
+                'started_at': row['started_at'], 'finished_at': row['finished_at'],
+                'poll_after_ms': None if status in TERMINAL else 1000}
+
+    def get_workflow_result(self, execution_id):
+        status = self.get_workflow_status(execution_id)
+        if status['status'] != 'succeeded':
+            return {'execution_id': execution_id, 'status': status['status'],
+                    'run_id': status['run_id'], 'result_available': False,
+                    'result_status': status['result_status'], 'error_id': status['error_id'],
+                    'error_code': status['error_code']}
+        return {'execution_id': execution_id, 'status': 'succeeded',
+                'run_id': status['run_id'], 'result_available': True,
+                'result_status': status['result_status'],
+                'artifacts': self.list_run_artifacts(status['run_id'])}
+
+    def cancel_workflow(self, execution_id):
+        from .queue import QueueStore
+
+        row = QueueStore(self.workspace.runtime).cancel(execution_id)
+        if row['run_id'] and row['status'] == 'cancel_requested':
+            try:
+                self.cancel_run(row['run_id'])
+            except FlowError as exc:
+                if exc.code != 'STATE_CONFLICT':
+                    raise
+        status = self.get_workflow_status(execution_id)
+        return {'execution_id': execution_id, 'status': status['status'],
+                'run_id': status['run_id'],
+                'confirmed_stopped': status['status'] == 'cancelled'}
 
     def run_workflow_sync(self, request):
         from ..engine import run_workflow

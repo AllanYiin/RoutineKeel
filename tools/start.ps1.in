@@ -43,6 +43,13 @@ $env:UV_LINK_MODE = 'copy'
 $env:PYTHONDONTWRITEBYTECODE = '1'
 $Arch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
 $Bootstrap = Join-Path $env:FLOW_BASE_HOME ('bootstrap\Windows-' + $Arch)
+function Get-FlowSha256 {
+    param([string] $Path)
+    $Stream = [System.IO.File]::OpenRead($Path)
+    $Hash = [System.Security.Cryptography.SHA256]::Create()
+    try { return ([System.BitConverter]::ToString($Hash.ComputeHash($Stream))).Replace('-', '').ToLowerInvariant() }
+    finally { $Stream.Dispose(); $Hash.Dispose() }
+}
 function Select-FlowUv {
     param([string[]] $Candidates)
     foreach ($Candidate in $Candidates) {
@@ -72,7 +79,7 @@ if (-not $UvExe) {
     }
     try {
         Invoke-WebRequest -UseBasicParsing -Uri $UvUrl -OutFile $Archive -TimeoutSec 120
-        if ((Get-FileHash -Algorithm SHA256 $Archive).Hash.ToLowerInvariant() -ne $UvHash) { throw 'uv integrity check failed.' }
+        if ((Get-FlowSha256 $Archive) -ne $UvHash) { throw 'uv integrity check failed.' }
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         $Zip = [IO.Compression.ZipFile]::OpenRead($Archive)
         try {
@@ -99,7 +106,7 @@ if (-not $UvExe) {
 Write-Host ('Using uv executable: ' + $UvExe)
 $env:PATH = (Split-Path $UvExe) + [IO.Path]::PathSeparator + $env:PATH
 $Wheel = Join-Path $PSScriptRoot '@WHEEL@'
-$Actual = (Get-FileHash -Algorithm SHA256 $Wheel).Hash.ToLowerInvariant()
+$Actual = Get-FlowSha256 $Wheel
 if ($Actual -ne '@WHEEL_HASH@') { throw 'Runtime package integrity check failed.' }
 $Marker = Join-Path $env:FLOW_BASE_HOME 'base-environment'
 $Venv = Join-Path $env:FLOW_BASE_WORKSPACE '.venv'
@@ -155,6 +162,14 @@ if (($Saved -ne $Expected) -or (-not (Test-FlowRuntime))) {
 }
 Set-FlowLaunchState 'ready'
 Write-Host '環境準備完成，進入 flow_base。'
+if (($LauncherArgs.Count -eq 1) -and ($LauncherArgs[0] -eq '--install-mcp')) {
+    & $UvExe pip install --no-config --python $Python --no-build 'mcp==2.3.0'
+    if ($LASTEXITCODE -ne 0) { throw 'MCP optional package installation failed.' }
+    $CommandExitCode = 0
+    Set-FlowLaunchState 'completed'
+    if ($TranscriptActive) { Stop-Transcript | Out-Null; $TranscriptActive = $false }
+    exit 0
+}
 # Command execution: keep noninteractive output inside the launch transcript.
 if (($LauncherArgs.Count -eq 1) -and ($LauncherArgs[0] -eq '--bootstrap-only')) {
     Stop-Transcript | Out-Null

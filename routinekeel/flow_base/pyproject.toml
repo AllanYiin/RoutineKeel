@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "flow_base"
-version = "0.2.11"
+version = "0.2.12"
 description = "Shared workspace runtime for independently packaged workflows"
 requires-python = ">=3.11,<3.14"
 dependencies = [
@@ -16,6 +16,11 @@ license = "MIT"
 
 [project.scripts]
 flow_base = "flow_base.cli:main"
+
+[project.optional-dependencies]
+mcp = [
+    "mcp==2.3.0",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/flow_base"]

@@ -1,4 +1,4 @@
-# SQLite 遷移策略（Stage 0 設計，尚未實作）
+# SQLite 遷移策略（Stage 0 設計；v001–v004 已實作）
 
 1. 先取得 `state.initialize.lock` 並拒絕活躍寫入型 Run；以 SQLite backup API 建立一次性完整備份，不單獨複製 WAL 模式中的主檔。備份寫入工作區內指定位置並驗證可開啟、完整性與既有表筆數。
 2. 讀取 schema 版本與 migration checksum；未知較新版 schema 拒絕寫入並顯示明確錯誤。舊 DB 無版本時視作 legacy baseline，不覆蓋原始 `runs.status`。
@@ -12,7 +12,9 @@
 
 Stage 3 的 v002 增加 idempotency、supervisor 程序身分、heartbeat 與 lease 欄位；從 v001 升級時另建立 `state.sqlite3.before-v002.sqlite3` 與 `.sha256`。Run、Step Attempt 的新狀態寫入從 Stage 3 開始接入實際執行；舊 `runs` 保留為 CLI history 相容資料。
 
-Stage 7 的 v003 讓 `artifact_sets` 可選關聯 `step_attempt_id` 與 `cache_key`，並限制同一 Run 同時存在一筆 staged／published Delivery。從 v002 升級前建立 `state.sqlite3.before-v003.sqlite3` 與 `.sha256`。目前最高 `PRAGMA user_version=3`；舊四表及舊成果不在 migration 中搬移或刪除。
+Stage 7 的 v003 讓 `artifact_sets` 可選關聯 `step_attempt_id` 與 `cache_key`，並限制同一 Run 同時存在一筆 staged／published Delivery。從 v002 升級前建立 `state.sqlite3.before-v003.sqlite3` 與 `.sha256`。
+
+Stage 10 的 v004 新增 `execution_queue`，使 `execution_id` 入列時即存在、`run_id` 開跑後才關聯；保留舊表與舊 Run 原值。從 v003 升級前建立 `state.sqlite3.before-v004.sqlite3` 與 `.sha256`。目前最高 `PRAGMA user_version=4`；不將既有同步 Run 偽裝為佇列工作。
 
 首次升級舊資料庫前，使用 SQLite backup API 產生 `share_states/state.sqlite3.before-v001.sqlite3` 與同名 `.sha256`；在備份存在且 checksum 相符時重試不覆蓋備份。未知較新 schema、遷移 checksum 不符或舊表必要欄位缺失會拒絕升級。每次 migration 在單一交易內建表與寫入 `PRAGMA user_version`、`schema_migrations`；中斷時交易回滾。
 

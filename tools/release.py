@@ -1,6 +1,7 @@
 """Build one ZIP per component in dist, with a separate test workspace."""
 from pathlib import Path
 import argparse
+import ast
 import hashlib
 import json
 import re
@@ -54,6 +55,14 @@ def project_info(path):
             raise ValueError(f'Invalid package or archive name in {path}')
     if not re.fullmatch(r'\d+\.\d+\.\d+', version):
         raise ValueError(f'Expected major.minor.patch in {path}')
+    if path == BASE:
+        tree = ast.parse((path / 'src/flow_base/__init__.py').read_text(encoding='utf-8'))
+        declared = [node.value.value for node in tree.body
+                    if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)
+                    and any(isinstance(target, ast.Name) and target.id == '__version__'
+                            for target in node.targets)]
+        if declared != [version]:
+            raise ValueError('flow_base.__version__ must match pyproject.toml before packaging')
     return name, version, archive
 
 
@@ -99,11 +108,14 @@ def write_bootstrap(dest, wheel, version):
 
 
 def write_ui_launchers(dest):
-    """Expose the optional local UI through the existing bootstrap scripts."""
+    """Expose optional local tools through the existing bootstrap scripts."""
     wrappers = {
         'open_ui.bat': '@echo off\r\ncall "%~dp0run_app.bat" ui %*\r\n',
         'open_ui.sh': '#!/bin/sh\nHERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec sh "$HERE/run_app.sh" ui "$@"\n',
         'open_ui.command': '#!/bin/sh\nHERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec sh "$HERE/run_app.command" ui "$@"\n',
+        'queue_worker.bat': '@echo off\r\ncall "%~dp0run_app.bat" queue-worker %*\r\n',
+        'queue_worker.sh': '#!/bin/sh\nHERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec sh "$HERE/run_app.sh" queue-worker "$@"\n',
+        'queue_worker.command': '#!/bin/sh\nHERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec sh "$HERE/run_app.command" queue-worker "$@"\n',
     }
     for name, body in wrappers.items():
         target = dest / name
@@ -137,6 +149,7 @@ def build_project(path, staging):
         run([sys.executable, str(launcher), '--root', str(dest), '--flow-base-package'])
         write_ui_launchers(dest)
         shutil.copyfile(path / 'docs/user-guide.md', dest / 'user-guide.md')
+        shutil.copyfile(path / 'docs/mcp-local.md', dest / 'mcp-local.md')
         sources = [(BASE, 'routinekeel/flow_base/'), (ROOT / 'tools', 'tools/')]
     else:
         manifest = json.loads((path / 'flow.template.json').read_text(encoding='utf-8'))

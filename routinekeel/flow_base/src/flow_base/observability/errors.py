@@ -39,7 +39,7 @@ STANDARD = {
 
 # Every base FlowError code is explicit here; tests compare this list with source.
 GROUPS = {
-    'INPUT_NOT_FOUND': '''FLOW_UNKNOWN INPUT_MISSING RUN_UNKNOWN TASK_UNKNOWN RESOURCE_MISSING DIAGNOSTIC_UNKNOWN DELIVERY_UNKNOWN''',
+    'INPUT_NOT_FOUND': '''FLOW_UNKNOWN INPUT_MISSING RUN_UNKNOWN EXECUTION_UNKNOWN TASK_UNKNOWN RESOURCE_MISSING DIAGNOSTIC_UNKNOWN DELIVERY_UNKNOWN''',
     'INVALID_CONFIGURATION': '''API_KEY_MISSING BUDGET_EXHAUSTED INTENT_CONFIG INTENT_PARAMETER INTENT_TASK INTENT_TRUNCATED
         OUTPUT_CONFLICT OUTPUT_LAYOUT PREFLIGHT_BLOCKED PROCESS_ARGUMENTS PROFILE_COLLISION PROFILE_INVALID
         ROUTER_DISABLED ROUTER_NOT_CONFIGURED RUN_SPEC_INVALID RUN_SPEC_MISMATCH TASK_ACTION_PARAMETERS
@@ -75,6 +75,7 @@ for canonical, names in GROUPS.items():
 SPECIFIC = {
     'INPUT_MISSING': ('輸入檔案不存在或不是一般檔案。', ['重新選取可讀的輸入檔案。']),
     'TASK_UNKNOWN': ('工作區內找不到指定流程。', ['確認流程包與 flow_base 放在同一工作區後重新列出流程。']),
+    'EXECUTION_UNKNOWN': ('找不到指定的待執行工作。', ['核對完整 execution_id 與工作區位置。']),
     'BUSY': ('另一個寫入型 Run 正在使用工作區。', ['用 history 或 diagnose 確認其狀態，完成後再提交。']),
     'HUMAN_REVIEW_PRESENT': ('正式成果含人工修訂或核准，重跑不能覆寫。', ['使用流程宣告的審閱能力，或選擇新的輸出工作。']),
     'OFFLINE_RESOURCE_MISSING': ('離線模式缺少流程需要的資源。', ['連線準備資源並驗證後，再以離線模式執行。']),

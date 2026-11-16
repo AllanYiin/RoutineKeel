@@ -14,7 +14,7 @@ from .workspace import Workspace, catalog
 from .diagnostics import cli_error
 from .observability.diagnostics import guard_secondary
 from .core.service import WorkflowService
-from .core.types import PlanRequest, StartRequest
+from .core.types import PlanRequest, StartRequest, SubmitRequest
 
 
 def parser():
@@ -24,6 +24,21 @@ def parser():
     commands = p.add_subparsers(dest='command')
     commands.add_parser('list', help='列出同層含 flow.json 的流程，不載入任務程式')
     commands.add_parser('ui', help='開啟本機圖形工作台；無圖形環境時仍可用 CLI')
+    commands.add_parser('mcp-stdio', help='啟動可選的本機 MCP stdio 工具入口')
+    c = commands.add_parser('queue-worker', help='另外啟動本機任務佇列 Worker；不由 MCP 派生')
+    c.add_argument('--once', action='store_true', help='處理一件工作後退出；沒有工作時立即退出')
+    c.add_argument('--poll-interval', type=float, default=0.5)
+    c.add_argument('--idle-timeout', type=float, default=0.0, help='閒置多少秒後退出；0 表示持續等待')
+    c = commands.add_parser('submit', help='驗證後把工作寫入持久化佇列，立即回傳 execution_id')
+    c.add_argument('--task', required=True)
+    c.add_argument('--input', type=Path, required=True)
+    c.add_argument('--output', type=Path)
+    c.add_argument('--config', type=Path)
+    c.add_argument('--offline', action='store_true')
+    c.add_argument('--idempotency-key')
+    for name in ('execution-status', 'execution-result', 'execution-cancel'):
+        c = commands.add_parser(name, help='以 execution_id 查詢或取消佇列工作')
+        c.add_argument('execution_id')
     from .codex_tokens import add_arguments
     add_arguments(commands.add_parser('tokens', help='讀取指定 Codex Session 的最新累計用量'))
     commands.add_parser('inspect', help='檢查作業系統、CPU、GPU、Python 與空間')
@@ -310,6 +325,14 @@ def main(argv=None):
                     print('本機圖形介面無法啟動；可使用原有 CLI。' + str(exc), file=sys.stderr)
                     return 2
                 raise
+        if command == 'mcp-stdio':
+            from .adapters.mcp_stdio import run_stdio
+            try:
+                run_stdio(workspace.root)
+                return 0
+            except FlowError as exc:
+                print(f'{exc.code}: {exc}', file=sys.stderr)
+                return 2
         if command == 'tokens':
             from .codex_tokens import query
             result = query(args)
@@ -327,6 +350,23 @@ def main(argv=None):
             result = service.invoke_action(args.task, args.name, parameters)
         elif command == 'history':
             result = service.history(args.task, args.limit)
+        elif command == 'queue-worker':
+            from .execution.queue_worker import run_queue_worker
+            result = run_queue_worker(workspace.root, once=args.once,
+                                      poll_interval=args.poll_interval,
+                                      idle_timeout=args.idle_timeout)
+        elif command == 'submit':
+            config = read_json(args.config) if args.config else {}
+            result = service.submit_workflow(SubmitRequest(
+                task=args.task, source=args.input, output=args.output,
+                overrides=config, offline=args.offline,
+                idempotency_key=args.idempotency_key)).model_dump()
+        elif command == 'execution-status':
+            result = service.get_workflow_status(args.execution_id)
+        elif command == 'execution-result':
+            result = service.get_workflow_result(args.execution_id)
+        elif command == 'execution-cancel':
+            result = service.cancel_workflow(args.execution_id)
         elif command == 'chat':
             result = chat(workspace, workspace.task(args.task) if args.task else None)
         elif command == 'launch':
