@@ -1,0 +1,42 @@
+# Runtime state and personal work must never be committed.
+.venv/
+venv/
+share_states/
+share_logs/
+outputs/
+settings.json
+router.json
+.env
+.env.*
+!.env.example
+*.log
+*.sqlite3
+*.sqlite3-*
+*.db
+# Python/build caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+pytest-of-*/
+*.egg-info/
+build/
+dist/
+.coverage
+htmlcov/
+# Editor and OS local state
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+# User media/model files; package archives under downloads remain tracked.
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.wav
+*.mp3
+*.flac
+*.safetensors
+*.onnx
+*.pt
+*.pth

@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "runtime_api": "0.2",
+  "id": "ai_flow01",
+  "version": "0.3.4",
+  "title": "課程影片產生字幕",
+  "description": "本機 faster-whisper large-v3；保存 VAD 區段並逐區辨識與續跑；產生 SRT/VTT、QA 與疑義原音；LLM API 強制零呼叫，需真人核准。",
+  "keywords": [
+    "字幕",
+    "逐字稿",
+    "subtitles",
+    "transcribe"
+  ],
+  "examples": [
+    "把「課程.mp4」做成繁體中文字幕",
+    "將「lecture.mp4」產生英文字幕，使用 CPU"
+  ],
+  "input_extensions": [
+    ".mp4",
+    ".mkv",
+    ".mov",
+    ".avi",
+    ".webm",
+    ".wav",
+    ".mp3",
+    ".m4a",
+    ".flac"
+  ],
+  "parameter_paths": [
+    "model",
+    "profile",
+    "options.language",
+    "options.traditional_chinese",
+    "options.device",
+    "options.allow_cpu_fallback",
+    "options.beam_size",
+    "options.max_line_chars",
+    "options.max_cue_seconds",
+    "options.glossary",
+    "options.initial_prompt",
+    "options.initial_prompt_enabled"
+  ],
+  "rules": [
+    {
+      "phrases": [
+        "繁體",
+        "正體"
+      ],
+      "set": {
+        "options.traditional_chinese": true
+      }
+    },
+    {
+      "phrases": [
+        "英文",
+        "English"
+      ],
+      "set": {
+        "options.language": "en"
+      }
+    },
+    {
+      "phrases": [
+        "中文",
+        "Chinese"
+      ],
+      "set": {
+        "options.language": "zh"
+      }
+    },
+    {
+      "phrases": [
+        "CPU"
+      ],
+      "set": {
+        "profile": "asr-cpu",
+        "options.device": "cpu"
+      }
+    },
+    {
+      "phrases": [
+        "CUDA",
+        "GPU"
+      ],
+      "set": {
+        "profile": "asr-cuda",
+        "options.device": "auto"
+      }
+    },
+    {
+      "phrases": [
+        "small 模型"
+      ],
+      "set": {
+        "model": "whisper-small"
+      }
+    },
+    {
+      "phrases": [
+        "tiny 模型"
+      ],
+      "set": {
+        "model": "whisper-tiny"
+      }
+    },
+    {
+      "phrases": [
+        "large-v3",
+        "large v3"
+      ],
+      "set": {
+        "model": "whisper-large-v3"
+      }
+    },
+    {
+      "phrases": [
+        "請潤飾",
+        "並潤飾",
+        "幫我潤飾",
+        "進行校訂",
+        "polish"
+      ],
+      "questions": [
+        "本字幕 runner 禁止 LLM API 呼叫；請先產生本機草稿與疑義表，需 AI 協助時明確匯出有限片段。"
+      ]
+    }
+  ],
+  "defaults": {
+    "model": "whisper-large-v3",
+    "options": {
+      "allow_cpu_fallback": false,
+      "max_line_chars": 30,
+      "max_cue_seconds": 12,
+      "llm": {
+        "enabled": false,
+        "max_calls": 0
+      },
+      "device": "auto",
+      "initial_prompt": "繁體中文"
+    },
+    "profile": "auto"
+  },
+  "module": "ai_flow01",
+  "llm_policy": "forbidden",
+  "actions": [
+    "review-build",
+    "review-approve",
+    "review-packet",
+    "recover-run",
+    "review-import"
+  ],
+  "output_layout": "categorized-v1",
+  "recovery_action": "recover-run"
+}

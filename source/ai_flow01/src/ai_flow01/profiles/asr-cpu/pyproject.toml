@@ -1,0 +1,15 @@
+[project]
+name = "flow_base-asr-cpu"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "faster-whisper==1.2.1",
+  "opencc-python-reimplemented==0.1.7",
+  "ctranslate2==4.6.0",
+  "setuptools==80.9.0",
+  "av==16.0.1",
+  "onnxruntime==1.23.2",
+  "huggingface-hub==0.36.0"
+]
+[tool.uv]
+package = false

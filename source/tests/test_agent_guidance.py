@@ -1,0 +1,51 @@
+import importlib.util
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT=Path(__file__).resolve().parents[1]
+spec=importlib.util.spec_from_file_location('agent_guidance',ROOT/'tools/agent_guidance.py')
+guide=importlib.util.module_from_spec(spec);spec.loader.exec_module(guide)
+
+
+def test_guidance_keeps_domain_policy_out_of_base(tmp_path):
+    base=tmp_path/'flow_base';base.mkdir()
+    flow=tmp_path/'自訂 中文流程';flow.mkdir()
+    guide.write_workspace_guide(tmp_path)
+    guide.write_package_guide(base,ROOT/'base')
+    guide.write_package_guide(flow,ROOT/'ai_flow01')
+    common=(base/'AGENTS.md').read_text()
+    domain=(flow/'AGENTS.md').read_text()
+    assert 'catalog' in common and 'plan' in common and 'run' in common
+    assert 'large-v3' not in common and 'review-approve' not in common
+    assert 'large-v3' in domain and 'REVIEW_REQUIRED' in domain
+    assert '../flow_base/AGENTS.md' in domain
+    assert 'flow_base/AGENTS.md' in (tmp_path/'AGENTS.md').read_text()
+
+
+def test_generic_flow_gets_guide_without_domain_source(tmp_path):
+    guide.write_package_guide(tmp_path,ROOT/'ai_flow02')
+    text=(tmp_path/'AGENTS.md').read_text()
+    assert '../flow_base/AGENTS.md' in text and 'large-v3' not in text
+
+
+def test_agent_cli_from_task_directory_executes_selected_flow(tmp_path):
+    task_dir=tmp_path/'中文 改名流程'
+    shutil.copytree(ROOT/'dist/workspace/ai_flow02',task_dir)
+    source=tmp_path/'input.txt';source.write_text('agent uses installed flow')
+    output=tmp_path/'out'
+    env=dict(os.environ,PYTHONPATH=str(ROOT/'base/src'),PYTHONDONTWRITEBYTECODE='1')
+    def call(*args):
+        p=subprocess.run([sys.executable,'-m','flow_base','--workspace',str(tmp_path),*args],
+             cwd=task_dir,env=env,text=True,capture_output=True,timeout=40)
+        assert p.returncode==0,p.stdout+p.stderr
+        return json.loads(p.stdout)['result']
+    catalog=call('catalog');assert catalog['tasks'][0]['folder']==task_dir.name
+    plan=call('plan','--task',task_dir.name,'--input',str(source),'--output',str(output))
+    assert plan['blocked']==[]
+    result=call('run','--task',task_dir.name,'--input',str(source),'--output',str(output))
+    assert result['flow_id'] and result['run_id'] and result['steps'][0]['status']=='executed'
+    assert (output/'artifacts/result.bin').read_text()==source.read_text()
