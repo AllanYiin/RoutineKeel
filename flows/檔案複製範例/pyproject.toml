@@ -1,0 +1,14 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+[project]
+name = "ai_flow02"
+version = "0.2.2"
+requires-python = ">=3.11,<3.14"
+description = "Independently packaged workflow for flow_base"
+license = "MIT"
+[tool.hatch.build.targets.wheel]
+packages = ["src/ai_flow02"]
+
+[tool.routinekeel]
+archive-name = "flow_copy"

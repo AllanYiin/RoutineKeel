@@ -40,3 +40,5 @@ Thumbs.db
 *.onnx
 *.pt
 *.pth
+*.whl
+*.zip
