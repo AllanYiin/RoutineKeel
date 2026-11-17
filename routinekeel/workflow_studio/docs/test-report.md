@@ -202,3 +202,17 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
 - Ruff check／format check（121 files）及 git diff --check 通過。
 - 新歷史視窗、唯讀狀態及捲軸尚未實機視覺複驗；遵守使用者停止桌面控制的限制。
   案例歷史的二進位內容仍需直接預覽能力，完整節點／規則／工具管理等缺口仍在需求審核表。
+
+## 流程節點、連線與交付物編輯
+
+- 新增 `FlowEditor` 與 GraphDraft／工作臺連線視窗；工具模板使用當下政策，整份修改同時檢查引用、
+  型別、DAG、路徑、輸出與 Compiler 支援，再保存新 Revision。可同時重新連線並刪除被取代的步驟。
+- `python -m pytest tests/studio/test_graph_editing.py tests/studio/test_ui_workflow.py -q -k 'not test_real_tk_buttons and not test_tk_analysis'`：
+  17 passed、2 deselected，7.68 秒。首次 fixture 因 Windows write_text 換行轉換失敗，改用固定 UTF-8 bytes 後通過；未放寬驗收規則。
+- 真實底座重播「文字整理 → 指紋報告」，結果與獨立預期 bytes 相符，無 Runtime 模型授權或呼叫。
+  另驗證循環／懸空引用／型別不符／路徑穿越／非終端交付／重複節點拒絕、重用生成 Handler、
+  過期編輯／停用工具阻擋，以及捨棄較新版本後續編仍使用遞增版號。
+- 完整非桌面回歸（同前節排除三個桌面測試命令）：272 passed、3 deselected，95.06 秒。
+- Ruff check／format check（124 files）與 git diff --check 通過。新視窗來源選項以步驟名稱顯示，
+  未進行實機視覺操作；這些程式檢查不能代替操作驗收。
+- 完整條件／模型政策表單、手動空白流程起案、規則與工具治理等仍待；詳見 requirement-audit.md。

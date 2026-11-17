@@ -259,6 +259,14 @@ def build_workbench(app):
     app.button(
         flow, "採用選取的候選流程", app.accept_candidate, requires="candidate", fill="x", pady=s(6)
     )
+    app.button(
+        flow,
+        "新增步驟／連線／交付物",
+        app.edit_graph,
+        requires="workflow",
+        fill="x",
+        pady=(0, s(6)),
+    )
     diagram = ttk.Frame(flow)
     diagram.pack(fill="both", expand=True)
     app.canvas = tk.Canvas(

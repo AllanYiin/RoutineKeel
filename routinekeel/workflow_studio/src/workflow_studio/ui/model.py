@@ -164,12 +164,23 @@ class StudioUIModel:
         with self.service() as studio:
             return studio.projects.get_revision(p.project_id, p.current_revision_id)
 
-    def edit_node(self, node_id, *, output_name=None, strip=None, arguments=None, delete=False):
+    def edit_node(
+        self,
+        node_id,
+        *,
+        output_name=None,
+        strip=None,
+        arguments=None,
+        delete=False,
+        expected_version=None,
+    ):
         p, revision = self.project(), self.revision()
         if revision is None or "nodes" not in revision.ir:
             raise StudioError("IR_SCHEMA_INVALID", "尚無可編輯流程。")
         payload = copy.deepcopy(revision.ir)
-        node = next(n for n in payload["nodes"] if n["id"] == node_id)
+        node = next((n for n in payload["nodes"] if n["id"] == node_id), None)
+        if node is None:
+            raise StudioError("INPUT_INVALID", "此步驟已不存在，請重新讀取流程。")
         if delete:
             if any(node_id in n["depends_on"] for n in payload["nodes"]) or any(
                 v.startswith(f"artifact://{node_id}/") for v in payload["outputs"].values()
@@ -192,11 +203,11 @@ class StudioUIModel:
 
                 node["parameters"]["arguments"] = arguments
                 validate_handler(node["parameters"])
-        payload["revision"] += 1
-        with self.service() as studio:
-            changed = studio.save_ir(p.project_id, p.version, payload, self.policy)
-        self.build_id = self.approval_id = None
-        return changed
+        return self.edit_graph(
+            p.version if expected_version is None else expected_version,
+            upsert_nodes=[] if delete else [node],
+            delete_nodes=[node_id] if delete else [],
+        )
 
     def add_case(self, input_path, expected_path, output_name=None, *, comparison="exact_bytes"):
         p = self.project()
@@ -233,6 +244,40 @@ class StudioUIModel:
                 },
             )
         self.approval_id = None
+        return result
+
+    def editor_tools(self):
+        with self.service() as studio:
+            return {k: tool.model_dump() for k, tool in studio.tools.allowed(self.policy).items()}
+
+    def node_template(
+        self,
+        node_id,
+        tool_key,
+        source,
+        path,
+        *,
+        parameters=None,
+        evidence_refs=None,
+        llm_policy=None,
+    ):
+        with self.service() as studio:
+            return studio.editor(self.policy).template(
+                self.project_id,
+                node_id,
+                tool_key,
+                {"source": source},
+                {"result": path},
+                parameters=parameters,
+                evidence_refs=evidence_refs,
+                llm_policy=llm_policy,
+            )
+
+    def edit_graph(self, expected_version, **changes):
+        with self.service() as studio:
+            result = studio.editor(self.policy).apply(self.project_id, expected_version, **changes)
+        self.build_id = self.approval_id = None
+        self.candidates = []
         return result
 
     def cases(self, include_archived=False):

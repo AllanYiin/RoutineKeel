@@ -92,6 +92,7 @@ class StudioApp:
             and bool(self.model.candidates)
             and self.candidate_choice.current() >= 0,
             "node": workflow and self.selected_node is not None,
+            "workflow": workflow,
             "cases": active and self.case_count > 0,
             "case_history": active and self.case_history_count > 0,
             "verify": workflow and self.case_count > 0,
@@ -591,6 +592,7 @@ class StudioApp:
     def edit_node(self):
         if not self.selected_node:
             raise StudioError("INPUT_INVALID", "請點選要調整的步驟。")
+        expected_version = self.model.project().version
         node = next(n for n in self.model.revision().ir["nodes"] if n["id"] == self.selected_node)
         name = simpledialog.askstring(
             "調整步驟",
@@ -630,7 +632,11 @@ class StudioApp:
                         return
                     arguments[key] = value
             self.model.edit_node(
-                self.selected_node, output_name=name, strip=strip, arguments=arguments
+                self.selected_node,
+                output_name=name,
+                strip=strip,
+                arguments=arguments,
+                expected_version=expected_version,
             )
             self.refresh_project()
 
@@ -640,6 +646,11 @@ class StudioApp:
         ):
             self.model.edit_node(self.selected_node, delete=True)
             self.refresh_project()
+
+    def edit_graph(self):
+        from .graph_dialog import open_graph
+
+        open_graph(self)
 
     def add_case(self):
         source = filedialog.askopenfilename(title="選擇試做輸入", parent=self.root)

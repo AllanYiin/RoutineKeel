@@ -82,6 +82,11 @@ class StudioService:
 
         return ModelRepair(self, provider, budget, tool_policy, runtime_python=runtime_python)
 
+    def editor(self, tool_policy):
+        from .ir.editor import FlowEditor
+
+        return FlowEditor(self, tool_policy)
+
     def status(self) -> dict:
         return {"version": __version__, "schema_version": self.repository.schema_version}
 
