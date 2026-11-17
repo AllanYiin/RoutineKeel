@@ -194,6 +194,7 @@ class HandlerLibrary:
     ):
         from ..compiler.generator import Compiler
         from ..governance.approvals import Approvals
+        from ..governance.reviews import ReviewStore
         from ..service import StudioService
         from ..verifier.static import verify_static
         from .models import ToolDescription
@@ -202,6 +203,7 @@ class HandlerLibrary:
         with self.repository.transaction() as db:
             project = studio.projects._editable(db, project_id, expected_version)
             build = Compiler(studio).get(project_id, build_id)
+            ReviewStore(self.repository).assert_open(project_id, build_id, for_approval=True)
             if build["status"] != "verified" or build["package_hash"] != expected_hash:
                 raise StudioError("TEST_FAILED", "請先完成獨立試做，並確認相同套件版本。")
             if project.current_revision_id != build["revision_id"]:

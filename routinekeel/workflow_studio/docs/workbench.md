@@ -68,3 +68,7 @@ uv run --project routinekeel/workflow_studio --group dev python -m workflow_stud
 
 已通過試做的自訂處理可保存為同工作區的可重用工具，核准後供其他專案選用。
 其他專案只需調整已宣告參數，仍以自己的案例試做；詳見 [Handler 工具庫](handler-library.md)。
+
+「建置歷史／審核／報告」可查看程式、歷次報告與保存事件，並送審、退回、撤回核准或封存未發布建置。
+新增或更新案例後必須完整重測，退回也不能只靠重新建置相同流程就繞過。
+發布歷史可停用目前版本並記錄理由；詳見 [建置審核](build-reviews.md)。

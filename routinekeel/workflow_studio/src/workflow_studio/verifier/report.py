@@ -6,6 +6,7 @@ from uuid import uuid4
 from ..compiler.generator import Compiler
 from ..compiler.package import digest
 from ..contracts import StudioError
+from ..governance.reviews import ReviewStore
 from ..project.models import canonical_json
 from ..project.service import now
 from .comparison import compare
@@ -20,7 +21,10 @@ class Verifier:
         self.runtime_python = Path(runtime_python or sys.executable).resolve()
 
     def verify(self, project_id, build_id, cases, policy, *, authorization=None):
+        if self.studio.projects.get(project_id).status != "active":
+            raise StudioError("PROJECT_INACTIVE", "請先恢復專案後再進行新的試做。")
         build = Compiler(self.studio).get(project_id, build_id)
+        review = ReviewStore(self.studio.repository).assert_open(project_id, build_id)
         report_id = "verification_" + uuid4().hex
         folder = build["path"] / "verification" / report_id
         report = {
@@ -32,6 +36,7 @@ class Verifier:
             "static": "not_run",
             "cases": [],
             "created_at": now(),
+            "review_sequence": review["sequence"],
         }
         try:
             manifest, package_files = verify_static(self.studio, build, policy)
@@ -50,6 +55,8 @@ class Verifier:
                 case = catalog.get(project_id, binding["case_id"], binding["version"])
                 if case["status"] != "active":
                     raise StudioError("TEST_FAILED", "Golden Case 已封存。")
+                if case["specification"].get("output_name") not in {None, binding["output"]}:
+                    raise StudioError("TEST_FAILED", "驗收綁定與案例指定的交付物不一致。")
                 source, expected = catalog.bytes(
                     project_id, case["case_id"], version=case["version"]
                 )

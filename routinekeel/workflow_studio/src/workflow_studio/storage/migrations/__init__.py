@@ -1,7 +1,7 @@
 """Ordered, transactional Studio schema migrations."""
 
 APPLICATION_ID = 0x53545544  # STUD; rejects accidentally selected Runtime databases.
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 V001 = (
     """CREATE TABLE studio_projects (
@@ -173,6 +173,20 @@ V012 = (
         BEGIN SELECT RAISE(ABORT, 'retain handler template'); END""",
 )
 
+V013 = (
+    """CREATE TABLE studio_build_reviews (
+        sequence INTEGER PRIMARY KEY AUTOINCREMENT, review_id TEXT UNIQUE NOT NULL,
+        project_id TEXT NOT NULL REFERENCES studio_projects(project_id),
+        build_id TEXT NOT NULL REFERENCES studio_builds(build_id), package_hash TEXT NOT NULL,
+        action TEXT NOT NULL CHECK(action IN ('submit','return','archive','restore','approve','revoke')),
+        report_id TEXT, approval_id TEXT, actor TEXT, reason TEXT, created_at TEXT NOT NULL)""",
+    "CREATE INDEX studio_build_reviews_build ON studio_build_reviews(project_id,build_id,sequence)",
+    """CREATE TRIGGER immutable_build_review BEFORE UPDATE ON studio_build_reviews
+        BEGIN SELECT RAISE(ABORT, 'immutable build review'); END""",
+    """CREATE TRIGGER retain_build_review BEFORE DELETE ON studio_build_reviews
+        BEGIN SELECT RAISE(ABORT, 'retain build review'); END""",
+)
+
 MIGRATIONS = {
     1: V001,
     2: V002,
@@ -186,4 +200,5 @@ MIGRATIONS = {
     10: V010,
     11: V011,
     12: V012,
+    13: V013,
 }

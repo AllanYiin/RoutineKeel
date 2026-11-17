@@ -46,6 +46,7 @@ class StudioApp:
         self.case_count = 0
         self.case_history_count = 0
         self.last_report = None
+        self.build_review_blocked = False
         self._build()
         self.refresh_projects()
         self.root.update_idletasks()
@@ -77,6 +78,7 @@ class StudioApp:
             self.last_report
             and self.last_report.get("status") == "passed"
             and self.last_report.get("build_id") == self.model.build_id
+            and not self.build_review_blocked
         )
         enabled = {
             None: True,
@@ -628,6 +630,11 @@ class StudioApp:
 
         open_tools(self)
 
+    def manage_builds(self):
+        from .reviews_dialog import open_reviews
+
+        open_reviews(self)
+
     def save_handler_tool(self):
         from .handler_dialog import save_selected_handler
 
@@ -699,7 +706,10 @@ class StudioApp:
         authorization = None
         if prepared["models"]:
             destinations = "\n".join(f"{m['model']} → {m['endpoint']}" for m in prepared["models"])
-            sources = "\n".join(item["name"] for item in prepared["sources"])
+            sources = "\n".join(
+                f"{item['name']} · 案例第 {item['binding']['version']} 版／輸入來源第 {item['input']['version']} 版"
+                for item in prepared["sources"]
+            )
             if not messagebox.askyesno(
                 "確認 LLM 試做範圍",
                 f"本次會將固定測試輸入送至：\n{destinations}\n\n案例：\n{sources}\n\n保守預算上限 USD {prepared['maximum_budget_micro_usd'] / 1_000_000:.2f}。是否開始？",
@@ -714,6 +724,8 @@ class StudioApp:
 
     def show_report(self, report):
         self.last_report = report
+        state = self.model.build_details(report["build_id"])["review"]
+        self.build_review_blocked = state["archived"] or state["returned"]
         passed = report["status"] == "passed"
         lines = [
             "試做通過" if passed else "試做未通過",
@@ -733,6 +745,8 @@ class StudioApp:
         self.status.set(
             "試做通過，請核對成果後確認發布。" if passed else "未通過驗收的候選包不能發布。"
         )
+        if self.build_review_blocked:
+            self.status.set("已保存試做報告；此建置目前封存或退回，請在建置與審核處理。")
 
     def publish(self):
         if not self.reviewed.get() or not self.actor_var.get().strip():
@@ -825,7 +839,9 @@ class StudioApp:
         listing = tk.Listbox(window, width=80, height=12)
         listing.pack(padx=12, pady=12)
         for row in rows:
-            listing.insert("end", f"{row['created_at']} · {row['build_id'][-8:]}")
+            listing.insert(
+                "end", f"{row['created_at']} · {row['release_id'][-8:]} · {row['target_root']}"
+            )
 
         def restore():
             if listing.curselection() and messagebox.askyesno(
@@ -839,6 +855,33 @@ class StudioApp:
                 )
 
         ttk.Button(window, text="回復選取版本", command=restore).pack(pady=8)
+
+        def disable():
+            if not listing.curselection():
+                return
+            row = rows[listing.curselection()[0]]
+            actor = simpledialog.askstring(
+                "停用發布版本", "操作者", initialvalue=self.actor_var.get(), parent=window
+            )
+            if actor is None:
+                return
+            reason = simpledialog.askstring(
+                "停用發布版本",
+                f"目標：{row['target_root']}\n停用理由（保留成果，不取消已啟動的工作）",
+                parent=window,
+            )
+            if reason is None:
+                return
+            if not actor.strip() or not reason.strip():
+                self.error(StudioError("INPUT_INVALID", "請填操作者與停用理由。"))
+                return
+            window.destroy()
+            self._background(
+                lambda: self.model.disable_release(row["release_id"], actor, reason),
+                lambda _: self.status.set("已停用選取的目前發布版本，既有成果保留。"),
+            )
+
+        ttk.Button(window, text="停用選取的目前發布版本", command=disable).pack(pady=8)
 
     def configure_model(self):
         if not self.confirm_leave():

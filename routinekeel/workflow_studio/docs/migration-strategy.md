@@ -93,3 +93,11 @@ record_version、狀態、操作者及理由。操作與事件同交易，事件
 不修改既有 ToolDescription schema 或 fingerprint 計算，避免預設欄位改變而使舊工具失效。
 舊工具不會自動升格為固定 Handler。升級前保存 before-v011，已驗證升級與在獨立目錄還原 v011。
 回退時需另存最新 DB 與 projects，保留 v012 模板及其治理紀錄；舊版本不能強寫新 schema。
+
+## v013 建置審核
+
+新增不可變 studio_build_reviews，記錄送審、退回、封存、恢復、核准及撤回。
+不重寫舊驗收報告，也不偽造舊核准的操作者；既有 approval 表繼續保留。
+審核決策以 sequence 判斷順序，新驗收報告保存開始時的 review_sequence。
+升級前保存 before-v012；已實測升級與獨立 v012 備份還原。
+回退仍須先保留最新 DB／projects／發布快照，避免遺失 v013 期間的審核紀錄。

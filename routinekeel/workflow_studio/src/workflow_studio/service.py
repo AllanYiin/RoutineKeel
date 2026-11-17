@@ -98,6 +98,11 @@ class StudioService:
 
         return EvidenceRules(self, tool_policy)
 
+    def reviews(self, tool_policy):
+        from .governance.reviews import BuildReviews
+
+        return BuildReviews(self, tool_policy)
+
     def confirmed_evidence(self, project_id, payload):
         from .governance.evidence import EvidenceRecords
 

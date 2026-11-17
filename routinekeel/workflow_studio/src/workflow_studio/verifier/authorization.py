@@ -14,6 +14,9 @@ class RuntimeAuthorization:
 
 
 def disclosure(studio, project_id, build_id, cases):
+    from ..governance.reviews import ReviewStore
+
+    ReviewStore(studio.repository).assert_open(project_id, build_id)
     build = Compiler(studio).get(project_id, build_id)
     ir = studio.projects.get_revision(project_id, build["revision_id"]).ir
     models = [

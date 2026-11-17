@@ -61,8 +61,11 @@ def open_cases(app):
         )
         widget.pack(side="left", fill="x", expand=True)
     paths = {"input": None, "expected": None}
+    use_current = {side: tk.BooleanVar(value=False) for side in ("input", "expected")}
     file_row = ttk.Frame(window)
     file_row.grid(row=4, column=1, sticky="ew", padx=(0, 12), pady=6)
+    file_controls = ttk.Frame(file_row)
+    file_controls.pack(fill="x")
     previews = ttk.Notebook(window)
     previews.grid(row=5, column=1, sticky="nsew", padx=(0, 12))
     assets = {
@@ -78,7 +81,38 @@ def open_cases(app):
     state = {"case": None, "version": None, "rows": [], "saved": (), "index": None}
 
     def snapshot():
-        return name.get(), output.get(), rule.get(), paths["input"], paths["expected"]
+        return (
+            name.get(),
+            output.get(),
+            rule.get(),
+            paths["input"],
+            paths["expected"],
+            use_current["input"].get(),
+            use_current["expected"].get(),
+        )
+
+    def refresh_previews():
+        if state["case"] is None:
+            return
+        selected = [side for side, variable in use_current.items() if variable.get()]
+        content = model.case_assets(state["case"], state["version"], current=selected)
+        for side, asset in content.items():
+            assets[side].show(asset["name"], asset["content"], asset["preview"])
+            previews.tab(
+                assets[side],
+                text=("輸入" if side == "input" else "正確成果")
+                + ("（新來源待保存）" if side in selected else "（此案例版本）"),
+            )
+
+    def current_changed(side):
+        try:
+            if use_current[side].get():
+                paths[side] = None
+            refresh_previews()
+            previews.select(assets[side])
+        except Exception as exc:
+            use_current[side].set(False)
+            app.error(exc)
 
     def may_leave():
         return (
@@ -106,8 +140,9 @@ def open_cases(app):
         output.set(spec.get("output_name", outputs[0] if len(outputs) == 1 else ""))
         rule.set(next(label for label, key in RULES.items() if key == spec["comparison"]))
         paths.update(input=None, expected=None)
-        for side, asset in model.case_assets(case["case_id"], case["version"]).items():
-            assets[side].show(asset["name"], asset["content"], asset["preview"])
+        for variable in use_current.values():
+            variable.set(False)
+        refresh_previews()
         app._set_text(preview, "目前未選取替換檔案。")
         previews.select(assets["input"])
         state["saved"] = snapshot()
@@ -142,6 +177,8 @@ def open_cases(app):
         )
         if path:
             paths[side] = path
+            use_current[side].set(False)
+            refresh_previews()
             app._set_text(
                 preview,
                 "已選取替換檔案（尚未匯入）：\n"
@@ -154,9 +191,18 @@ def open_cases(app):
             previews.select(preview)
 
     for side, label in (("input", "替換輸入檔"), ("expected", "替換正確成果")):
-        ttk.Button(file_row, text=label, command=lambda side=side: choose(side)).pack(
+        ttk.Button(file_controls, text=label, command=lambda side=side: choose(side)).pack(
             side="left", padx=(0, 8)
         )
+    current_row = ttk.Frame(file_row)
+    current_row.pack(fill="x")
+    for side, text in (("input", "輸入改用來源目前版本"), ("expected", "成果改用來源目前版本")):
+        ttk.Checkbutton(
+            current_row,
+            text=text,
+            variable=use_current[side],
+            command=lambda side=side: current_changed(side),
+        ).pack(anchor="w")
 
     def save(archive=False):
         if state["case"] is None:
@@ -178,6 +224,8 @@ def open_cases(app):
                     output_name=output.get() or None,
                     input_path=paths["input"],
                     expected_path=paths["expected"],
+                    use_current_input=use_current["input"].get(),
+                    use_current_expected=use_current["expected"].get(),
                 )
             window.destroy()
             app.last_report = None

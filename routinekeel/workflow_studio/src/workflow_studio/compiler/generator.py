@@ -20,6 +20,8 @@ class Compiler:
         self.studio = studio
 
     def compile(self, project_id, revision_id, policy):
+        if self.studio.projects.get(project_id).status != "active":
+            raise StudioError("PROJECT_INACTIVE", "請先恢復專案後再建立候選包。")
         revision = self.studio.projects.get_revision(project_id, revision_id)
         if (
             revision.status not in {"ir_ready", "verified", "approved", "published"}
@@ -162,7 +164,11 @@ class Compiler:
         archive_path = destination / f"{module}-{version}.zip"
         with zipfile.ZipFile(archive_path, "x", compression=zipfile.ZIP_DEFLATED) as archive:
             for file in sorted(package.iterdir()):
-                archive.write(file, module + "/" + file.name)
+                info = zipfile.ZipInfo(module + "/" + file.name, (1980, 1, 1, 0, 0, 0))
+                info.compress_type = zipfile.ZIP_DEFLATED
+                info.create_system = 3
+                info.external_attr = 0o100644 << 16
+                archive.writestr(info, file.read_bytes())
         mapping = {
             "ir_hash": ir_hash,
             "runtime_api": "0.2",
@@ -179,6 +185,8 @@ class Compiler:
         }
         (destination / "mapping.json").write_text(canonical_json(mapping), encoding="utf-8")
         with self.studio.repository.transaction() as db:
+            if self.studio.projects.get(project_id).status != "active":
+                raise StudioError("PROJECT_INACTIVE", "建置期間專案已封存，候選包未登錄。")
             db.execute(
                 "INSERT INTO studio_builds VALUES (?,?,?,?,?,?,?,?)",
                 (

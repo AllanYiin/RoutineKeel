@@ -615,22 +615,42 @@ class StudioUIModel:
                 )
             return preview
 
-    def case_assets(self, case_id, version):
+    def case_assets(self, case_id, version, *, current=()):
         with self.service() as studio:
             spec = GoldenCases(studio).get(self.project_id, case_id, version)["specification"]
             assets = {}
             for side in ("input", "expected"):
                 ref = spec[side]
                 source = studio.sources.get(
-                    self.project_id, ref["source_id"], version=ref["version"]
+                    self.project_id,
+                    ref["source_id"],
+                    version=None if side in current else ref["version"],
                 )
-                record = next(r for r in source.manifest["files"] if r["path"] == ref["path"])
+                if side in current and source.status != "active":
+                    raise StudioError("SOURCE_REMOVED", "來源已移除，請選擇替換檔案。")
+                record = next(
+                    (r for r in source.manifest["files"] if r["path"] == ref["path"]), None
+                )
+                if record is None and side in current and len(source.manifest["files"]) == 1:
+                    record = source.manifest["files"][0]
+                if record is None:
+                    raise StudioError(
+                        "INPUT_INVALID", "目前來源有多個不同檔案，請明確選擇替換檔案。"
+                    )
+                if side not in current and record["sha256"] != ref["sha256"]:
+                    raise StudioError("SOURCE_CORRUPT", "案例來源指紋不符。")
                 assets[side] = {
-                    "name": ref["path"],
+                    "name": f"{record['path']} · 來源第 {source.version} 版",
                     "preview": record["preview"],
                     "content": studio.sources.content(
-                        self.project_id, ref["source_id"], ref["path"], version=ref["version"]
+                        self.project_id, ref["source_id"], record["path"], version=source.version
                     ),
+                    "ref": {
+                        "source_id": source.source_id,
+                        "version": source.version,
+                        "path": record["path"],
+                        "sha256": record["sha256"],
+                    },
                 }
             return assets
 
@@ -645,11 +665,41 @@ class StudioUIModel:
         output_name=None,
         input_path=None,
         expected_path=None,
+        use_current_input=False,
+        use_current_expected=False,
     ):
         with self.service() as studio, studio.repository.transaction() as db:
             studio.projects._editable(db, self.project_id, expected_version)
             catalog = GoldenCases(studio)
             spec = catalog.get(self.project_id, case_id, source_version)["specification"]
+            current_sides = [
+                side
+                for side, enabled in (
+                    ("input", use_current_input),
+                    ("expected", use_current_expected),
+                )
+                if enabled
+            ]
+            if current_sides:
+                # Use this connection: the surrounding write transaction owns the version check.
+                for side in current_sides:
+                    ref = spec[side]
+                    source = studio.sources.get(self.project_id, ref["source_id"])
+                    if source.status != "active":
+                        raise StudioError("SOURCE_REMOVED", "來源已移除，請選擇替換檔案。")
+                    record = next(
+                        (r for r in source.manifest["files"] if r["path"] == ref["path"]), None
+                    )
+                    if record is None and len(source.manifest["files"]) == 1:
+                        record = source.manifest["files"][0]
+                    if record is None:
+                        raise StudioError("INPUT_INVALID", "請明確選擇來源中要使用的檔案。")
+                    spec[side] = {
+                        "source_id": source.source_id,
+                        "version": source.version,
+                        "path": record["path"],
+                        "sha256": record["sha256"],
+                    }
             spec.update(name=name, comparison=comparison)
             if output_name:
                 spec["output_name"] = output_name
@@ -856,9 +906,111 @@ class StudioUIModel:
         with self.service() as studio:
             return Releases(studio).history(self.project_id) if self.project_id else []
 
+    def build_history(self, include_archived=False):
+        with self.service() as studio:
+            return studio.reviews(self.policy).list(
+                self.project_id, include_archived=include_archived
+            )
+
+    def build_details(self, build_id):
+        with self.service() as studio:
+            return studio.reviews(self.policy).details(self.project_id, build_id)
+
+    def build_file(self, build_id, filename):
+        import re
+
+        if filename not in {
+            "README.md",
+            "PROVENANCE.md",
+            "workflow.ir.json",
+            "generated-handler-tests.json",
+        } and not re.fullmatch(r"handler_[a-z][a-z0-9_-]{0,31}\.py", filename):
+            raise StudioError("INPUT_INVALID", "這不是可預覽的建置文字檔。")
+        with self.service() as studio:
+            build = Compiler(studio).get(self.project_id, build_id)
+            root = studio.repository.root.resolve()
+            path = build["path"] / "package" / filename
+            if not path.resolve().is_relative_to(root) or any(
+                p.is_symlink() or (hasattr(p, "is_junction") and p.is_junction())
+                for p in (path, *path.parents)
+                if p != root and p.is_relative_to(root)
+            ):
+                raise StudioError("INPUT_INVALID", "建置預覽位置不安全。")
+            with path.open("rb") as stream:
+                data = stream.read(128_001)
+            return data[:128_000].decode("utf-8", errors="replace") + (
+                "\n（預覽截斷，完整檔案保留於建置目錄。）" if len(data) > 128_000 else ""
+            )
+
+    def review_build(
+        self, expected_version, build_id, package_hash, sequence, action, actor, reason
+    ):
+        with self.service() as studio:
+            result = studio.reviews(self.policy).decide(
+                self.project_id,
+                expected_version,
+                build_id,
+                package_hash,
+                sequence,
+                action,
+                actor=actor,
+                reason=reason,
+            )
+        self.build_id = self.approval_id = None
+        return result
+
+    def revoke_build_approval(self, approval_id, actor, reason):
+        with self.service() as studio:
+            result = Approvals(studio).revoke(
+                self.project_id, approval_id, actor=actor, reason=reason
+            )
+        self.approval_id = None
+        return result
+
+    def select_build(self, build_id):
+        from ..governance.reviews import ReviewStore
+
+        with self.service() as studio:
+            build = Compiler(studio).get(self.project_id, build_id)
+            ReviewStore(studio.repository).assert_open(self.project_id, build_id)
+            if studio.projects.get(self.project_id).current_revision_id != build["revision_id"]:
+                raise StudioError(
+                    "REVISION_CONFLICT", "這是歷史流程的建置；請先從歷史版本另存續編並試做。"
+                )
+        self.build_id, self.approval_id = build_id, None
+        return self.build_details(build_id)
+
+    def project_events(self, after=0):
+        from ..llm.streaming import EventStore
+
+        with self.service() as studio:
+            return EventStore(studio.repository).read(self.project_id, after=after, limit=50)
+
     def rollback(self, release_id):
         with self.service() as studio:
             return Releases(studio).rollback(self.project_id, release_id, self.policy)
+
+    def disable_release(self, release_id, actor, reason):
+        with self.service() as studio:
+            row = next(
+                (
+                    r
+                    for r in Releases(studio).history(self.project_id)
+                    if r["release_id"] == release_id
+                ),
+                None,
+            )
+            if row is None:
+                raise StudioError("PUBLISH_FAILED", "找不到此專案的發布紀錄。")
+            payload = json.loads(row["payload_json"])
+            return Releases(studio).disable(
+                self.project_id,
+                row["target_root"],
+                payload["workflow_id"],
+                release_id,
+                actor=actor,
+                reason=reason,
+            )
 
     def configure_provider(
         self,

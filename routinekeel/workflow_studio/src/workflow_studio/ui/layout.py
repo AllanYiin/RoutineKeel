@@ -372,6 +372,9 @@ def build_workbench(app):
         fill="x",
         pady=s(3),
     )
+    app.button(
+        result, "建置歷史／審核／報告", app.manage_builds, requires="project", fill="x", pady=s(3)
+    )
     app.verify_button = app.button(
         result,
         "建立候選包並試做",

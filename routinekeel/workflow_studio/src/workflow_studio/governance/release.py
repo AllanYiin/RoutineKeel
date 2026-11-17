@@ -13,6 +13,7 @@ from ..project.models import canonical_json
 from ..project.service import now
 from ..verifier.static import verify_static
 from .approvals import Approvals
+from .reviews import ReviewStore
 
 
 def atomic_bytes(path, data):
@@ -46,6 +47,9 @@ class Releases:
         root = Path(target_workspace).expanduser().resolve()
         folder = safe_target(root, ".studio_releases/" + workflow_id)
         journal, pointer = folder / "journal.json", folder / "current.json"
+        prior_pointer = (
+            json.loads(pointer.read_text(encoding="utf-8")) if pointer.is_file() else None
+        )
         if journal.is_file():
             pending = json.loads(journal.read_text(encoding="utf-8"))
             owned = self.studio.repository.connection.execute(
@@ -65,6 +69,15 @@ class Releases:
                     and saved.is_file()
                     and digest(saved.read_bytes()) == pending["manifest_hash"]
                 )
+            if (
+                applied
+                and prior_pointer
+                and prior_pointer["release_id"] != pending["release_id"]
+                and prior_pointer.get("state") == pending.get("state")
+                and prior_pointer["manifest_hash"] == pending["manifest_hash"]
+            ):
+                # Identical bytes do not prove a new approval was committed.
+                applied = False
             if applied:
                 atomic_bytes(pointer, canonical_json(pending).encode())
                 with self.studio.repository.transaction() as db:
@@ -93,6 +106,17 @@ class Releases:
         if approval["revoked_at"]:
             raise StudioError("APPROVAL_REQUIRED", "核准已撤回。")
         build = Compiler(self.studio).get(project_id, approval["build_id"])
+        ReviewStore(self.studio.repository).assert_open(
+            project_id, build["build_id"], for_approval=True
+        )
+        if (
+            historical
+            and not self.studio.repository.connection.execute(
+                "SELECT 1 FROM studio_releases WHERE project_id=? AND build_id=? AND approval_id=? AND status='published'",
+                (project_id, build["build_id"], approval_id),
+            ).fetchone()
+        ):
+            raise StudioError("APPROVAL_REQUIRED", "歷史回復僅適用於先前成功發布的同一核准版本。")
         if build["status"] != "verified" or approval["package_hash"] != build["package_hash"]:
             raise StudioError("TEST_FAILED", "核准版本已失去驗證資格。")
         manifest, files = verify_static(self.studio, build, policy)
@@ -102,6 +126,8 @@ class Releases:
         project = self.studio.projects.get(project_id)
         revision = self.studio.projects.get_revision(project_id, build["revision_id"])
         if not historical:
+            if project.status != "active":
+                raise StudioError("PROJECT_INACTIVE", "請先恢復專案後再發布新版本。")
             from ..verifier.report import Verifier
 
             Approvals(self.studio).validate_cases(
@@ -127,6 +153,7 @@ class Releases:
             if (
                 current
                 and current["build_id"] == build["build_id"]
+                and current["approval_id"] == approval_id
                 and current.get("state") != "disabled"
             ):
                 installed = safe_target(root, workflow_id + "/flow.json")
@@ -208,11 +235,18 @@ class Releases:
             atomic_bytes(wheel_path, files[manifest["package"]])
             # Outputs and previous wheels remain intact. Switch executable metadata last.
             with self.studio.repository.transaction():
+                ReviewStore(self.studio.repository).assert_open(
+                    project_id, build["build_id"], for_approval=True
+                )
                 if Approvals(self.studio).get(project_id, approval_id)["revoked_at"]:
                     raise StudioError("APPROVAL_REQUIRED", "發布前核准已撤回。")
                 verify_static(self.studio, build, policy)
                 if not historical:
                     latest = self.studio.projects.get(project_id)
+                    if latest.status != "active":
+                        raise StudioError(
+                            "PROJECT_INACTIVE", "發布準備期間專案已封存，未切換正式版本。"
+                        )
                     if (
                         latest.current_revision_id != revision.revision_id
                         or latest.goal != revision.ir["goal"]
@@ -231,6 +265,7 @@ class Releases:
                         ):
                             raise StudioError("REVISION_CONFLICT", "發布準備期間來源已改變。")
                 atomic_bytes(manifest_path, files["flow.json"])
+                atomic_bytes(records / "current.json", canonical_json(result).encode())
                 applied = self.current(root, workflow_id)
             if applied is None or applied["release_id"] != release_id:
                 raise StudioError("PUBLISH_FAILED", "版本指標尚未確認。")
@@ -245,7 +280,19 @@ class Releases:
             )
         ]
 
-    def disable(self, project_id, target_workspace, workflow_id, expected_current):
+    def disable(
+        self,
+        project_id,
+        target_workspace,
+        workflow_id,
+        expected_current,
+        *,
+        actor=None,
+        reason=None,
+    ):
+        from ..registry.catalog import Catalog
+
+        Catalog._reviewer(actor, reason)
         root = Path(target_workspace).resolve()
         records = safe_target(root, ".studio_releases/" + workflow_id)
         if not records.is_dir():
@@ -271,6 +318,8 @@ class Releases:
                 "state": "disabled",
                 "disabled_manifest": f"flow.disabled.{identity}.json",
                 "created_at": now(),
+                "actor": actor.strip() if actor else None,
+                "reason": reason.strip() if reason else None,
             }
             with self.studio.repository.transaction() as db:
                 db.execute(
