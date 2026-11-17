@@ -28,7 +28,8 @@ class RepairLoop:
                     "repair_rounds": attempt,
                 }
             project = self.studio.projects.get(project_id)
-            proposal = proposer(copy.deepcopy(report), copy.deepcopy(original))
+            current = self.studio.projects.get_revision(project_id, build["revision_id"]).ir
+            proposal = proposer(copy.deepcopy(report), copy.deepcopy(current))
             if (
                 proposal.get("goal") != original["goal"]
                 or proposal.get("workflow_id") != original["workflow_id"]

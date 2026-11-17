@@ -4,6 +4,7 @@ from uuid import uuid4
 from ..contracts import StudioError
 from ..project.models import canonical_json
 from ..project.service import now
+from .comparison import RULES, validate_expected
 
 
 class GoldenCases:
@@ -58,10 +59,10 @@ class GoldenCases:
     def _validate(self, project_id, specification):
         if (
             set(specification) - {"output_name"} != {"name", "input", "expected", "comparison"}
-            or specification["comparison"] != "exact_bytes"
+            or specification["comparison"] not in RULES
         ):
             raise StudioError(
-                "INPUT_INVALID", "Golden Case 必須有名稱、輸入、預期成果與 exact_bytes 比對規則。"
+                "INPUT_INVALID", "Golden Case 必須有名稱、輸入、預期成果與明確的比對規則。"
             )
         if not isinstance(specification["name"], str) or not specification["name"].strip():
             raise StudioError("INPUT_INVALID", "測試案例名稱不可空白。")
@@ -80,9 +81,11 @@ class GoldenCases:
             record = next((r for r in source.manifest["files"] if r["path"] == ref["path"]), None)
             if record is None or record["sha256"] != ref["sha256"]:
                 raise StudioError("SOURCE_CORRUPT", "測試案例來源指紋不符。")
-            self.studio.sources.content(
+            content = self.studio.sources.content(
                 project_id, ref["source_id"], ref["path"], version=ref["version"]
             )
+            if side == "expected":
+                validate_expected(specification["comparison"], content)
 
     def get(self, project_id, case_id, version=None):
         row = self.studio.repository.connection.execute(

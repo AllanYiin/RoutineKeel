@@ -8,6 +8,7 @@ from ..compiler.package import digest
 from ..contracts import StudioError
 from ..project.models import canonical_json
 from ..project.service import now
+from .comparison import compare
 from .golden_cases import GoldenCases
 from .replay import output_bytes, replay
 from .static import verify_static
@@ -59,6 +60,7 @@ class Verifier:
                     "acceptance_hash": digest(canonical_json(case["specification"]).encode()),
                     "input_sha256": digest(source),
                     "expected_sha256": digest(expected),
+                    "comparison": case["specification"]["comparison"],
                     "status": "failed",
                 }
                 report["cases"].append(result)
@@ -72,10 +74,12 @@ class Verifier:
                     run_id=runtime["run_id"],
                     lifecycle=runtime["lifecycle"],
                 )
-                if actual != expected:
+                matched, detail = compare(result["comparison"], expected, actual)
+                if not matched:
                     result["difference"] = {
                         "expected_bytes": len(expected),
                         "actual_bytes": len(actual),
+                        **detail,
                     }
                     try:
                         import difflib

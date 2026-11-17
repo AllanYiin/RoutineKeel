@@ -155,3 +155,18 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
 - 安全案例涵蓋模組／檔案／網路／反射拒絕、有界操作／配置、循環資料、格式膨脹、稀疏 CSV 及錯誤程式行號。
 - 已保存可信 v1 模板，並實測前一版模板仍能被驗證、執行；未知模板仍拒絕。
 - 上述程式生成的模型回應使用 fixture；真實模型品質、完整需求覆蓋、三平台及非技術案例 Gate 仍未完成。
+
+## 驗收比較與交易回修
+
+- Handler 回修已提交 `28c0f29`。本輪依原規格 Stage 8 步驟 4 補明確的 JSON 內容比較，預設仍逐 byte。
+- `python -m pytest tests/studio/test_comparison.py tests/studio/test_case_transactions.py -q`：27 passed，4.01 秒。
+  包含精確數值／型別／陣列語意、重複欄位與非法 Unicode 拒絕、大小／深度／數量上限，
+  真正 WorkflowService 重播、規則版本與核准失效，以及案例／候選保存失敗完整交易回復。
+- `python -m pytest tests/studio -q -k 'not test_real_tk_buttons and not test_tk_analysis and not test_ui_state_multiline' -rs`：
+  230 passed、3 deselected，69.89 秒。使用 Studio `.venv/Scripts/python.exe`，未操作使用者桌面、無外部模型呼叫。
+- 完整回歸後修正第二輪 RepairLoop 應接續上一輪 IR，避免丟失第一輪修正。
+  `python -m pytest tests/studio/test_repair.py -q`：4 passed，13.45 秒，含累積兩輪修復的實際 Runtime 重播；
+  所有輪次 acceptance_hash 相同。此專項與上項重疊，不相加為整體測試數。
+- Ruff check、format check（114 files）及 `git diff --check` 通過。
+- 新增比較規則選擇對話框的程式已接線，但遵守停止桌面操作，未做此對話框的視覺複驗。
+- 完整規格缺口見 requirement-audit.md；本輪未完成真實模型、三平台、20 件非技術案例及最終發行 Gate。

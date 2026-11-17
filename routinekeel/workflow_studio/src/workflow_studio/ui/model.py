@@ -149,7 +149,7 @@ class StudioUIModel:
     def accept_candidate(self, index):
         p = self.project()
         candidate = self.candidates[index]
-        with self.service() as studio:
+        with self.service() as studio, studio.repository.transaction():
             revision = studio.save_ir(p.project_id, p.version, candidate["ir"], self.policy)
             GoldenCases(studio).from_candidate(
                 p.project_id, studio.projects.get(p.project_id).version, candidate
@@ -198,9 +198,11 @@ class StudioUIModel:
         self.build_id = self.approval_id = None
         return changed
 
-    def add_case(self, input_path, expected_path, output_name=None):
+    def add_case(self, input_path, expected_path, output_name=None, *, comparison="exact_bytes"):
         p = self.project()
-        with self.service() as studio:
+        if not Path(input_path).is_file() or not Path(expected_path).is_file():
+            raise StudioError("INPUT_INVALID", "每個案例請選擇單一輸入檔及正確成果檔。")
+        with self.service() as studio, studio.repository.transaction():
             one = studio.sources.import_path(p.project_id, p.version, input_path)
             two = studio.sources.import_path(
                 p.project_id, studio.projects.get(p.project_id).version, expected_path
@@ -215,17 +217,19 @@ class StudioUIModel:
                     "sha256": r["sha256"],
                 }
 
-            return GoldenCases(studio).save(
+            result = GoldenCases(studio).save(
                 p.project_id,
                 studio.projects.get(p.project_id).version,
                 {
                     "name": Path(input_path).name + " → " + Path(expected_path).name,
                     "input": ref(one),
                     "expected": ref(two),
-                    "comparison": "exact_bytes",
+                    "comparison": comparison,
                     **({"output_name": output_name} if output_name else {}),
                 },
             )
+        self.approval_id = None
+        return result
 
     def cases(self):
         with self.service() as studio:

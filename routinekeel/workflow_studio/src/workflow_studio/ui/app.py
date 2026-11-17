@@ -633,7 +633,25 @@ class StudioApp:
                 )
                 if selected is None:
                     return
-            self.model.add_case(source, expected, outputs[selected - 1] if outputs else None)
+            rule = simpledialog.askinteger(
+                "成果比較規則",
+                "1. 完全相同：包含空白、換行與欄位順序。\n"
+                "2. JSON 內容相同：忽略排版、物件欄位順序與等值數字寫法；\n"
+                "   值、型別及陣列順序仍須一致。\n\n"
+                "規則會固定保存於案例版本，試做失敗不會自動放寬。",
+                initialvalue=1,
+                minvalue=1,
+                maxvalue=2,
+                parent=self.root,
+            )
+            if rule is None:
+                return
+            self.model.add_case(
+                source,
+                expected,
+                outputs[selected - 1] if outputs else None,
+                comparison="exact_bytes" if rule == 1 else "json_equal",
+            )
             self.refresh_project()
 
     def manage_cases(self):
@@ -649,7 +667,12 @@ class StudioApp:
                 "end",
                 case["specification"]["name"]
                 + " → "
-                + case["specification"].get("output_name", "尚未指定"),
+                + case["specification"].get("output_name", "尚未指定")
+                + (
+                    " [JSON 內容]"
+                    if case["specification"]["comparison"] == "json_equal"
+                    else " [完全相同]"
+                ),
             )
         choice = ttk.Combobox(window, values=outputs, state="readonly")
         choice.pack(fill="x", padx=12)
