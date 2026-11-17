@@ -11,7 +11,7 @@
 | Stage 11 UI | 通過 Windows 本機測試 | Stage 11 `ad753e0`；UI 模型、Tk 操作、移動專案重開及打包驗證通過。macOS／Linux GUI 未實測。 |
 | Stage 12 AC／M | **未通過** | M7 在 C: NVMe 的 5,000 Run p95 9.78 ms 已具證據；M2 的全域追蹤覆蓋、macOS／正式 CI 尚不足，`test-report.md` 逐項列出。 |
 | Windows 全測 | 本機通過 | 完整回歸 382 passed、21 skipped、0 failed；含 Windows MCP netstat 無監聽 Port 與 Stage12 整合測試。 |
-| Linux/macOS | Linux 本機通過，macOS 待驗證 | WSL Linux 暫存副本 390 passed／13 skipped、建置成功；Ubuntu CI 未實際執行，macOS 真機未測。`.github/workflows/platform-checks.yml` 是尚未觸發的手動矩陣。 |
+| Linux/macOS | Linux 本機通過，macOS 待驗證 | WSL Linux 暫存副本 390 passed／13 skipped、建置成功；Ubuntu CI 未實際執行，macOS 真機未測。`.github/workflows/packages.yml` 已加入 PR／發行前 Windows/macOS Gate，尚未觸發。 |
 | 冷啟動與回滾演練 | Windows 部分通過 | 乾淨 0.2.11 包的 `run_app.bat list/run/doctor` 已實測；乾淨 0.2.12 包的 `queue_worker.bat --once` 不需 MCP 選配即 exit 0，另有選配 MCP 安裝、獨立 Worker、Client 重連與成果實測。`test_verified_preupgrade_backup_restores_legacy_database` 驗證備份 checksum 與 SQLite backup API 還原；非技術使用者手動走查、實際舊版 wheel 回退尚未完成。 |
 | 使用者資料 | 維持隔離 | `dist/`、模型、`.venv`、私人設定、成果及日誌不得提交或打包。 |
 | 發布 | 未授權／未執行 | 不建立 GitHub Release、不上傳或部署。 |

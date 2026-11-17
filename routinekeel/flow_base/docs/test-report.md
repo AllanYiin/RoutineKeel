@@ -42,6 +42,6 @@
 
 ## 平台與 CI
 
-原 CI `.github/workflows/packages.yml` 只在 Ubuntu 24.04 建置與測試，現已將測試命令加入 `--extra mcp`。另建立**僅手動觸發**的 `.github/workflows/platform-checks.yml`，用 `windows-2025` 與 `macos-15` 建置並跑完整套件；尚未推送／執行，故不產生本次 CI 花費，也不能宣稱矩陣通過。本機 WSL Linux 完整回歸 390 passed／13 skipped；macOS Finder 啟動及官方 MCP Inspector 尚未執行。
+原 CI `.github/workflows/packages.yml` 現在保留 Ubuntu 24.04 建置／測試，並在 PR 與發行前加上 `windows-2025`、`macos-15` 的完整套件 Gate；`publish` 必須等待三平台 job。YAML 已在本機解析檢查；使用者已授權推送與可能耗用額度的 CI，但候選分支尚未推送／執行，所以不能宣稱矩陣通過。另有只手動觸發的 `.github/workflows/platform-checks.yml`。本機 WSL Linux 完整回歸 390 passed／13 skipped；macOS Finder 啟動及官方 MCP Inspector 尚未執行。
 
 下一步：在可用的 macOS／正式 CI 環境跑跨平台矩陣，核對 M2 的全域追蹤覆蓋及發行版手冊走查。保持未驗項標記，直到對應證據具備。
