@@ -16,7 +16,7 @@
 
 ## 回滾
 
-若新程式失敗，先停止所有 RoutineKeel 程序並保留失敗的 `share_logs`／診斷。舊版底座若不認得新的 `PRAGMA user_version`，**不可直接寫新版 DB**。選擇升級前自動備份（例如 `state.sqlite3.before-v004.sqlite3`），先比對同名 `.sha256`，再用 SQLite backup API 還原到 `share_states/state.sqlite3`。完整命令與測試見 `migration-strategy.md`；還原前另存現有新版 DB 供診斷。完成後才替換舊 `flow_base` wheel／ZIP；流程包也須回到相容版本。
+若新程式失敗，先停止所有 RoutineKeel 程序並保留失敗的 `share_logs`／診斷。舊版底座若不認得新的 `PRAGMA user_version`，**不可直接寫新版 DB**。必須選擇**與目標舊版相容**的升級前備份，先比對同名 `.sha256`，再用 SQLite backup API 還原到 `share_states/state.sqlite3`。例如退回 v003 能讀的底座可選 `before-v004`；退回原始基準 commit `4f7ecf25` 的舊四表實作則須選 `before-v001`，不能選 `before-v004`。完整命令與測試見 `migration-strategy.md`；還原前另存現有新版 DB 供診斷。完成後才替換舊 `flow_base` wheel／ZIP；流程包也須回到相容版本。
 
 回滾資料庫會失去備份時點之後的**執行索引**；已發布成果與日誌不可直接刪除，須人工比對各版本與 `run_id`。若只是新工作結果錯誤，優先使用 Stage 7 的 Delivery 版本回滾，而非回退整個 SQLite。`current.json` 是正式指標；舊根路徑鏡像可由 journal 在重開時恢復。
 
@@ -37,6 +37,7 @@
 | 底座 | 可寫入的已驗證狀態 | 回退限制 |
 |---|---|---|
 | 0.2.12 | v004；保留舊四表、既有 Run，新增 `execution_queue`。可與字幕流程 0.3.4、複製範例 0.2.2 的目前測試包協作。 | 回退舊版前先停止 queue-worker，核對 `before-v004` 備份及 checksum。 |
-| 早於 0.2.12 | 依該版本實際 schema；本報告沒有對每個舊 wheel 做新版資料庫寫入驗證。 | 不可讓舊版直接寫 v004；先還原相容備份並比對可能失去的新增 Run／佇列索引。 |
+| 原始基準 commit `4f7ecf25` | 舊四表、`PRAGMA user_version=0`；以該 commit 原始碼讀取還原的 `before-v001` 備份，可查到原 Run。 | 不可使用 `before-v004`；先還原 `before-v001`。此測試不是舊 wheel 安裝驗證。 |
+| 其他早於 0.2.12 的版本 | 依該版本實際 schema；本報告沒有對每個舊 wheel 做新版資料庫寫入驗證。 | 不可讓舊版直接寫 v004；先找出相容備份並比對可能失去的新增 Run／佇列索引。 |
 
 上述矩陣只描述本輪實際測試與安全界線，不保證所有歷史流程包版本可混搭。

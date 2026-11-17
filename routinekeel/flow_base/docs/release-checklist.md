@@ -12,7 +12,7 @@
 | Stage 12 AC／M | 三平台自動測試通過，未覆蓋項已列出 | [PR CI run #9](https://github.com/AllanYiin/RoutineKeel/actions/runs/43987170358) 的 Ubuntu／Windows／macOS build/test 均 success；AC／M 的實測範圍見 `test-report.md`。macOS Finder／Tk 真人操作及未知硬體故障未被這組 CI 證明。 |
 | Windows 全測 | 本機通過 | 完整回歸 382 passed、21 skipped、0 failed；含 Windows MCP netstat 無監聽 Port 與 Stage12 整合測試。 |
 | Linux/macOS | 三平台 CI 通過，macOS GUI 未覆蓋 | Ubuntu 401 passed／3 skipped、macOS 402 passed／2 skipped、Windows 383 passed／21 skipped；三個測試 job success。macOS Finder／Tk 視窗操作仍需實機。 |
-| 冷啟動與回滾演練 | Windows 部分通過 | 乾淨 0.2.11 包的 `run_app.bat list/run/doctor` 已實測；乾淨 0.2.12 包的 `queue_worker.bat --once` 不需 MCP 選配即 exit 0，另有選配 MCP 安裝、獨立 Worker、Client 重連與成果實測。`test_verified_preupgrade_backup_restores_legacy_database` 驗證備份 checksum 與 SQLite backup API 還原；非技術使用者手動走查、實際舊版 wheel 回退尚未完成。 |
+| 冷啟動與回滾演練 | Windows 部分通過 | 乾淨 0.2.11 包的 `run_app.bat list/run/doctor`、乾淨 0.2.12 包的 Worker／MCP 安裝及重連均已測。v004 升級前備份與 checksum 測試通過；一次性工作區將 `before-v001` 還原後，原始基準 commit `4f7ecf25` 的舊四表程式可讀 `run_old`。非技術使用者手動走查、實際舊版 wheel 安裝回退尚未完成。 |
 | 使用者資料 | 維持隔離 | `dist/`、模型、`.venv`、私人設定、成果及日誌不得提交或打包。 |
 | 發布 | 未授權／未執行 | 不建立 GitHub Release、不上傳或部署。 |
 
