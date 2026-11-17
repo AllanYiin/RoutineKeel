@@ -42,6 +42,12 @@ class StudioService:
 
         return Catalog(self.repository)
 
+    @property
+    def handlers(self):
+        from .registry.handlers import HandlerLibrary
+
+        return HandlerLibrary(self.repository)
+
     def discovery(self, provider, budget, tool_policy):
         from .discovery.planner import DiscoveryPlanner
 

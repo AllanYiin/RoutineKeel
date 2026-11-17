@@ -147,6 +147,9 @@ class Catalog:
         self._reviewer(actor, reason, required=True)
         with self.repository.transaction() as db:
             item = self.get(tool_id, version)
+            from .handlers import HandlerLibrary
+
+            HandlerLibrary(self.repository).get(tool_id, version)
             if (
                 item["contract_hash"] != expected_hash
                 or item["status"] != "active"
@@ -183,10 +186,20 @@ class Catalog:
             self._event(tool_id, version, "revoke", actor, reason)
         return self.get(tool_id, version)
 
-    def available(self, policy):
+    def support(self, tool):
         from ..compiler.compatibility import tool_support
+        from .handlers import HandlerLibrary
 
-        return {key: tool for key, tool in self.allowed(policy).items() if tool_support(tool)[0]}
+        supported, reason = tool_support(tool)
+        if supported:
+            try:
+                HandlerLibrary(self.repository).get(tool.tool_id, tool.version)
+            except StudioError as exc:
+                return False, str(exc)
+        return supported, reason
+
+    def available(self, policy):
+        return {key: tool for key, tool in self.allowed(policy).items() if self.support(tool)[0]}
 
     def allowed(self, policy: ToolPolicy) -> dict[str, ToolDescription]:
         result = {}

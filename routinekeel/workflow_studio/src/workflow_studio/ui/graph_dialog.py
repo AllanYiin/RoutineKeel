@@ -87,6 +87,10 @@ def open_graph(app):
             "builtin.branch",
             "builtin.llm",
         }
+        or (
+            t["implementation"] == "generated.program"
+            and model.handler_template(t["tool_id"], t["version"]) is not None
+        )
     }
     choices = {f"{t['title']} · {k}": k for k, t in simple.items()}
     window = tk.Toplevel(app.root)

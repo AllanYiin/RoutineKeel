@@ -310,6 +310,14 @@ def build_workbench(app):
         padx=(s(5), 0),
     )
     app.node_info = tk.StringVar(value="點選流程中的步驟，即可查看輸入、輸出與調整選項。")
+    app.button(
+        flow,
+        "將已試做的自訂處理保存為工具",
+        app.save_handler_tool,
+        requires="save_handler",
+        fill="x",
+        pady=(0, s(6)),
+    )
     ttk.Label(
         flow, textvariable=app.node_info, wraplength=s(390), foreground="#64748B", font=(family, 10)
     ).pack(fill="x")

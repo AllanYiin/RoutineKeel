@@ -98,6 +98,7 @@ class DiscoveryPlanner:
                     "resources": t.resources.model_dump(),
                     "permissions": t.permissions,
                     "cost_micro_usd": t.cost_micro_usd,
+                    "reusable_handler": self.studio.handlers.public_contract(t.tool_id, t.version),
                 }
                 for t in tools.values()
             ],
@@ -275,7 +276,7 @@ class DiscoveryPlanner:
 
                 tools = self.studio.tools.available(self.policy)
                 validated = validate_ir(
-                    result.ir.model_dump(),
+                    self.studio.handlers.resolve_ir(result.ir.model_dump(), tools),
                     {key: tool.signature() for key, tool in tools.items()},
                     source_versions={(ref[0], ref[1]) for ref in prepared.source_refs},
                 )
@@ -289,7 +290,15 @@ class DiscoveryPlanner:
                             raise StudioError(
                                 "LLM_STREAM_INTERRUPTED", "使用者已停止新 Handler 檢查。"
                             )
-                        verify_examples(node.parameters, node.outputs["result"].format)
+                        try:
+                            verify_examples(node.parameters, node.outputs["result"].format)
+                        except StudioError:
+                            if self.studio.handlers.get(node.tool, node.tool_version):
+                                raise StudioError(
+                                    "TOOL_NOT_ALLOWED",
+                                    "固定 Handler 的本機測試失敗，請由工具管理者檢查。",
+                                ) from None
+                            raise
             with self.studio.repository.transaction():
                 self.studio.projects._editable(
                     self.studio.repository.connection, prepared.project_id, prepared.project_version

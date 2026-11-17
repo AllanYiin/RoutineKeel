@@ -16,6 +16,10 @@ def open_manual(app):
         for key, tool in model.editor_tools().items()
         if tool["implementation"]
         in {"builtin.copy", "builtin.normalize", "builtin.json", "builtin.report"}
+        or (
+            tool["implementation"] == "generated.program"
+            and model.handler_template(tool["tool_id"], tool["version"]) is not None
+        )
     }
     window = tk.Toplevel(app.root)
     app.prepare_dialog(window)
@@ -79,7 +83,7 @@ def open_manual(app):
                 key,
                 output_path=filename.get(),
                 input_format=None if format_var.get() == "未指定" else format_var.get(),
-                parameters={},
+                **model.node_defaults(key),
             )
             window.destroy()
             app.last_report = None

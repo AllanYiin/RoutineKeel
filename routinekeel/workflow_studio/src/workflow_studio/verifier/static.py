@@ -38,6 +38,7 @@ def verify_static(studio, build, policy):
             verified_files[name.removeprefix(prefix)] = archive.read(name)
     revision = studio.projects.get_revision(build["project_id"], build["revision_id"])
     tools = studio.tools.allowed(policy)
+    studio.handlers.validate_snapshot(revision.ir, tools)
     ir = validate_ir(
         revision.ir,
         {k: t.signature() for k, t in tools.items()},

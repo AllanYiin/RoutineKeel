@@ -56,12 +56,13 @@ class StudioUIModel:
             return result
 
     def tool_records(self):
-        from ..compiler.compatibility import tool_support
-
         with self.service() as studio:
             records = studio.tools.list(include_archived=True)
+            for item in records:
+                item["compiler_supported"], item["support_reason"] = studio.tools.support(
+                    item["tool"]
+                )
         for item in records:
-            item["compiler_supported"], item["support_reason"] = tool_support(item["tool"])
             try:
                 self.policy.check(item["tool"], trust=item["trust_status"], status=item["status"])
                 item["policy_reason"] = "符合目前專案政策。"
@@ -74,7 +75,7 @@ class StudioUIModel:
         with self.service() as studio:
             return studio.tools.history(tool_id, version)
 
-    def register_tool(self, payload, *, actor=None, reason=None):
+    def register_tool(self, payload, *, actor=None, reason=None, template_source=None):
         from pydantic import ValidationError
 
         from ..registry.models import ToolDescription
@@ -86,7 +87,41 @@ class StudioUIModel:
                 "INPUT_INVALID", "工具描述不符合契約，請檢查版本、平台、權限與輸入輸出型別。"
             ) from exc
         with self.service() as studio:
+            if template_source is not None:
+                return studio.handlers.clone(*template_source, tool, actor=actor, reason=reason)
             return studio.tools.register(tool, actor=actor, reason=reason)
+
+    def handler_template(self, tool_id, version):
+        with self.service() as studio:
+            return studio.handlers.get(tool_id, version)
+
+    def save_handler_tool(
+        self,
+        expected_version,
+        build_id,
+        package_hash,
+        node_id,
+        *,
+        tool_id,
+        version,
+        title,
+        actor,
+        reason,
+    ):
+        with self.service() as studio:
+            return studio.handlers.from_build(
+                self.project_id,
+                expected_version,
+                build_id,
+                package_hash,
+                node_id,
+                self.policy,
+                tool_id=tool_id,
+                version=version,
+                title=title,
+                actor=actor,
+                reason=reason,
+            )
 
     def read_tool_file(self, path):
         path = Path(path)
@@ -291,7 +326,12 @@ class StudioUIModel:
                     raise StudioError("INPUT_INVALID", "這個步驟沒有文字空白設定。")
                 node["parameters"]["strip"] = strip
             if arguments is not None:
-                if not node["tool"].startswith("data.transform_"):
+                if (
+                    self.editor_tools()
+                    .get(f"{node['tool']}@{node['tool_version']}", {})
+                    .get("implementation")
+                    != "generated.program"
+                ):
                     raise StudioError("INPUT_INVALID", "此步驟沒有生成 Handler 的設定欄位。")
                 from ..compiler.handlers import validate_handler
 
@@ -365,6 +405,9 @@ class StudioUIModel:
         tool = self.editor_tools().get(tool_key)
         if tool is None:
             raise StudioError("TOOL_NOT_ALLOWED", "此動作目前不可用。")
+        template = self.handler_template(tool["tool_id"], tool["version"])
+        if template:
+            return {"parameters": {"arguments": copy.deepcopy(template["parameters"]["arguments"])}}
         if tool["implementation"] == "builtin.branch":
             return {
                 "parameters": {

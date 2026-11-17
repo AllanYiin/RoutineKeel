@@ -27,6 +27,7 @@ class Compiler:
         ):
             raise StudioError("IR_SCHEMA_INVALID", "請先保存通過驗證的 IR 版本。")
         tools = self.studio.tools.allowed(policy)
+        self.studio.handlers.validate_snapshot(revision.ir, tools)
         ir = validate_ir(
             revision.ir,
             {k: t.signature() for k, t in tools.items()},

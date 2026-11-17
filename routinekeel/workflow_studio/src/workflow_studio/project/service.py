@@ -176,6 +176,9 @@ class ProjectService:
     def save_ir(self, project_id: str, expected_version: int, payload: dict, tools) -> Revision:
         from ..governance.evidence import EvidenceRecords
         from ..ir.validator import validate_ir
+        from ..registry.handlers import HandlerLibrary
+
+        payload = HandlerLibrary(self.repository).resolve_ir(payload, tools)
 
         versions = {
             (row[0], row[1])

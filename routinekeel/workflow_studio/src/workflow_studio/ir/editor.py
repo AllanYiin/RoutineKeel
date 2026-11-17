@@ -52,7 +52,7 @@ class FlowEditor:
             if ref.scheme == "artifact":
                 dependencies.add(ref.owner)
         external = tool.side_effects == "external"
-        return {
+        node = {
             "id": node_id,
             "kind": tool.kind,
             "tool": tool.tool_id,
@@ -85,6 +85,7 @@ class FlowEditor:
             ),
             "llm_policy": copy.deepcopy(llm_policy),
         }
+        return self.studio.handlers.resolve_ir({"nodes": [node]}, {tool_key})["nodes"][0]
 
     def apply(
         self,
@@ -133,6 +134,7 @@ class FlowEditor:
             ]
             payload["revision"] = max(ordinals, default=0) + 1
             tools = self.studio.tools.allowed(self.policy)
+            payload = self.studio.handlers.resolve_ir(payload, tools)
             validated = validate_ir(
                 payload,
                 {k: t.signature() for k, t in tools.items()},
@@ -220,6 +222,7 @@ class FlowEditor:
                 ],
             }
             tools = self.studio.tools.allowed(self.policy)
+            payload = self.studio.handlers.resolve_ir(payload, tools)
             ir = validate_ir(payload, {k: t.signature() for k, t in tools.items()})
             check_supported(ir, tools)
             if (

@@ -86,3 +86,10 @@ record_version、狀態、操作者及理由。操作與事件同交易，事件
 升級前保存 before-v010 備份；既有工具僅新增標示為 snapshot 的狀態快照，不虛構歷史操作者。
 原 tool_approvals 保留。已實測 v010 升級、停用與核准資料保留、備份驗證及獨立 v010 還原。
 回退仍先保留最新 DB／projects／發布快照，再還原到新位置；v011 期間新增治理事件需另外保留。
+
+## v012 固定 Handler 工具庫
+
+新增不可變 `studio_handler_templates`，以工具 ID@version 綁定完整參數快照、hash 與來源驗收資訊。
+不修改既有 ToolDescription schema 或 fingerprint 計算，避免預設欄位改變而使舊工具失效。
+舊工具不會自動升格為固定 Handler。升級前保存 before-v011，已驗證升級與在獨立目錄還原 v011。
+回退時需另存最新 DB 與 projects，保留 v012 模板及其治理紀錄；舊版本不能強寫新 schema。

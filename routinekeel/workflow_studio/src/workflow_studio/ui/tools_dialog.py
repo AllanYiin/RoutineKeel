@@ -100,7 +100,7 @@ def open_tools(app):
     footer.columnconfigure(3, weight=1)
     controls = ttk.Frame(footer)
     controls.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(10, 0))
-    state = {"records": {}, "key": None, "baseline": None, "template": None}
+    state = {"records": {}, "key": None, "baseline": None, "template": None, "handler": None}
     buttons = {}
 
     def snapshot():
@@ -137,6 +137,10 @@ def open_tools(app):
     def fill(item):
         tool = item["tool"].model_dump()
         state["template"] = tool
+        try:
+            state["handler"] = model.handler_template(item["tool_id"], item["version"])
+        except StudioError:
+            state["handler"] = None
         for key in ("tool_id", "title"):
             fields[key].set(tool[key])
         major, minor, patch = map(int, tool["version"].split("."))
@@ -154,6 +158,16 @@ def open_tools(app):
             f"{item['support_reason']}\n{item['policy_reason']}\n契約 SHA-256：{item['contract_hash']}\n\n"
             + json.dumps(tool, ensure_ascii=False, indent=2),
         )
+        if state["handler"]:
+            handler = state["handler"]
+            app._set_text(
+                detail,
+                detail.get("1.0", "end-1c")
+                + "\n\n固定 Handler（與契約指紋綁定）\n"
+                + json.dumps(handler["parameters"], ensure_ascii=False, indent=2)
+                + "\n\n來源驗證\n"
+                + json.dumps(handler["origin"], ensure_ascii=False, indent=2),
+            )
         records = model.tool_history(item["tool_id"], item["version"])
         lines = [
             f"{e['created_at']} · {e['action']} · {e['actor'] or '系統／API（未提供操作者）'}\n{e['reason'] or ''}\n{e['payload_json']}"
@@ -238,7 +252,12 @@ def open_tools(app):
                 if actor.get().strip() and reason.get().strip()
                 else {}
             )
-            item = model.register_tool(payload, **reviewer)
+            template_source = (
+                (state["template"]["tool_id"], state["template"]["version"])
+                if imported is None and state["handler"]
+                else None
+            )
+            item = model.register_tool(payload, template_source=template_source, **reviewer)
             changed_parent()
             refresh(f"{item['tool_id']}@{item['version']}")
             tabs.select(detail)

@@ -92,6 +92,12 @@ class StudioApp:
             and self.candidate_choice.current() >= 0,
             "node": workflow and self.selected_node is not None,
             "workflow": workflow,
+            "save_handler": workflow
+            and verified
+            and any(
+                n["id"] == self.selected_node and "program" in n["parameters"]
+                for n in self.display_ir["nodes"]
+            ),
             "initialize": active and bool(self.source_rows) and not workflow,
             "cases": active and self.case_count > 0,
             "case_history": active and self.case_history_count > 0,
@@ -580,7 +586,7 @@ class StudioApp:
         self.node_info.set(
             f"{self.tool_title(node)}｜{len(node['inputs'])} 項輸入 → {len(node['outputs'])} 項輸出\n每次執行都會檢查完成條件，修改後須重新試做。"
         )
-        if node["tool"].startswith("data.transform_"):
+        if "program" in node["parameters"]:
             self.node_info.set(
                 node["parameters"]["purpose"]
                 + "\n由模型產生的資料處理，須通過獨立試做與核准後才可發布。"
@@ -621,6 +627,11 @@ class StudioApp:
         from .tools_dialog import open_tools
 
         open_tools(self)
+
+    def save_handler_tool(self):
+        from .handler_dialog import save_selected_handler
+
+        save_selected_handler(self)
 
     def tool_title(self, node):
         return self.tool_titles.get(

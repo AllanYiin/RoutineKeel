@@ -1,7 +1,7 @@
 """Ordered, transactional Studio schema migrations."""
 
 APPLICATION_ID = 0x53545544  # STUD; rejects accidentally selected Runtime databases.
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 V001 = (
     """CREATE TABLE studio_projects (
@@ -162,6 +162,17 @@ V011 = (
         BEGIN SELECT RAISE(ABORT, 'retain tool event'); END""",
 )
 
+V012 = (
+    """CREATE TABLE studio_handler_templates (
+        tool_id TEXT NOT NULL, version TEXT NOT NULL, template_hash TEXT NOT NULL,
+        parameters_json TEXT NOT NULL, origin_json TEXT NOT NULL, created_at TEXT NOT NULL,
+        PRIMARY KEY(tool_id,version), FOREIGN KEY(tool_id,version) REFERENCES studio_tools(tool_id,version))""",
+    """CREATE TRIGGER immutable_handler_template BEFORE UPDATE ON studio_handler_templates
+        BEGIN SELECT RAISE(ABORT, 'immutable handler template'); END""",
+    """CREATE TRIGGER retain_handler_template BEFORE DELETE ON studio_handler_templates
+        BEGIN SELECT RAISE(ABORT, 'retain handler template'); END""",
+)
+
 MIGRATIONS = {
     1: V001,
     2: V002,
@@ -174,4 +185,5 @@ MIGRATIONS = {
     9: V009,
     10: V010,
     11: V011,
+    12: V012,
 }

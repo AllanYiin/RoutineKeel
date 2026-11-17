@@ -65,3 +65,6 @@ uv run --project routinekeel/workflow_studio --group dev python -m workflow_stud
 技術管理者可從上方「工具管理」查看契約、建立新版本、匯入描述並核准／撤回／停用工具。
 這是工作區共用設定，會影響所有專案的後續編譯及發布，不會自動卸載已安裝流程。
 註冊、核准及可編譯是三種不同狀態，詳見 [工具治理](tool-registry.md)。
+
+已通過試做的自訂處理可保存為同工作區的可重用工具，核准後供其他專案選用。
+其他專案只需調整已宣告參數，仍以自己的案例試做；詳見 [Handler 工具庫](handler-library.md)。

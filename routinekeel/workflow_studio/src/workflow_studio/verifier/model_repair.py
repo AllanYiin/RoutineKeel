@@ -153,6 +153,11 @@ class ModelRepair:
             "max_rounds": 2,
             "policy": {**vars(self.policy), "permissions": sorted(self.policy.permissions)},
             "tools": {k: t.model_dump() for k, t in allowed.items()},
+            "reusable_handlers": {
+                k: self.studio.handlers.public_contract(t.tool_id, t.version)
+                for k, t in allowed.items()
+                if self.studio.handlers.get(t.tool_id, t.version)
+            },
             "handler_generation": generation,
             "original_ir": original,
             "cases": snapshots,
@@ -211,6 +216,7 @@ class ModelRepair:
                 "APPROVAL_REQUIRED", "修復提案變更了固定目標、證據、輸入或模型範圍，未採用。"
             )
         tools = self.studio.tools.available(self.policy)
+        proposal = self.studio.handlers.resolve_ir(proposal, tools)
         proposal["revision"] = current["revision"] + 1
         validated = validate_ir(
             proposal,
@@ -221,7 +227,14 @@ class ModelRepair:
         check_supported(validated, tools)
         for node in validated.nodes:
             if tools[f"{node.tool}@{node.tool_version}"].implementation == "generated.program":
-                verify_examples(node.parameters, node.outputs["result"].format)
+                try:
+                    verify_examples(node.parameters, node.outputs["result"].format)
+                except StudioError:
+                    if self.studio.handlers.get(node.tool, node.tool_version):
+                        raise StudioError(
+                            "TOOL_NOT_ALLOWED", "固定 Handler 的本機測試失敗，請由工具管理者檢查。"
+                        ) from None
+                    raise
         return validated.model_dump()
 
     def run(self, prepared, *, authorized_hash=None, runtime_secrets=None, cancelled=lambda: False):
@@ -251,7 +264,8 @@ class ModelRepair:
                 if cancelled():
                     raise StudioError("LLM_STREAM_INTERRUPTED", "使用者已停止修復。")
                 content = {
-                    "current_ir": current,
+                    "current_ir": self.studio.handlers.public_ir(current),
+                    "reusable_handlers": scope["reusable_handlers"],
                     "cases": scope["cases"],
                     "failure": diagnostic,
                     "tools": {

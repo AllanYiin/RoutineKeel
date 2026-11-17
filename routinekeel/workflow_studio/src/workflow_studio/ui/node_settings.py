@@ -201,6 +201,10 @@ def open_settings(app):
     model, project, revision = app.model, app.model.project(), app.model.revision()
     node = next(n for n in revision.ir["nodes"] if n["id"] == app.selected_node)
     tools = model.editor_tools()
+    generated = (
+        tools.get(f"{node['tool']}@{node['tool_version']}", {}).get("implementation")
+        == "generated.program"
+    )
     window = tk.Toplevel(app.root)
     app.prepare_dialog(window)
     window.title("步驟設定與完成條件")
@@ -344,7 +348,7 @@ def open_settings(app):
             text="金鑰沿用專案設定，不在流程表單輸入。變更模型或目的端後，試做需重新確認資料與憑證範圍。",
             wraplength=550,
         ).pack(anchor="w", pady=12)
-    elif node["tool"].startswith("data.transform_"):
+    elif generated:
         ttk.Label(parameters, text=params["purpose"], wraplength=550).pack(anchor="w", pady=8)
         for name, kind in params.get("argument_types", {}).items():
             if kind != "null":
@@ -413,7 +417,7 @@ def open_settings(app):
             }
             if llm["timeout_seconds"] > numeric(values["timeout"].get(), integer=True):
                 raise StudioError("INPUT_INVALID", "模型時間上限不能大於整個步驟的時間上限。")
-        elif node["tool"].startswith("data.transform_"):
+        elif generated:
             for name, kind in params.get("argument_types", {}).items():
                 if kind == "null":
                     continue

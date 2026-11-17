@@ -76,6 +76,8 @@ class SQLiteRepository:
                 required |= {"studio_evidence_decisions"}
             if SCHEMA_VERSION >= 11:
                 required |= {"studio_tool_events"}
+            if SCHEMA_VERSION >= 12:
+                required |= {"studio_handler_templates"}
             actual = {
                 row[0]
                 for row in self.connection.execute(

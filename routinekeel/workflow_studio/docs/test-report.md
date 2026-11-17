@@ -262,3 +262,19 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
   修復 Provider 亦不收到 test_evidence／implementation 路徑，不將內部稽核資料當模型輸入。
 - Ruff check／format check（133 files）與 git diff --check 通過。新工具視窗未做實機驗收，
   生成 Handler 的跨專案重用、第三方適配、真實模型與最終平台／使用者 Gate 仍待完成。
+
+## 固定 Handler 跨專案工具庫與 v012
+
+- 新增從目前已通過獨立試做的步驟保存固定 Handler；程式、參數型別、預設值與合成測試的 hash
+  綁入工具契約，預設 untrusted。另存版本保留舊內容，只有參數值可在新專案覆寫。
+- `test_handler_library.py test_model_repair.py`：28 passed，41.29 秒，含新專案不同門檻真實重播、
+  原專案封存後重用、固定內容不可覆寫、舊 build 不能冒充新步驟驗收，以及修復只傳介面與覆寫參數。
+- 完整非桌面回歸（同前節命令）：332 passed、3 deselected，130.45 秒。
+- 隨後補保存／展開大小限制、來源紀錄版本與契約入庫檢查，最終 `test_handler_library.py`：
+  14 passed，25.76 秒。大小限制故障注入確認不留下部分工具或目標 Revision；不與完整回歸加總。
+- v011 → v012 及 before-v011 在獨立目錄還原通過；模板表 UPDATE／DELETE 拒絕。
+  ToolDescription schema／既有 fingerprint 不變，舊工具不自動升格為固定 Handler。
+- 模型請求不含固定程式、合成測試及預設參數；比較差異仍依修復授權範圍傳送。
+  程式與合成測試的私密 sentinel 沒有出現在 fixture Provider 請求中，實際執行仍使用完整本機快照。
+- Ruff check／format check（136 files）及 git diff --check 通過；新保存按鈕與表單未做實機操作。
+  真實模型、第三方覆蓋、完整治理、三平台、20 件非技術案例及最終交付仍未完成。
