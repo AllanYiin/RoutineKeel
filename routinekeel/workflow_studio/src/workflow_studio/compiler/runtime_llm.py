@@ -15,6 +15,8 @@ from flow_base.runtime import FlowError
 
 
 def run_llm(ctx, step, node, content, ir_hash):
+    if ctx.offline:
+        raise FlowError("OFFLINE", "離線模式不允許模型 API 呼叫")
     if os.environ.get("WORKFLOW_STUDIO_LLM_AUTHORIZATION") != ir_hash:
         raise FlowError("APPROVAL_REQUIRED", "此版本的執行期模型尚未取得明確授權")
     policy, params = node["llm_policy"], node["parameters"]

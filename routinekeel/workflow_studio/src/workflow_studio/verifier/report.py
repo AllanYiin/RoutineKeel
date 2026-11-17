@@ -18,7 +18,7 @@ class Verifier:
         self.studio = studio
         self.runtime_python = Path(runtime_python or sys.executable).resolve()
 
-    def verify(self, project_id, build_id, cases, policy):
+    def verify(self, project_id, build_id, cases, policy, *, authorization=None):
         build = Compiler(self.studio).get(project_id, build_id)
         report_id = "verification_" + uuid4().hex
         folder = build["path"] / "verification" / report_id
@@ -35,6 +35,12 @@ class Verifier:
         try:
             manifest, package_files = verify_static(self.studio, build, policy)
             report["static"] = "passed"
+            from .authorization import disclosure, environment
+
+            disclosed = disclosure(self.studio, project_id, build_id, cases)
+            runtime_env = environment(disclosed, authorization)
+            report["disclosure_hash"] = disclosed["request_hash"]
+            report["runtime_model_authorized"] = bool(runtime_env)
             if not cases or {c["output"] for c in cases} != set(manifest["outputs"]):
                 raise StudioError("TEST_FAILED", "Golden Cases 必須涵蓋全部具名交付物。")
             revision = self.studio.projects.get_revision(project_id, build["revision_id"])
@@ -57,7 +63,9 @@ class Verifier:
                 }
                 report["cases"].append(result)
                 root = folder / f"case-{i + 1}"
-                runtime = replay(package_files, root, source, self.runtime_python)
+                runtime = replay(
+                    package_files, root, source, self.runtime_python, runtime_env=runtime_env
+                )
                 actual = output_bytes(root, runtime, binding["output"], revision.ir)
                 result.update(
                     actual_sha256=digest(actual),
@@ -69,6 +77,27 @@ class Verifier:
                         "expected_bytes": len(expected),
                         "actual_bytes": len(actual),
                     }
+                    try:
+                        import difflib
+
+                        expected_lines = expected[:8000].decode("utf-8").splitlines()[:80]
+                        actual_lines = actual[:8000].decode("utf-8").splitlines()[:80]
+                        result["difference"]["text_diff"] = (
+                            "\n".join(
+                                difflib.unified_diff(
+                                    expected_lines,
+                                    actual_lines,
+                                    fromfile="預期成果",
+                                    tofile="實際成果",
+                                    lineterm="",
+                                )
+                            )[:12000]
+                            or "差異位於文字預覽範圍之外。"
+                        )
+                    except UnicodeDecodeError:
+                        result["difference"]["text_diff"] = (
+                            "二進位成果內容不同，請對照來源與實際產物。"
+                        )
                     raise StudioError("TEST_FAILED", "實際成果與固定成功案例不符。")
                 result["status"] = "passed"
             report["status"] = "passed"

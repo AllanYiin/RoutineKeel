@@ -62,3 +62,10 @@ v000 備份代表首次安裝前無 Studio 資料，不能拿來復原後來建�
 新增不可變驗證報告，與 build 狀態同交易提交。實際測試成果位於 builds 的 verification 子目錄，
 報告以固定 Golden Case 版本與 package hash 關聯。回退 Stage 7 使用 before-v006 備份，
 同時另存最新 DB 與 projects，以保留實際重播證據。
+
+## v008–v009 工作台治理及設定
+
+v008 新增核准及發布日誌；v009 保存非機密模型設定。升級前仍建立相應 before-vNNN 備份。
+發布工作區的 `.studio_releases` 保存版本快照、journal 與目前指標；此目錄與 Studio DB／projects
+都屬備份範圍。回退前先保留整組最新資料，使用相容版本的 DB 備份，不用舊程式強寫新 schema。
+已安裝流程的 outputs 不隨 Studio 更新刪除；manifest 切換失敗以 journal 核對並恢復狀態。

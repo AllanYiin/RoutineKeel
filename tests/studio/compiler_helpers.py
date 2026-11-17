@@ -13,13 +13,11 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def build_ir(tmp_path, payload=None, policy=None):
+    payload = payload or valid_ir()
     studio = StudioService.open_workspace(tmp_path / "studio")
-    p = studio.projects.create(
-        "編譯", {"description": "複製檔案", "success_criteria": ["內容相同"]}
-    )
+    p = studio.projects.create("編譯", payload["goal"])
     source = studio.sources.import_text(p.project_id, 1, "測試來源規格")
     studio.tools.seed()
-    payload = payload or valid_ir()
     for evidence in payload["evidence"]:
         evidence["source_id"] = source.source_id
     policy = policy or ToolPolicy("windows" if os.name == "nt" else "linux")

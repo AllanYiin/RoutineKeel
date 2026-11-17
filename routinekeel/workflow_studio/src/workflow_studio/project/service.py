@@ -114,6 +114,56 @@ class ProjectService:
     def archive(self, project_id: str, expected_version: int) -> Project:
         return self.set_status(project_id, expected_version, ProjectStatus.ARCHIVED)
 
+    def settings(self, project_id):
+        import json
+
+        self.get(project_id)
+        row = self.repository.connection.execute(
+            "SELECT settings_json FROM studio_project_settings WHERE project_id=?", (project_id,)
+        ).fetchone()
+        return json.loads(row[0]) if row else {}
+
+    def update_settings(self, project_id, expected_version, settings):
+        allowed = {"endpoint", "model", "budget_usd", "input_rate", "output_rate"}
+        optional = {"runtime_enabled", "runtime_budget_usd"}
+        if not isinstance(settings, dict) or (
+            settings and (not allowed <= set(settings) or set(settings) - allowed - optional)
+        ):
+            raise StudioError("INPUT_INVALID", "專案設定只保存模型、端點、費率與預算，不保存金鑰。")
+        if settings:
+            if (
+                type(settings.get("runtime_enabled", False)) is not bool
+                or type(settings.get("runtime_budget_usd", 0.0)) not in {int, float}
+                or settings.get("runtime_budget_usd", 0.0) < 0
+            ):
+                raise StudioError("INPUT_INVALID", "執行期模型設定無效。")
+            from ..llm.provider import ChatCompletionsProvider
+            from ..llm.usage import Budget
+
+            try:
+                ChatCompletionsProvider(settings["endpoint"], settings["model"])
+                Budget(
+                    20,
+                    int(settings["budget_usd"] * 1_000_000),
+                    8000,
+                    int(settings["input_rate"] * 1_000_000),
+                    int(settings["output_rate"] * 1_000_000),
+                )
+            except (ValueError, TypeError) as exc:
+                raise StudioError("INPUT_INVALID", "模型設定的費率或預算無效。") from exc
+        payload = canonical_json(settings)
+        with self.repository.transaction() as db:
+            self._editable(db, project_id, expected_version)
+            db.execute(
+                "INSERT INTO studio_project_settings VALUES (?,?) ON CONFLICT(project_id) DO UPDATE SET settings_json=excluded.settings_json",
+                (project_id, payload),
+            )
+            db.execute(
+                "UPDATE studio_projects SET version=version+1,updated_at=? WHERE project_id=?",
+                (now(), project_id),
+            )
+        return self.settings(project_id)
+
     def delete(self, project_id: str, expected_version: int) -> Project:
         return self.set_status(project_id, expected_version, ProjectStatus.DELETED)
 

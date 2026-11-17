@@ -90,6 +90,17 @@ class DiscoveryPlanner:
             "tools": [t.signature().model_dump() for t in tools.values()],
             "ir_schema": WorkflowIR.model_json_schema(),
         }
+        settings = self.studio.projects.settings(project_id)
+        if settings.get("runtime_enabled"):
+            content["runtime_model_defaults"] = {
+                "endpoint": settings["endpoint"],
+                "model": settings["model"],
+                "api_key": "secret://provider_key",
+                "budget_micro_usd": int(settings["runtime_budget_usd"] * 1_000_000),
+                "input_usd_per_million": settings["input_rate"],
+                "output_usd_per_million": settings["output_rate"],
+                "pricing_note": "User-configured rates; require explicit verification approval",
+            }
         from .evidence_graph import EvidenceGraphs
 
         selected = {(ref[0], ref[1]) for ref in refs}

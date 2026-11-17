@@ -45,7 +45,8 @@ class EvidenceGraphs:
 
     def list(self, project_id, include_archived=False):
         ids = self.repository.connection.execute(
-            "SELECT DISTINCT graph_id FROM studio_evidence_graphs WHERE project_id=?", (project_id,)
+            "SELECT graph_id FROM studio_evidence_graphs WHERE project_id=? GROUP BY graph_id ORDER BY MIN(created_at),graph_id",
+            (project_id,),
         ).fetchall()
         results = [self.get(project_id, row[0]) for row in ids]
         return [g for g in results if include_archived or g["status"] == "active"]

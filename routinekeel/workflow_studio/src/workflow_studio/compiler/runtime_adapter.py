@@ -168,6 +168,7 @@ class Adapter(BaseAdapter):
         result = super().plan(runtime, workflow, source, output)
         if (
             any(n["kind"] == "llm" for n in PLAN["operations"].values())
+            and os.environ.get("FLOW_BASE_PLAN_READ_ONLY") != "1"
             and os.environ.get("WORKFLOW_STUDIO_LLM_AUTHORIZATION") != PLAN["ir_hash"]
         ):
             result["blocked"].append(

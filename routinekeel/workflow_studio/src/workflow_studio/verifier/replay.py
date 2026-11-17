@@ -21,7 +21,7 @@ ENV_NAMES = {
 }
 
 
-def replay(package, root, source, runtime_python, *, timeout=60):
+def replay(package, root, source, runtime_python, *, timeout=60, runtime_env=None):
     root.mkdir(parents=True, exist_ok=False)
     (root / "generated").mkdir()
     for name, content in package.items():
@@ -29,6 +29,7 @@ def replay(package, root, source, runtime_python, *, timeout=60):
     (root / "input.bin").write_bytes(source)
     env = {k: v for k, v in os.environ.items() if k.upper() in ENV_NAMES}
     env["PYTHONIOENCODING"] = "utf-8"
+    env.update(runtime_env or {})
     runner = Path(__file__).with_name("runtime_runner.py")
     try:
         result = subprocess.run(
@@ -43,7 +44,9 @@ def replay(package, root, source, runtime_python, *, timeout=60):
     if result.returncode != 0 or not (root / "runtime-result.json").is_file():
         raise StudioError("TEST_FAILED", "測試工作流失敗，請查看本機測試紀錄。")
     report = json.loads((root / "runtime-result.json").read_text(encoding="utf-8"))
-    if report["status"] != "complete" or report["token_usage"]["registered_requests"] != 0:
+    if report["status"] != "complete" or (
+        not runtime_env and report["token_usage"]["registered_requests"] != 0
+    ):
         raise StudioError("TEST_FAILED", "工作流未完成或確定性流程產生了模型呼叫。")
     if not {"run.started", "step.started", "delivery.published", "run.finished"} <= set(
         report["lifecycle"]

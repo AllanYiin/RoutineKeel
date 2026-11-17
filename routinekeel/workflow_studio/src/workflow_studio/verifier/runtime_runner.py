@@ -1,6 +1,7 @@
 """Run only the already-verified generated package, through the public Runtime API."""
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -12,7 +13,10 @@ def main():
     root = Path(sys.argv[1]).resolve()
     service = WorkflowService(root)
     request = PlanRequest(
-        task="generated", source=root / "input.bin", output=root / "output", offline=True
+        task="generated",
+        source=root / "input.bin",
+        output=root / "output",
+        offline=not bool(os.environ.get("WORKFLOW_STUDIO_LLM_AUTHORIZATION")),
     )
     planned = service.plan_workflow(request)
     if not planned.plan["ready_to_prepare"]:

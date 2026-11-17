@@ -2,7 +2,8 @@
 
 Studio 將工作描述與成功案例整理成可驗證、可重複使用的 RoutineKeel 工作流。
 目前依 Stage 0–13 計畫開發；能力與實際驗收結果見 [進度](todo.md)。
-尚未交付一般使用者的工作台，不能把套件可匯入當成流程編譯已完成。
+目前已有可操作的本機工作台，但仍是開發版，尚未完成整體驗收。
+Windows 可雙擊 [open_studio.bat](open_studio.bat)，操作見 [工作台指南](docs/workbench.md)。
 
 從儲存庫根目錄執行開發測試：
 

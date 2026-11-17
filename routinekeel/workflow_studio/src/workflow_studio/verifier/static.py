@@ -39,6 +39,11 @@ def verify_static(studio, build, policy):
     tools = studio.tools.allowed(policy)
     ir = validate_ir(revision.ir, {k: t.signature() for k, t in tools.items()})
     check_supported(ir, tools)
+    if (
+        sum(n.llm_policy.budget_micro_usd for n in ir.nodes if n.llm_policy)
+        > policy.max_cost_micro_usd
+    ):
+        raise StudioError("BUDGET_EXCEEDED", "目前政策未允許此模型預算。")
     if ir_fingerprint(ir) != build["mapping"]["ir_hash"]:
         raise StudioError("TEST_FAILED", "建置 IR 指紋不符。")
     expected_plan = lower(ir, tools)

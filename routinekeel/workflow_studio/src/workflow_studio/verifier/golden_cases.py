@@ -57,7 +57,7 @@ class GoldenCases:
 
     def _validate(self, project_id, specification):
         if (
-            set(specification) != {"name", "input", "expected", "comparison"}
+            set(specification) - {"output_name"} != {"name", "input", "expected", "comparison"}
             or specification["comparison"] != "exact_bytes"
         ):
             raise StudioError(
@@ -65,6 +65,13 @@ class GoldenCases:
             )
         if not isinstance(specification["name"], str) or not specification["name"].strip():
             raise StudioError("INPUT_INVALID", "測試案例名稱不可空白。")
+        if "output_name" in specification:
+            import re
+
+            if not isinstance(specification["output_name"], str) or not re.fullmatch(
+                r"[a-z][a-z0-9_-]{0,63}", specification["output_name"]
+            ):
+                raise StudioError("INPUT_INVALID", "案例交付物識別碼無效。")
         for side in ("input", "expected"):
             ref = specification[side]
             if set(ref) != {"source_id", "version", "path", "sha256"}:
@@ -90,7 +97,8 @@ class GoldenCases:
 
     def list(self, project_id, include_archived=False):
         rows = self.studio.repository.connection.execute(
-            "SELECT DISTINCT case_id FROM studio_test_cases WHERE project_id=?", (project_id,)
+            "SELECT case_id FROM studio_test_cases WHERE project_id=? GROUP BY case_id ORDER BY MIN(created_at),case_id",
+            (project_id,),
         ).fetchall()
         results = [self.get(project_id, r[0]) for r in rows]
         return [r for r in results if include_archived or r["status"] == "active"]

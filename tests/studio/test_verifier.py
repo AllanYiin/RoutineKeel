@@ -9,8 +9,8 @@ from workflow_studio.verifier.report import Verifier
 pytest.importorskip("PIL", reason="Verifier fixtures require Studio source dependencies")
 
 
-def verification_case(tmp_path, expected="sample", payload=None):
-    studio, p, revision, policy = build_ir(tmp_path, payload)
+def verification_case(tmp_path, expected="sample", payload=None, policy=None):
+    studio, p, revision, policy = build_ir(tmp_path, payload, policy)
     build = studio.compile(p.project_id, revision.revision_id, policy)
     source = studio.sources.import_text(p.project_id, 3, "sample", name="input.txt")
     expected_source = studio.sources.import_text(p.project_id, 4, expected, name="expected.txt")
