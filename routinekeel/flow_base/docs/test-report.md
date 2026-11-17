@@ -1,6 +1,6 @@
 # RoutineKeel 整合驗收紀錄（Stage 12 三平台 CI 通過）
 
-本報告依 `RoutineKeel_flow_base_spec_v1.2.2.zip` 的 AC-01～08、M1～M8，以及使用者後續核定的 `specs/mcp-queue-v1.md` 修訂，記錄實際證據。Stage 10 已改為持久化 `execution_id` 與另行啟動的 queue-worker；MCP Client 不直接派生執行程序。三平台 PR CI 已通過；macOS Finder／Tk 真人操作與舊版 wheel 的實際回退仍未驗證。
+本報告依 `RoutineKeel_flow_base_spec_v1.2.2.zip` 的 AC-01～08、M1～M8，以及使用者後續核定的 `specs/mcp-queue-v1.md` 修訂，記錄實際證據。Stage 10 已改為持久化 `execution_id` 與另行啟動的 queue-worker；MCP Client 不直接派生執行程序。三平台 CI 已通過；舊版 wheel 回滾已按下述範圍實測，macOS Finder／Tk 與非技術真人操作仍未驗證。
 
 ## 測試環境與重現命令
 
@@ -15,7 +15,7 @@
 - 乾淨 0.2.12 發行包另完成 Windows 端到端測試：`start.ps1 --install-mcp` exit 0、已安裝 wheel 回報 0.2.12；由另一個程序啟動 queue-worker，官方 SDK Client 提交後關閉再重連，查得 `succeeded`、同一 `execution_id` 關聯的 `run_id` 與正確成果，Worker exit 0。
 - 回滾指引的一次性資料演練：以舊四表建立測試 DB，升至 v004 後驗證 `before-v001` SHA-256，再用 SQLite backup API 還原；原始基準 commit `4f7ecf25` 的舊版原始碼可讀取 `run_old`。此步單獨只驗證舊原始碼；實際 wheel 結果列於下一項。`before-v004` 不適用於該舊四表程式。
 - 實際舊 wheel 演練：本機 `flow_base-0.2.9.zip` 的 ZIP 路徑安全、wheel SHA-256 與包內 `start.ps1` 期望值相符。將 `before-v001` 還原到一次性工作區後，用未修改的舊 `start.ps1` 搭配 PowerShell 7 安裝，`history` exit 0 並讀到 `run_old`。同一包 `run_app.bat` 在此 Windows PowerShell 5.1 環境因 `Get-FileHash` 缺失 exit 1；不把 PowerShell 7 成功推論為舊雙擊入口通過。
-- GitHub draft PR [#3](https://github.com/AllanYiin/RoutineKeel/pull/3) 的 [Actions run #9](https://github.com/AllanYiin/RoutineKeel/actions/runs/43987170358)，commit `24354dac`：Ubuntu build **401 passed、3 skipped**，三個 ZIP SHA256SUMS 正確；macOS 15 **402 passed、2 skipped**；Windows 2025 **383 passed、21 skipped**。三個測試 job 與整體 run 都為 `success`；draft PR 的 publish job 為 `skipped`。前兩輪 CI 揭露 Windows cp1252 輸出／測試環境與 macOS 程序出生時間缺口，修正後第三輪全通過。
+- [PR #3](https://github.com/AllanYiin/RoutineKeel/pull/3) 最後文件 head `264a605` 的 [Actions run #12](https://github.com/AllanYiin/RoutineKeel/actions/runs/43993065956)：Ubuntu **401 passed、3 skipped**，三個 ZIP SHA256SUMS 正確；macOS 15 **402 passed、2 skipped**；Windows 2025 **383 passed、21 skipped**。三個測試 job success，publish skipped。PR 其後由儲存庫擁有者合併；合併後 [run #13](https://github.com/AllanYiin/RoutineKeel/actions/runs/43994026339) 的三平台 job 和 publish job 均 success，產生 `build-00fff1c` Release。這項自動發布發生在真人走查回報之前，不能視為人工 Gate 通過。
 
 ## AC 驗收
 
@@ -45,6 +45,6 @@
 
 ## 平台與 CI
 
-原 CI `.github/workflows/packages.yml` 保留 Ubuntu 24.04 建置／測試，並在 PR 與發行前加上 `windows-2025`、`macos-15` 完整套件 Gate；`publish` 必須等待三平台 job。[Actions run #9](https://github.com/AllanYiin/RoutineKeel/actions/runs/43987170358) 已在 draft PR 上完成且全部測試 job success，publish skipped。另有只手動觸發的 `.github/workflows/platform-checks.yml`；它尚未單獨執行。macOS Finder／Tk GUI 與官方 MCP Inspector 尚未執行。
+`.github/workflows/packages.yml` 的 Ubuntu 24.04、`windows-2025`、`macos-15` 三平台 Gate 在 PR 最後 head 與合併後 run 均 success。合併後自動發布揭露原工作流缺少真人 Gate；修訂候選改為只有在 `main` 上手動觸發且明確勾選 `publish_release` 時才執行 publish，並仍等待三平台 job。另有只手動觸發的 `.github/workflows/platform-checks.yml`；它尚未單獨執行。macOS Finder／Tk GUI 與官方 MCP Inspector 尚未執行。
 
-下一步：核對最後文件修訂在 CI 仍通過，完成發行包使用手冊走查與舊版 wheel 回滾的未覆蓋項；未授權合併／發布前，PR 保持 draft，發布 Gate 不視為完成。
+下一步：完成發行包使用手冊的非技術真人走查與 macOS Finder／Tk 實機驗證；核對本次發行控制修訂的 CI，並處理已自動發布 Release 的保留或撤下決定。人工 Gate 在取得走查證據前維持未通過。
