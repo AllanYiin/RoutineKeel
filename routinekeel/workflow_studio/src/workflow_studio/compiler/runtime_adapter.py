@@ -143,6 +143,22 @@ def transform_handler(ctx, step, dependencies, target):
             )
             + "\n"
         ).encode()
+    elif implementation == "generated.program":
+        from .program_runtime import ProgramError, run_program, validate_arguments, validate_output
+
+        try:
+            validate_arguments(
+                parameters.get("arguments", {}), parameters.get("argument_types", {})
+            )
+            transformed = run_program(
+                parameters["program"], content.decode("utf-8-sig"), parameters.get("arguments", {})
+            )
+            validate_output(transformed, node["outputs"]["result"]["format"])
+            own_output = transformed.encode("utf-8")
+        except (ProgramError, UnicodeError) as exc:
+            raise FlowError(
+                "CONTRACT_MISMATCH", "生成的資料處理未通過語法、資源或輸出契約限制"
+            ) from exc
     elif implementation == "builtin.llm":
         from .llm_runtime import run_llm
 

@@ -138,3 +138,29 @@ def test_self_signed_untrusted_template_still_never_executes(tmp_path, monkeypat
     assert report["status"] == "failed"
     assert "受控模板" in report["message"]
     studio.close()
+
+
+def test_extra_undeclared_package_file_is_rejected_even_when_rehashed(tmp_path, monkeypatch):
+    import zipfile
+
+    from workflow_studio.compiler.package import digest
+
+    studio, p, build, cases, verifier, policy = verification_case(tmp_path)
+    package = build["path"] / "package"
+    manifest = json.loads((package / "flow.json").read_text(encoding="utf-8"))
+    (package / "unexpected.exe").write_bytes(b"not a declared artifact")
+    bundle = next(build["path"].glob("*.zip"))
+    with zipfile.ZipFile(bundle, "w") as archive:
+        for item in package.iterdir():
+            archive.write(item, manifest["module"] + "/" + item.name)
+    studio.repository.connection.execute(
+        "UPDATE studio_builds SET package_hash=? WHERE build_id=?",
+        (digest(bundle.read_bytes()), build["build_id"]),
+    )
+    monkeypatch.setattr(
+        "workflow_studio.verifier.report.replay", lambda *a, **k: pytest.fail("must not execute")
+    )
+    report = verifier.verify(p.project_id, build["build_id"], cases, policy)
+    assert report["status"] == "failed"
+    assert "未宣告" in report["message"]
+    studio.close()

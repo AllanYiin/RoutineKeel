@@ -164,7 +164,7 @@ class StudioUIModel:
         with self.service() as studio:
             return studio.projects.get_revision(p.project_id, p.current_revision_id)
 
-    def edit_node(self, node_id, *, output_name=None, strip=None, delete=False):
+    def edit_node(self, node_id, *, output_name=None, strip=None, arguments=None, delete=False):
         p, revision = self.project(), self.revision()
         if revision is None or "nodes" not in revision.ir:
             raise StudioError("IR_SCHEMA_INVALID", "尚無可編輯流程。")
@@ -185,6 +185,13 @@ class StudioUIModel:
                 if node["tool"] != "text.normalize":
                     raise StudioError("INPUT_INVALID", "這個步驟沒有文字空白設定。")
                 node["parameters"]["strip"] = strip
+            if arguments is not None:
+                if not node["tool"].startswith("data.transform_"):
+                    raise StudioError("INPUT_INVALID", "此步驟沒有生成 Handler 的設定欄位。")
+                from ..compiler.handlers import validate_handler
+
+                node["parameters"]["arguments"] = arguments
+                validate_handler(node["parameters"])
         payload["revision"] += 1
         with self.service() as studio:
             changed = studio.save_ir(p.project_id, p.version, payload, self.policy)

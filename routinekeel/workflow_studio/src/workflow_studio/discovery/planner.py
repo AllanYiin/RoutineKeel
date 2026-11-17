@@ -26,6 +26,7 @@ class PreparedDiscovery:
     messages_json: str
     request_hash: str
     source_refs: tuple
+    repair_limit: int = 2
 
 
 SYSTEM = """You propose RoutineKeel Workflow IR, not executable commands.
@@ -44,6 +45,8 @@ class DiscoveryPlanner:
         self.events, self.ledger = EventStore(studio.repository), UsageLedger(studio.repository)
 
     def prepare(self, project_id: str, source_ids: list[str]) -> PreparedDiscovery:
+        from ..compiler.handlers import generation_contract
+
         project = self.studio.projects.get(project_id)
         if project.status != "active" or not source_ids:
             raise StudioError("INPUT_INVALID", "請先開啟專案並選取來源。")
@@ -90,6 +93,12 @@ class DiscoveryPlanner:
             "tools": [t.signature().model_dump() for t in tools.values()],
             "ir_schema": WorkflowIR.model_json_schema(),
         }
+        generation = generation_contract()
+        generation["tools"] = {
+            key: value for key, value in generation["tools"].items() if key in tools
+        }
+        if generation["tools"]:
+            content["handler_generation"] = generation
         settings = self.studio.projects.settings(project_id)
         if settings.get("runtime_enabled"):
             content["runtime_model_defaults"] = {
@@ -124,6 +133,7 @@ class DiscoveryPlanner:
                     "destination": self.provider.destination,
                     "version": project.version,
                     "budget": vars(self.budget),
+                    "repair_limit": 2,
                 }
             ).encode()
         ).hexdigest()
@@ -138,25 +148,91 @@ class DiscoveryPlanner:
         )
 
     def run(self, prepared: PreparedDiscovery, *, authorized_hash=None, cancelled=lambda: False):
+        original = json.loads(prepared.messages_json)
+        messages = original
+        for attempt in range(1 + min(2, max(0, prepared.repair_limit))):
+            response = []
+            iterator = self._run_once(
+                prepared,
+                authorized_hash=authorized_hash,
+                cancelled=cancelled,
+                messages=messages,
+                attempt=attempt,
+            )
+            try:
+                for event in iterator:
+                    if event["event"] == "analysis.delta":
+                        response.append(event["content"])
+                    yield event
+                return
+            except StudioError as exc:
+                if (
+                    attempt >= prepared.repair_limit
+                    or exc.code not in {"IR_SCHEMA_INVALID", "CONTRACT_MISMATCH", "TEST_FAILED"}
+                    or cancelled()
+                ):
+                    raise
+                messages = original + [
+                    {"role": "assistant", "content": "".join(response)},
+                    {
+                        "role": "user",
+                        "content": "Correct this candidate after independent validation failed. Keep the original goal, success criteria and source scope unchanged. Return the complete JSON result again. Validation: "
+                        + exc.code
+                        + ": "
+                        + str(exc)[:2000],
+                    },
+                ]
+                if len(json.dumps(messages, ensure_ascii=False).encode()) > 256_000:
+                    raise
+                yield self.events.append(
+                    prepared.project_id,
+                    None,
+                    "analysis.repairing",
+                    {"repair_round": attempt + 1, "code": exc.code},
+                )
+            finally:
+                iterator.close()
+
+    def _run_once(self, prepared, *, authorized_hash, cancelled, messages, attempt):
         # Rebuild before any model call: changed source, model, destination or project invalidates consent.
         fresh = self.prepare(prepared.project_id, [r[0] for r in prepared.source_refs])
         if fresh != prepared:
             raise StudioError("REVISION_CONFLICT", "分析範圍已變動，請重新確認。")
         if self.provider.external and authorized_hash != prepared.request_hash:
             raise StudioError("APPROVAL_REQUIRED", "請先確認將傳給此模型的來源範圍。")
-        messages = json.loads(prepared.messages_json)
+        if cancelled():
+            self.events.append(
+                prepared.project_id, None, "analysis.failed", {"code": "LLM_STREAM_INTERRUPTED"}
+            )
+            raise StudioError("LLM_STREAM_INTERRUPTED", "使用者已停止分析。")
         context = json.loads(messages[1]["content"])
-        call = self.ledger.reserve(
-            prepared.project_id,
-            prepared.model,
-            prepared.request_hash,
-            self.budget,
-            len(prepared.messages_json.encode()) + 1024,
-        )
+        request_hash = hashlib.sha256(
+            canonical_json(
+                {
+                    "authorized_scope": prepared.request_hash,
+                    "attempt": attempt,
+                    "messages": messages,
+                }
+            ).encode()
+        ).hexdigest()
+        try:
+            call = self.ledger.reserve(
+                prepared.project_id,
+                prepared.model,
+                request_hash,
+                self.budget,
+                len(json.dumps(messages, ensure_ascii=False).encode()) + 1024,
+            )
+        except StudioError as exc:
+            self.events.append(prepared.project_id, None, "analysis.failed", {"code": exc.code})
+            raise
         completed, usage, parts, size, done = False, None, [], 0, False
         try:
             yield self.events.append(
-                prepared.project_id, call, "analysis.started", {"model": prepared.model}
+                prepared.project_id,
+                call,
+                "analysis.started",
+                {"model": prepared.model, "repair_round": attempt},
             )
             for chunk in self.provider.stream(messages, self.budget.max_output_tokens):
                 if cancelled():
@@ -182,6 +258,28 @@ class DiscoveryPlanner:
                 raise StudioError("IR_SCHEMA_INVALID", "模型回傳的 JSON 不符合分析契約。") from exc
             if result.ir is None and not result.questions:
                 raise StudioError("EVIDENCE_INSUFFICIENT", "模型沒有提供候選流程或具體缺口。")
+            if result.ir is not None:
+                from ..compiler.compatibility import check_supported
+                from ..compiler.handlers import verify_examples
+                from ..ir.validator import validate_ir
+
+                tools = self.studio.tools.allowed(self.policy)
+                validated = validate_ir(
+                    result.ir.model_dump(),
+                    {key: tool.signature() for key, tool in tools.items()},
+                    source_versions={(ref[0], ref[1]) for ref in prepared.source_refs},
+                )
+                check_supported(validated, tools)
+                for node in validated.nodes:
+                    if (
+                        tools[f"{node.tool}@{node.tool_version}"].implementation
+                        == "generated.program"
+                    ):
+                        if cancelled():
+                            raise StudioError(
+                                "LLM_STREAM_INTERRUPTED", "使用者已停止新 Handler 檢查。"
+                            )
+                        verify_examples(node.parameters, node.outputs["result"].format)
             with self.studio.repository.transaction():
                 self.studio.projects._editable(
                     self.studio.repository.connection, prepared.project_id, prepared.project_version
@@ -266,4 +364,4 @@ class DiscoveryPlanner:
             raise StudioError("LLM_STREAM_INTERRUPTED", "分析未完成，上一個版本保持不變。") from exc
         finally:
             if not completed:
-                self.ledger.settle(call, self.budget, usage, "interrupted")
+                self.ledger.settle(call, self.budget, usage, "rejected" if done else "interrupted")

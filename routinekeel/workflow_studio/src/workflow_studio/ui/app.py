@@ -394,7 +394,14 @@ class StudioApp:
             while True:
                 kind, callback, value = self.messages.get_nowait()
                 if kind == "event":
-                    if value["event"] == "analysis.delta":
+                    if value["event"] == "analysis.started":
+                        self.raw_analysis = ""
+                        self._set_text(self.analysis, "正在整理候選流程……")
+                    elif value["event"] == "analysis.repairing":
+                        self.status.set(
+                            f"候選流程未通過檢查，正在進行第 {value['repair_round']} 次修正。"
+                        )
+                    elif value["event"] == "analysis.delta":
                         self.raw_analysis += value["content"]
                         self._set_text(self.analysis, analysis_text(self.raw_analysis))
                     continue
@@ -544,6 +551,11 @@ class StudioApp:
         self.node_info.set(
             f"{self.tool_titles.get(node['tool'], '自訂處理')}｜{len(node['inputs'])} 項輸入 → {len(node['outputs'])} 項輸出\n每次執行都會檢查完成條件，修改後須重新試做。"
         )
+        if node["tool"].startswith("data.transform_"):
+            self.node_info.set(
+                node["parameters"]["purpose"]
+                + "\n由模型產生的資料處理，須通過獨立試做與核准後才可發布。"
+            )
         self.draw_workflow(refresh=False)
         self.refresh_actions()
 
@@ -563,7 +575,34 @@ class StudioApp:
                 if node["tool"] == "text.normalize"
                 else None
             )
-            self.model.edit_node(self.selected_node, output_name=name, strip=strip)
+            arguments = None
+            if node["tool"].startswith("data.transform_"):
+                arguments = dict(node["parameters"].get("arguments", {}))
+                for key, kind in node["parameters"].get("argument_types", {}).items():
+                    if kind == "null":
+                        continue
+                    prompt = f"{node['parameters']['purpose']}\n\n{key}"
+                    if kind == "boolean":
+                        value = messagebox.askyesnocancel(
+                            "調整資料規則", prompt + "：是否啟用？", parent=self.root
+                        )
+                    elif kind in {"integer", "number"}:
+                        ask = (
+                            simpledialog.askinteger if kind == "integer" else simpledialog.askfloat
+                        )
+                        value = ask(
+                            "調整資料規則", prompt, initialvalue=arguments[key], parent=self.root
+                        )
+                    else:
+                        value = simpledialog.askstring(
+                            "調整資料規則", prompt, initialvalue=arguments[key], parent=self.root
+                        )
+                    if value is None:
+                        return
+                    arguments[key] = value
+            self.model.edit_node(
+                self.selected_node, output_name=name, strip=strip, arguments=arguments
+            )
             self.refresh_project()
 
     def delete_node(self):
@@ -800,7 +839,7 @@ class StudioApp:
         prepared = self.model.prepare_analysis([self.selected_source])
         if self.model.provider.external and not messagebox.askyesno(
             "確認模型資料範圍",
-            f"目的端：{prepared.destination}\n模型：{prepared.model}\n將傳送選取來源的文字、目標與工具契約。\n設計期預算上限：USD {self.model.budget.budget_micro_usd / 1_000_000:.2f}\n繼續傳送？",
+            f"目的端：{prepared.destination}\n模型：{prepared.model}\n將傳送選取來源的文字、目標與工具契約，並可在同一範圍內修正最多 {prepared.repair_limit} 輪。\n設計期總預算上限：USD {self.model.budget.budget_micro_usd / 1_000_000:.2f}\n繼續傳送？",
             parent=self.root,
         ):
             return

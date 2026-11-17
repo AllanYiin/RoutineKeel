@@ -115,4 +115,25 @@ def builtin_tools() -> list[ToolDescription]:
             }
         )
     )
+    for suffix, title, output_format in (
+        ("text", "自訂文字處理", "txt"),
+        ("csv", "自訂 CSV 處理", "csv"),
+        ("json", "自訂 JSON 處理", "json"),
+    ):
+        result.append(
+            result[0].model_copy(
+                update={
+                    "tool_id": "data.transform_" + suffix,
+                    "title": title,
+                    "capabilities": ["data.transform", "handler.generate"],
+                    "implementation": "generated.program",
+                    "outputs": {"result": Port(type="file", format=output_format)},
+                    "resources": Resources(memory_mb=128, disk_mb=50, network=False),
+                    "test_evidence": [
+                        "tests/studio/test_generated_handlers.py",
+                        "tests/studio/test_program_safety.py",
+                    ],
+                }
+            )
+        )
     return result

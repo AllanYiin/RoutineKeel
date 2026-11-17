@@ -122,6 +122,8 @@ class Releases:
         records.mkdir(parents=True, exist_ok=True)
         with FileLock(str(records / "publish.lock"), timeout=10):
             current = self.current(root, workflow_id)
+            if current and current["project_id"] != project_id:
+                raise StudioError("PUBLISH_FAILED", "此工作流識別碼已由另一個專案管理，未覆寫。")
             if (
                 current
                 and current["build_id"] == build["build_id"]

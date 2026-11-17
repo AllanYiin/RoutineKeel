@@ -210,10 +210,10 @@ def test_tk_analysis_is_visible_before_final_revision(tmp_path, monkeypatch):
         app._source_selected()
         app.analyze()
         deadline = time.monotonic() + 4
-        while not app.analysis.get("1.0", "end").strip() and time.monotonic() < deadline:
+        while "根據來源" not in app.analysis.get("1.0", "end") and time.monotonic() < deadline:
             root.update()
             time.sleep(0.02)
-        assert app.analysis.get("1.0", "end").strip()
+        assert "根據來源" in app.analysis.get("1.0", "end")
         assert model.revision() is None
         release.set()
         deadline = time.monotonic() + 10

@@ -12,6 +12,7 @@ from ..project.service import now
 from .compatibility import check_supported
 from .lowering import lower
 from .package import digest, verify_package, write_wheel
+from .template_registry import package_namespace
 
 
 class Compiler:
@@ -28,6 +29,16 @@ class Compiler:
         tools = self.studio.tools.allowed(policy)
         ir = validate_ir(revision.ir, {k: t.signature() for k, t in tools.items()})
         check_supported(ir, tools)
+        from .handlers import verify_examples
+
+        generated = [
+            n
+            for n in ir.nodes
+            if tools[f"{n.tool}@{n.tool_version}"].implementation == "generated.program"
+        ]
+        handler_tests = {
+            n.id: verify_examples(n.parameters, n.outputs["result"].format) for n in generated
+        }
         has_llm = any(n.kind == "llm" for n in ir.nodes)
         if (
             sum(n.llm_policy.budget_micro_usd for n in ir.nodes if n.llm_policy)
@@ -36,7 +47,9 @@ class Compiler:
             raise StudioError("BUDGET_EXCEEDED", "執行期模型預算超過本次核准上限。")
         compiled = lower(ir, tools)
         ir_hash = ir_fingerprint(ir)
-        module = "studio_" + ir.workflow_id.replace("-", "_") + "_" + ir_hash[:12]
+        module = package_namespace(
+            ir.workflow_id, ir_hash, has_llm=has_llm, has_program=bool(generated)
+        )
         version = f"0.1.{ir.revision}"
         build_id = "build_" + uuid4().hex
         base = self.studio.repository.root
@@ -64,6 +77,10 @@ class Compiler:
         if has_llm:
             files[f"{module}/llm_runtime.py"] = (
                 Path(__file__).with_name("runtime_llm.py").read_bytes()
+            )
+        if generated:
+            files[f"{module}/program_runtime.py"] = (
+                Path(__file__).with_name("runtime_program.py").read_bytes()
             )
         wheel = package / f"{module}-{version}-py3-none-any.whl"
         write_wheel(wheel, module, version, files)
@@ -98,6 +115,26 @@ class Compiler:
             encoding="utf-8",
         )
         (package / "workflow.ir.json").write_text(canonical_json(ir.model_dump()), encoding="utf-8")
+        for node in generated:
+            (package / f"handler_{node.id}.py").write_text(
+                node.parameters["program"], encoding="utf-8", newline="\n"
+            )
+        if generated:
+            (package / "generated-handler-tests.json").write_text(
+                canonical_json(
+                    {
+                        "evidence_kind": "synthetic_examples_only",
+                        "handlers": {
+                            node.id: {
+                                "examples": node.parameters["tests"],
+                                "result": handler_tests[node.id],
+                            }
+                            for node in generated
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
         (package / "PROVENANCE.md").write_text(
             f"# 編譯證據\n\nIR SHA-256: {ir_hash}\n\nRuntime API: 0.2；來源引用保留在 workflow.ir.json，未包含原始來源內容。\n",
             encoding="utf-8",
@@ -127,9 +164,11 @@ class Compiler:
             "input_step": compiled["input_step"],
             "steps": [s["id"] for s in compiled["runtime_workflow"]["steps"]],
             "outputs": compiled["runtime_workflow"]["outputs"],
+            "generated_handlers": handler_tests,
+            "compiler_template": "2",
             "limitations": [
                 "single_file_input",
-                "trusted_deterministic_handlers",
+                "trusted_templates_and_bounded_generated_transforms",
                 "10MiB_per_file",
             ],
         }
