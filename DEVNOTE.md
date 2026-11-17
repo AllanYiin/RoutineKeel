@@ -2,49 +2,49 @@
 
 ## SNAPSHOT — 當前狀態
 
-最後更新：2026-11-17T07:55+08:00
+最後更新：2026-11-17T08:01+08:00
 交接狀態：verified
 
 ### 目標與授權範圍
 
-依 RoutineKeel 底座階段規劃及使用者核定的 MCP 佇列修訂完成 Stage 0–13，逐階段驗證提交。
+依 RoutineKeel 底座階段規劃及使用者核定的 MCP 持久化佇列修訂，完成 Stage 0–13 與驗證提交。
 
 ### 目前進度
 
-Stage 0–11 已提交（Stage10 16d0fd6，Stage11 ad753e0）。Stage12 Windows／WSL Linux 本機整合與發行包建置已通過，測試報告與手動 Windows/macOS CI 矩陣是未提交候選；正式 GitHub Actions、macOS 與使用者走查未執行，Stage12 DoD 尚未完成。Stage13 README／架構／回滾／已知問題／release checklist 草稿未提交。原有 .idea/ 七個 staged 檔案屬使用者變更。
+Stage 0–11 已提交（Stage10 16d0fd6、Stage11 ad753e0）。Stage12 本機整合候選已提交 a0495ba，Windows 382 passed／21 skipped，WSL Linux 390 passed／13 skipped；正式 GitHub Actions 與 macOS 未執行，Stage12 DoD 尚未完成。Stage13 README／架構／回滾／已知問題／release checklist 等文件草稿仍在工作樹，未提交或發布。原有 .idea/ 七個 staged 檔案屬使用者變更。
 
 ### 下一步
 
-只提交 Stage12 本機整合候選（不宣稱完整 Stage12 DoD），保留 Stage13 草稿與 .idea。需取得使用者同意與可用 GitHub 認證後，推送候選並執行原 Ubuntu CI 與手動 Windows/macOS 矩陣；核對結果後完成 Stage12，最後處理 Stage13 發行 Gate。
+等待使用者對推送 codex/ 分支與消耗 GitHub Actions 額度執行 Ubuntu/Windows/macOS CI 的答覆；若授權，先使候選與手動矩陣能在目標分支觸發，再追蹤完整結果並修缺陷。其後完成 Stage12 DoD，驗證 Stage13 最終文件/冷啟動/回滾與版本 Gate，再依授權處理發行；未授權前不推送或執行付費 CI。
 
 ### DECISIONS
 
-- Stage10 MCP 僅入列與用 execution_id 查詢，獨立 queue-worker 執行；v004 佇列與可選 SDK 已提交。
-- Stage12 對正式 Workflow／Action／Demo 補 Step Attempt 前後事件，100 次混合 Run/Action 各自核對 ID 與成果；20 交付故障點與四類秘密標記持續驗證。
-- Windows POSIX sh 案例明確 skip，Linux 仍執行；修正 free_bytes 查現有目錄、宿主用量測試假設、字幕隔離 Python UTF-8；Windows ZIP POSIX 執行權限與冷啟動版本已修。
-- M7 以 C: NVMe 為 SSD 測試根；E: 為 USB 外接磁碟，不能當 SSD 證據。
+- MCP stdio 只驗證/入列/用 execution_id 查詢與取消；獨立 queue-worker 執行，v004 佇列已提交。
+- Stage12 本機候選含 100 次混合 Run/Action、Action/Demo Step Attempt 前後事件、20 交付故障點、四類秘密遮罩、v004 缺表/輸入漂移、平台 sh skip 與手動矩陣。
+- Stage13 文件在 source.zip；根 README 面向非技術使用者，發行前要保留未驗限制，不把草稿當正式發行。
 
 ### LANDMINES
 
-- GitHub CLI 目前 token invalid；本機不能直接推送或觸發原 CI。GitHub Actions macOS runner 可能消耗付費 CI 額度，未取得執行授權。
-- macOS Finder、Tk、程序控制與正式 CI 未實際驗證，Stage12/13 不可宣稱完成。
-- Stage12 候選與 Stage13 草稿不能混同提交；.idea staged 屬使用者。
+- GitHub CLI token invalid；GitHub 連接器可讀私有 RoutineKeel 並有 push 權限，但目前無 workflow_dispatch 工具；外部 CI 需要使用者授權與可行觸發路徑。
+- 平台矩陣為 workflow_dispatch-only，GitHub 可能要求 workflow 已在 default branch 才可手動觸發；若要 PR 前驗收需調整既有 PR workflow，需注意 CI 額度。
+- macOS Finder、Tk、程序控制和實際舊 wheel 回滾未驗；非技術使用者真人走查未做。
+- .idea staged 屬使用者，不得納入後續提交。
 
 ### 證據索引
 
-- routinekeel/flow_base/docs/test-report.md AC/M 對照與測試命令
-- tests/test_integration_recovery.py、test_integration_atomic_publish.py、test_security_diagnostics.py、bench_run_status.py
-- Stage10 commit 16d0fd6；git status 顯示 Stage12/13 WIP 與 .idea staged
-- 手動 CI 矩陣 .github/workflows/platform-checks.yml
-- gh auth status default token invalid
+- git log -1 a0495ba 與 Stage10/11 commits
+- routinekeel/flow_base/docs/test-report.md、本機測試輸出與 bench_run_status.py
+- routinekeel/flow_base/docs/release-checklist.md 草稿
+- dist/release/flow_base-0.2.12.zip 的 SHA256SUMS/入口/文件檢查
+- git status 顯示 Stage13 草稿與 .idea staged
 
 ### VALIDATION
 
-- Windows 完整回歸 — PASS：目前程式碼 382 passed、21 skipped、0 failed，耗時 212.82 秒；包含 v004 缺表、輸入漂移、100 次混合與 MCP。
-- WSL Linux 完整回歸 — PASS：OpenClawGateway /tmp 隔離副本建置 Valid YES、390 passed、13 skipped，耗時 94.33 秒。
-- M7 SSD 延遲 — PASS：Get-Partition C | Get-Disk 確認 C: 位於 NVMe Micron；5,000 Run／200 次查詢 p95 9.78ms <200ms。
-- Stage12 macOS／GitHub CI — NOT_RUN：手動矩陣 .github/workflows/platform-checks.yml 已寫但未推送／觸發；gh auth status 顯示 token invalid。
-- Stage13 文件 — NOT_RUN：草稿存在並有相對連結檢查 0 缺失，仍未完成正式發布與使用者走查。
+- Stage12 Windows 完整回歸 — PASS：382 passed、21 skipped、0 failed，212.82 秒；Stage12 候選提交 a0495ba。
+- Stage12 WSL Linux 完整回歸 — PASS：OpenClawGateway /tmp 隔離副本建置 Valid YES、390 passed、13 skipped，94.33 秒。
+- Stage13 發行包校驗 — PASS：0.2.12 三 ZIP 的 SHA256SUMS 全數正確；source.zip 包含架構/已知問題/回滾/檢核草稿；乾淨 0.2.12 queue_worker.bat --once 無 MCP 選配 exit0。
+- Stage12 正式 CI/macOS — NOT_RUN：尚未推送或觸發；GitHub CLI 認證失效，使用者 CI 授權待答。
+- Stage13 最終 Gate — NOT_RUN：文件 link check 0 缺失、合成 example JSON 有效；真人走查、舊版 wheel rollback 與最終 CI/發布未執行。
 
 # HISTORY
 
@@ -123,3 +123,10 @@ Windows 368 passed/1 MCP fail/21 skipped，WSL Linux 378 passed/12 skipped。乾
 <!-- devnote-review:e6cf94e48fa759422a982144 -->
 
 Stage12 新增 Action/Demo 失敗事件、佇列輸入漂移、v004 缺表與 100 次混合 Step 前後事件驗證；Windows 382 passed/21 skipped，WSL Linux 390 passed/13 skipped。C: NVMe 的 5,000 Run p95 9.78ms。正式 GitHub/macOS CI 未執行，Stage12 候選待提交與外部 Gate。
+
+
+## [2026-11-17T08:01+08:00] Stage12 本機候選提交與發行包走查
+
+<!-- devnote-review:a3cbda4e73ba5a53da111448 -->
+
+Stage12 本機候選 a0495ba 已提交但正式 CI/macOS 仍待；Windows 382 passed/21 skipped，WSL Linux 390 passed/13 skipped。Stage13 文件 link 0 缺失，三 ZIP SHA 正確；乾淨 queue_worker.bat --once 在未裝 MCP 時啟動成功。GitHub 外部 CI 授權待使用者答覆。

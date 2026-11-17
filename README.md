@@ -53,7 +53,11 @@ RoutineKeel 想解決的是這段「從作者的方法到他人能穩定使用�
 
 入口會在必要時準備 uv 與 Python，不需要先手動建立 `.venv`。macOS／Linux 在尚無 uv 時需要系統提供 curl 或 wget，以及 unzip；組織管理政策仍可能限制安裝。
 
+本原始碼建置的底座另提供可選的本機圖形工作台：在 `flow_base/` 開啟 Windows `open_ui.bat`、macOS `open_ui.command`，或於 Linux 執行 `open_ui.sh`。它能選檔、檢查計畫、執行、查看歷史成果與診斷；目前仍待完整跨平台驗收，正式發行前請以 [已知問題](routinekeel/flow_base/docs/known-issues.md) 為準。操作步驟見 [本機工作台指南](routinekeel/flow_base/docs/user-guide.md)。
+
 也可以開啟 `flow_base` 內的入口，從共用入口選擇不同流程。自然語言入口支援已宣告的常用說法，不保證能理解任何自由描述；在 Codex 中使用時，Agent 應先讀取目標流程的 `AGENTS.md`，再透過底座執行。
+
+若要由 Codex 的本機 MCP 提交工作，先另外開啟 `flow_base/queue_worker.bat`（Windows）、`queue_worker.command`（macOS）或 `queue_worker.sh`（Linux），再依 [MCP 本機設定](routinekeel/flow_base/docs/mcp-local.md) 安裝選配入口。MCP 提交會立即回 `execution_id`；關閉 Codex 後仍可用同一 ID 查進度與成果。Worker 沒有啟動時工作會維持排隊，不會假裝已在處理。
 
 若畫面停在等待輸入，可依序輸入：
 
@@ -121,12 +125,14 @@ GitHub 的目錄按原始碼責任組織。想使用程式時，從 Releases 下
 
 ## 更新、搬移與分享
 
+遇到失敗時先記下畫面上的 `run_id` 或 `error_id`。在工作台可查看白話原因與匯出已遮罩診斷；維護者可透過同一個底座啟動入口執行 `doctor`、`diagnose <run_id>`、`explain-error <error_id>`。匯出診斷前會先顯示預覽，只有明確指定新檔案並確認後才寫入，不會自動上傳。詳細命令與退出碼見 [診斷說明](routinekeel/flow_base/docs/error-catalog.md)。
+
 - **更新底座**：先結束執行中的工作，再更換 `flow_base` 的程式檔案。保留狀態、日誌、流程及自己的成果。
 - **更新流程**：更換該流程包的程式檔案，保留自己的設定與 `outputs/`。不要同時留下兩份相同識別碼的流程副本。
 - **換電腦**：可攜帶底座與流程包，在新電腦重新建立環境；`.venv` 不應當成跨作業系統的可攜程式。大型資源可使用底座提供的資源匯出／匯入功能，設定與成果另行備份。
 - **分享給學員**：交付乾淨的啟動包或「一份底座＋需要的流程」。不要把自己的影片、逐字稿、Session 紀錄、API 金鑰或個人快取一起分享。
 
-目前版本組合為 **flow_base 0.2.11＋字幕流程 0.3.4＋複製範例 0.2.2**。已驗證 Linux 與 Linux 上的 PowerShell 測試入口，Windows／macOS 真機雙擊與各電腦 CUDA 組合仍需實機確認。測試通過不等於任何錄音都能自動產生無誤字幕。
+目前原始碼版本組合為 **flow_base 0.2.12＋字幕流程 0.3.4＋複製範例 0.2.2**。本機 Windows 的 0.2.12 乾淨發行包已實測選配 MCP 安裝、獨立 Worker、提交後重連查成果；WSL Linux 發行建置與完整回歸通過。macOS Finder、Windows 圖形工作台的真人走查與各電腦 CUDA 組合也需實機確認。測試通過不等於任何錄音都能自動產生無誤字幕。
 
 ## 想維護或增加流程？
 
