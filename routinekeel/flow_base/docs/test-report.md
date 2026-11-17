@@ -13,7 +13,8 @@
 - M7：在 v004 上執行 `routinekeel/flow_base/.venv/Scripts/python.exe tests/bench_run_status.py --root <C: 已授權暫存根>` → C: NVMe 上 5,000 Run、200 次查詢，p50 **8.82 ms**、p95 **9.78 ms**、max **15.07 ms**，低於 200 ms；不含 Worker 啟動。E: USB 外接磁碟同法 p95 **21.91 ms**，只供比較，不作 SSD 門檻證據。
 - Windows 發行 ZIP 冷啟動：在工作區一次性乾淨目錄解壓 `flow_base-0.2.11.zip`＋`flow_copy-0.2.2.zip`，執行 `run_app.bat list` → exit 0、可見 `ai_flow02`；執行 `run_app.bat run --task ai_flow02 --input <檔案> --output <成果>` → exit 0、成果內容正確；`run_app.bat doctor --format=json` → exit 1（資源狀態 unknown 的預期診斷碼，JSON 含 checks）。首次 sandbox 內 uv 解壓 Python 被 ACL 拒絕；在受控非 sandbox 的同機重測通過。冷啟動揭露 wheel/`__version__` 原本不一致，已修為 0.2.11 並在 release.py 加入建置前比對。
 - 乾淨 0.2.12 發行包另完成 Windows 端到端測試：`start.ps1 --install-mcp` exit 0、已安裝 wheel 回報 0.2.12；由另一個程序啟動 queue-worker，官方 SDK Client 提交後關閉再重連，查得 `succeeded`、同一 `execution_id` 關聯的 `run_id` 與正確成果，Worker exit 0。
-- 回滾指引的一次性資料演練：以舊四表建立測試 DB，升至 v004 後驗證 `before-v001` SHA-256，再用 SQLite backup API 還原；原始基準 commit `4f7ecf25` 的舊版原始碼可讀取 `run_old`。此結果**不等於**對實際舊 wheel 安裝器的回退驗證；`before-v004` 也不適用於該舊四表程式。
+- 回滾指引的一次性資料演練：以舊四表建立測試 DB，升至 v004 後驗證 `before-v001` SHA-256，再用 SQLite backup API 還原；原始基準 commit `4f7ecf25` 的舊版原始碼可讀取 `run_old`。此步單獨只驗證舊原始碼；實際 wheel 結果列於下一項。`before-v004` 不適用於該舊四表程式。
+- 實際舊 wheel 演練：本機 `flow_base-0.2.9.zip` 的 ZIP 路徑安全、wheel SHA-256 與包內 `start.ps1` 期望值相符。將 `before-v001` 還原到一次性工作區後，用未修改的舊 `start.ps1` 搭配 PowerShell 7 安裝，`history` exit 0 並讀到 `run_old`。同一包 `run_app.bat` 在此 Windows PowerShell 5.1 環境因 `Get-FileHash` 缺失 exit 1；不把 PowerShell 7 成功推論為舊雙擊入口通過。
 - GitHub draft PR [#3](https://github.com/AllanYiin/RoutineKeel/pull/3) 的 [Actions run #9](https://github.com/AllanYiin/RoutineKeel/actions/runs/43987170358)，commit `24354dac`：Ubuntu build **401 passed、3 skipped**，三個 ZIP SHA256SUMS 正確；macOS 15 **402 passed、2 skipped**；Windows 2025 **383 passed、21 skipped**。三個測試 job 與整體 run 都為 `success`；draft PR 的 publish job 為 `skipped`。前兩輪 CI 揭露 Windows cp1252 輸出／測試環境與 macOS 程序出生時間缺口，修正後第三輪全通過。
 
 ## AC 驗收

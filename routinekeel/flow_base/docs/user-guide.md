@@ -33,7 +33,7 @@ uv run --locked --python 3.12 --project routinekeel/flow_base flow_base --worksp
 2. Windows 雙擊 `flow_base/open_ui.bat`；macOS 在 Finder 開啟 `flow_base/open_ui.command`。首次準備完成後應看到「RoutineKeel 本機工作台」，而非空白瀏覽器或網路登入頁。
 3. 按「開啟專案」選 `RoutineKeel-測試`，選「檔案複製範例」與 `測試.txt`。畫面應顯示檔名、大小與文字內容；按「預先檢查」應看到成果位置且沒有阻礙。按「開始」後等待狀態為 `succeeded`，成果清單應有 `artifacts/result.bin`，內容與 `測試.txt` 相同。
 4. 關閉工作台，重新開啟同一個專案；左欄歷史應仍有原 Run，點選後仍能看到成果。這一步確認狀態來自磁碟，而非原視窗記憶體。
-5. 在輸入欄改填不存在的檔案，按「預先檢查」；畫面應說明問題、不能按「開始」。這是**尚未建立 Run** 的輸入錯誤，沒有 `error_id` 也合理。若另有已失敗的 Run，點選歷史項目應可見階段、確定程度、下一步與 `error_id`；選擇新檔名並確認後才會匯出已遮罩診斷。
+5. 在輸入欄改填不存在的檔案，按「預先檢查」；畫面應說明問題、不能按「開始」。這是**尚未建立 Run** 的輸入錯誤，沒有 `error_id` 也合理。接著重新選取 `測試.txt`，再按「預先檢查」及「開始」，確認新 Run 變成 `succeeded` 且成果內容仍與原檔相同，完成錯誤後的復原。若另有已失敗的 Run，點選歷史項目應可見階段、確定程度、下一步與 `error_id`；選擇新檔名並確認後才會匯出已遮罩診斷。
 6. 若要驗收 MCP 佇列，另開 `flow_base/queue_worker.*`，由已設定的 MCP Client 提交同一個測試檔案；記下 `execution_id`。關閉 Client 後重開，用該 ID 查狀態與成果。Worker 沒開時只應顯示 `queued`。
 
 請記下操作系統、ZIP 版號、每步是否符合預期，以及任何看不懂的文字或無法開啟的視窗。macOS Finder、Tk 視窗與真人理解度不能由 headless CI 代替；未執行走查時應在發行檢核中保留「未驗證」。

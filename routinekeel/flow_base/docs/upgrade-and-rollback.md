@@ -38,6 +38,7 @@
 |---|---|---|
 | 0.2.12 | v004；保留舊四表、既有 Run，新增 `execution_queue`。可與字幕流程 0.3.4、複製範例 0.2.2 的目前測試包協作。 | 回退舊版前先停止 queue-worker，核對 `before-v004` 備份及 checksum。 |
 | 原始基準 commit `4f7ecf25` | 舊四表、`PRAGMA user_version=0`；以該 commit 原始碼讀取還原的 `before-v001` 備份，可查到原 Run。 | 不可使用 `before-v004`；先還原 `before-v001`。此測試不是舊 wheel 安裝驗證。 |
+| 本機舊發行包 `flow_base-0.2.9.zip` | 舊四表、`PRAGMA user_version=0`；在一次性工作區還原 `before-v001`，其 wheel 由舊 `start.ps1` 在 PowerShell 7 安裝後，`history` 可讀 `run_old`。 | 該舊包的 `run_app.bat` 在此主機呼叫 Windows PowerShell 5.1 時缺少 `Get-FileHash` 而無法啟動；用 PowerShell 7 直接執行舊 `start.ps1` 是本次驗證路徑，不保證其他舊包或電腦。 |
 | 其他早於 0.2.12 的版本 | 依該版本實際 schema；本報告沒有對每個舊 wheel 做新版資料庫寫入驗證。 | 不可讓舊版直接寫 v004；先找出相容備份並比對可能失去的新增 Run／佇列索引。 |
 
 上述矩陣只描述本輪實際測試與安全界線，不保證所有歷史流程包版本可混搭。

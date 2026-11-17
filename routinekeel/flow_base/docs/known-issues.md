@@ -9,6 +9,7 @@
 | Windows 完整測試 | 本機 382 passed／21 skipped，GitHub Actions Windows 2025 為 383 passed／21 skipped；兩邊 0 failed。 | 11 個 POSIX shell 案例在 Windows 明確 skip，其餘 10 個為既有平台 skip；不能把 skip 當成跨平台通過。 |
 | macOS GUI | GitHub Actions macOS 15 的 CLI／程序控制／交付測試為 402 passed／2 skipped；Finder 雙擊與 Tk 實際視窗操作在 headless runner 未覆蓋。 | ZIP 已保存 `.command` 的 0755 mode，但仍須用互動 macOS 桌面驗證 Finder／Tk。 |
 | Linux 完整測試 | WSL 暫存副本 390 passed／13 skipped；GitHub Actions Ubuntu 24.04 為 401 passed／3 skipped，建置與三 ZIP 雜湊通過。 | 保留 WSL 與 GitHub runner 的 skip 差異；不得把未執行的 GUI 視為已驗收。 |
+| 舊版 0.2.9 雙擊入口 | 本機 `flow_base-0.2.9.zip` 的舊 `run_app.bat` 呼叫 Windows PowerShell 5.1 時缺少 `Get-FileHash`；同一舊 `start.ps1` 用 PowerShell 7 安裝 wheel 後可讀 `before-v001` 還原的 `run_old`。 | 此為舊發行包的環境相容限制；回滾前確認可用 PowerShell 7 或選擇經驗證的目標版本，勿在正在執行的工作區直接嘗試。 |
 | 預覽格式 | Tk 可顯示 PNG／GIF 與 UTF-8 文字；影片、音訊、PDF、JPEG 等沒有內建內容預覽。 | 工作台顯示真實檔名、大小、格式與不支援原因；流程本身仍可接收其宣告格式。 |
 | 舊成果鏡像 | 強制終止到工作區重新開啟前，舊 `output/` 多檔案鏡像可能短暫混合。 | 以 `deliveries/current.json` 和 immutable version 判斷正式成果；重開時 journal 恢復。 |
 | 第三方流程套件 | wheel SHA-256 僅驗證完整性，不是惡意程式沙箱。 | 只安裝可信來源流程；MCP 不提供任意安裝或 shell 工具。 |
