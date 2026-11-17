@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 from uuid import uuid4
 
-from filelock import FileLock
+from filelock import FileLock, Timeout
 
 from ..compiler.generator import Compiler
 from ..compiler.package import digest
@@ -45,21 +45,60 @@ class Releases:
 
     def current(self, target_workspace, workflow_id):
         root = Path(target_workspace).expanduser().resolve()
-        folder = safe_target(root, ".studio_releases/" + workflow_id)
-        journal, pointer = folder / "journal.json", folder / "current.json"
+        records = safe_target(root, ".studio_releases/" + workflow_id)
+        if not records.is_dir():
+            return None
+        try:
+            with FileLock(
+                str(safe_target(root, ".studio_releases/" + workflow_id + "/publish.lock")),
+                timeout=0,
+            ):
+                return self._current(root, workflow_id)
+        except Timeout as exc:
+            raise StudioError("PUBLISH_BUSY", "發布工作區正被使用，未核對或變更目前版本。") from exc
+
+    def _current(self, target_workspace, workflow_id):
+        """Read/recover the pointer while the caller holds this workflow's publish lock."""
+        root = Path(target_workspace).expanduser().resolve()
+        journal = safe_target(root, ".studio_releases/" + workflow_id + "/journal.json")
+        pointer = safe_target(root, ".studio_releases/" + workflow_id + "/current.json")
         prior_pointer = (
             json.loads(pointer.read_text(encoding="utf-8")) if pointer.is_file() else None
         )
+
+        def owned_state(value):
+            if not isinstance(value, dict):
+                raise StudioError("PUBLISH_FAILED", "發布狀態檔不合法。")
+            row = self.studio.repository.connection.execute(
+                "SELECT * FROM studio_releases WHERE release_id=?", (value.get("release_id"),)
+            ).fetchone()
+            if (
+                row is None
+                or json.loads(row["payload_json"]) != value
+                or Path(row["target_root"]).resolve() != root
+                or value.get("workflow_id") != workflow_id
+                or value.get("project_id") != row["project_id"]
+            ):
+                raise StudioError("PUBLISH_FAILED", "發布狀態檔不屬於此 Studio 或工作區。")
+            return row
+
+        if prior_pointer:
+            if owned_state(prior_pointer)["status"] == "abandoned":
+                raise StudioError("PUBLISH_FAILED", "正式指標指向已結束的準備，請核對完整備份。")
         if journal.is_file():
             pending = json.loads(journal.read_text(encoding="utf-8"))
-            owned = self.studio.repository.connection.execute(
-                "SELECT payload_json FROM studio_releases WHERE release_id=?",
-                (pending.get("release_id"),),
-            ).fetchone()
-            if owned is None or json.loads(owned[0]) != pending:
-                raise StudioError(
-                    "PUBLISH_FAILED", "發布 journal 不屬於此 Studio，請先核對工作區。"
-                )
+            owned = owned_state(pending)
+            if owned["status"] == "abandoned":
+                return prior_pointer
+            comparison = prior_pointer
+            if comparison is None and pending.get("previous_release_id"):
+                previous = self.studio.repository.connection.execute(
+                    "SELECT payload_json FROM studio_releases WHERE release_id=?",
+                    (pending["previous_release_id"],),
+                ).fetchone()
+                if previous:
+                    comparison = json.loads(previous[0])
+                    owned_state(comparison)
             active = safe_target(root, workflow_id + "/flow.json")
             applied = active.is_file() and digest(active.read_bytes()) == pending["manifest_hash"]
             if pending.get("state") == "disabled":
@@ -69,12 +108,19 @@ class Releases:
                     and saved.is_file()
                     and digest(saved.read_bytes()) == pending["manifest_hash"]
                 )
+            if applied:
+                from .recovery import file_hash
+
+                checked_manifest = saved if pending.get("state") == "disabled" else active
+                manifest = json.loads(checked_manifest.read_text(encoding="utf-8"))
+                wheel = safe_target(root, workflow_id + "/" + manifest["package"])
+                applied = wheel.is_file() and file_hash(wheel) == manifest["sha256"]
             if (
                 applied
-                and prior_pointer
-                and prior_pointer["release_id"] != pending["release_id"]
-                and prior_pointer.get("state") == pending.get("state")
-                and prior_pointer["manifest_hash"] == pending["manifest_hash"]
+                and comparison
+                and comparison["release_id"] != pending["release_id"]
+                and comparison.get("state") == pending.get("state")
+                and comparison["manifest_hash"] == pending["manifest_hash"]
             ):
                 # Identical bytes do not prove a new approval was committed.
                 applied = False
@@ -146,8 +192,10 @@ class Releases:
         root.mkdir(parents=True, exist_ok=True)
         records = safe_target(root, ".studio_releases/" + workflow_id)
         records.mkdir(parents=True, exist_ok=True)
-        with FileLock(str(records / "publish.lock"), timeout=10):
-            current = self.current(root, workflow_id)
+        with FileLock(
+            str(safe_target(root, ".studio_releases/" + workflow_id + "/publish.lock")), timeout=10
+        ):
+            current = self._current(root, workflow_id)
             if current and current["project_id"] != project_id:
                 raise StudioError("PUBLISH_FAILED", "此工作流識別碼已由另一個專案管理，未覆寫。")
             if (
@@ -195,7 +243,10 @@ class Releases:
                     for item in active.iterdir()
                 )
                 if not recoverable:
-                    raise StudioError("PUBLISH_FAILED", "目標目錄已有其他資料，未覆寫。")
+                    from .recovery import only_abandoned_files
+
+                    if not only_abandoned_files(self.studio, project_id, root, workflow_id):
+                        raise StudioError("PUBLISH_FAILED", "目標目錄已有其他資料，未覆寫。")
             release_id = "release_" + uuid4().hex
             snapshot = records / release_id
             snapshot.mkdir()
@@ -266,7 +317,7 @@ class Releases:
                             raise StudioError("REVISION_CONFLICT", "發布準備期間來源已改變。")
                 atomic_bytes(manifest_path, files["flow.json"])
                 atomic_bytes(records / "current.json", canonical_json(result).encode())
-                applied = self.current(root, workflow_id)
+                applied = self._current(root, workflow_id)
             if applied is None or applied["release_id"] != release_id:
                 raise StudioError("PUBLISH_FAILED", "版本指標尚未確認。")
             return applied
@@ -297,8 +348,10 @@ class Releases:
         records = safe_target(root, ".studio_releases/" + workflow_id)
         if not records.is_dir():
             raise StudioError("PUBLISH_FAILED", "沒有此 Studio 管理的發布版本。")
-        with FileLock(str(records / "publish.lock"), timeout=10):
-            current = self.current(root, workflow_id)
+        with FileLock(
+            str(safe_target(root, ".studio_releases/" + workflow_id + "/publish.lock")), timeout=10
+        ):
+            current = self._current(root, workflow_id)
             if (
                 not current
                 or current["project_id"] != project_id
@@ -337,7 +390,7 @@ class Releases:
                 )
             atomic_bytes(records / "journal.json", canonical_json(result).encode())
             os.replace(manifest, safe_target(root, workflow_id + "/" + result["disabled_manifest"]))
-            return self.current(root, workflow_id)
+            return self._current(root, workflow_id)
 
     def rollback(self, project_id, release_id, policy):
         row = self.studio.repository.connection.execute(

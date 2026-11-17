@@ -15,9 +15,9 @@
 | FR-05 工具註冊及政策 | registry/catalog.py、handlers.py、policy.py、available、v011–v012、工具管理 UI | 描述管理與同工作區 Handler 跨專案重用已實測；第三方適配覆蓋及新視窗實機驗收仍待，模板庫目前以同工作區為範圍 |
 | FR-06 節點 CRUD | ir/editor.py 原子編輯；GraphDraft／手動起案／步驟設定表單；test_graph_editing.py、test_manual_and_settings.py | 手動起案、基本動作／分支／模型新增、來源／依賴／交付物／條件／模型政策已補；新增表單實機與完整工具型別覆蓋仍待驗 |
 | FR-07 案例 CRUD／預期實際 | GoldenCases.save/get/archive/history；案例編輯、文字與圖片歷史預覽；test_case_editing.py | 版本化修改、替換、封存後重開及核准失效已驗；新圖片預覽與視窗走查待驗 |
-| FR-08 生成版本 CRUD | Compiler、BuildReviews、建置／檔案／報告／事件 UI | 一般未發布建置封存／恢復已補；有 prepared 發布紀錄的核對／清理入口及新視窗實機驗收仍待 |
+| FR-08 生成版本 CRUD | Compiler、BuildReviews、ReleaseRecovery、建置／報告／發布核對 UI | prepared 核對、保留檔案結束準備與再封存已實測；新視窗實機驗收仍待 |
 | FR-09 人工決策 CRUD | Approvals、v013 審核紀錄與 sequence、送審／退回／撤回 UI | 技術結果與審核分離、同修訂退回約束及重送已補；完整操作走查與故障矩陣仍待 |
-| FR-10 發布／回滾／停用 | governance/release.py；test_governance.py | 20 個受控故障點、跨專案相同 workflow_id 的直接回歸、跨平台實測 |
+| FR-10 發布／回滾／停用 | governance/release.py、recovery.py；test_governance.py、test_release_recovery.py | 發布及停用中斷、缺檔／損毀／過期核對、鎖競爭、交易回復已有測試；仍須完整 20 個受控故障點、跨專案相同 workflow_id 的直接回歸與跨平台實測 |
 | FR-11 明確工作目標 | project/models.py 與 IR goal 驗證 | 對照非技術完整流程確認輸入、預期與成功條件，不把簡短文字等同完整需求 |
 | FR-12 多來源發現 | discovery/planner.py、folder.py、video.py；推論及證據測試 | 真實文字／Mermaid 各至少 5 件；手繪辨識路徑須核對；影片與融合仍為 P2 未驗且停用 |
 | FR-13 工具配置 | Registry policy/matching、受控內建及生成工具 | 對真實案例核對重用優先順序，不以僅固定工具通過代替新 Handler 能力 |
@@ -29,7 +29,7 @@
 | 原需求 | 現有證據 | 未完成驗收 |
 |---|---|---|
 | §8 IR、邏輯參照、節點強制契約、有限分支 | ir 模組、compiler/compatibility.py、branch_lowering.py；IR／branch 測試 | 逐欄位核對 Runtime 語意與拒絕路徑；不能把 IR 接受但 Compiler 不支援當成已實作 |
-| §9 狀態／migration／不可變／交易 | SQLite v013、v009–v012 升級備份還原、CAS、版本／證據／工具／模板／審核紀錄 | 長操作中斷狀態、100 次 CRUD 重開與正式指標故障矩陣 |
+| §9 狀態／migration／不可變／交易 | SQLite v014、v009–v013 升級備份還原、CAS、版本／證據／工具／模板／審核／發布核對紀錄 | 長操作中斷狀態、100 次 CRUD 重開與完整正式指標故障矩陣 |
 | §10 共用 Service／事件／串流 | service.py、discovery events 與 usage | generation、verification、approval 事件與所有狀態持久化須逐項核對；CLI 目前只有部分入口 |
 | §11 UI／預覽／停止／顏色＋文字 | 原生 Windows 檢視與使用者回饋；ui-review.md | 不操作目前使用者桌面；其他平台實機及所有新增表單待走查 |
 | §12 非功能與基準 | 安全路徑、來源 snapshots、隔離重播、無網路默認 | 100 來源零模型、20 節點 p95 <500ms、100 次 CRUD、100 次不同輸入隔離、20 故障；均需固定硬體與資料證據 |

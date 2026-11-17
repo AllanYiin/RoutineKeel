@@ -1,7 +1,7 @@
 """Ordered, transactional Studio schema migrations."""
 
 APPLICATION_ID = 0x53545544  # STUD; rejects accidentally selected Runtime databases.
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 V001 = (
     """CREATE TABLE studio_projects (
@@ -187,6 +187,19 @@ V013 = (
         BEGIN SELECT RAISE(ABORT, 'retain build review'); END""",
 )
 
+V014 = (
+    """CREATE TABLE studio_release_reconciliations (
+        sequence INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL,
+        release_id TEXT NOT NULL REFERENCES studio_releases(release_id),
+        observation_hash TEXT NOT NULL, observation_json TEXT NOT NULL,
+        outcome TEXT NOT NULL, actor TEXT NOT NULL, reason TEXT NOT NULL, created_at TEXT NOT NULL)""",
+    "CREATE INDEX studio_release_reconciliations_release ON studio_release_reconciliations(project_id,release_id,sequence)",
+    """CREATE TRIGGER immutable_release_reconciliation BEFORE UPDATE ON studio_release_reconciliations
+        BEGIN SELECT RAISE(ABORT, 'immutable release reconciliation'); END""",
+    """CREATE TRIGGER retain_release_reconciliation BEFORE DELETE ON studio_release_reconciliations
+        BEGIN SELECT RAISE(ABORT, 'retain release reconciliation'); END""",
+)
+
 MIGRATIONS = {
     1: V001,
     2: V002,
@@ -201,4 +214,5 @@ MIGRATIONS = {
     11: V011,
     12: V012,
     13: V013,
+    14: V014,
 }

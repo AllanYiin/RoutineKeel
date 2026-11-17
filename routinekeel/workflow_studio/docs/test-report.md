@@ -295,3 +295,26 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
   Ruff check／format check（139 files）及 git diff --check 通過。
 - 已開始的試做不因封存自動取消；有 prepared 發布紀錄的建置暫時受到保護，核對／清理 UI 仍待。
   新視窗、來源更新勾選及停用操作未實機驗收；真實模型、完整故障／平台矩陣與最終交付仍未完成。
+
+## 發布準備核對、鎖保護與 v014
+
+- 新增發布歷史的準備核對入口，區分已生效、未生效及無法判定；保留套件、暫存檔與成果。
+  結束未生效準備後可撤回核准並封存建置；後續發布只接受有完整快照依據的已知殘留。
+- `test_release_recovery.py` 首批 14 passed，27.38 秒；加入停用中斷、後續準備／發布取代
+  舊紀錄及原工作區遺失後 19 passed，35.49 秒。之後再補 UI model 重開及核對持久化。
+- 非桌面完整回歸：369 passed、3 deselected，195.22 秒。命令：
+
+  ```powershell
+  & routinekeel/workflow_studio/.venv/Scripts/python.exe -m pytest tests/studio -q -k 'not test_real_tk_buttons and not test_tk_analysis and not test_ui_state_multiline' -rs
+  ```
+
+- 完整回歸啟動後補上目前版本讀取時的發布鎖及相應競爭測試；最終程式另執行
+  `test_release_recovery.py test_governance.py test_build_reviews.py`：38 passed，70.28 秒。
+  此結果與前項分開記錄，不將執行中的舊模組測試當成最終鎖修正的證據。
+- 涵蓋 journal／wheel／manifest／指標中斷、部分暫存檔、相同 manifest 的舊決策保留、
+  遺失前一指標、鎖占用／過期觀察、wheel 損毀、來源工作區／專案歸屬、稽核失敗回復、
+  未知檔案保護、撤回核准不恢復、停用中斷保留成果及被後續準備取代。
+- v013 → v014、before-v013 備份校驗及獨立還原通過；核對紀錄不可刪除，UI model 重開可見結果。
+  Ruff check、format check（142 files）與 git diff --check 通過。
+- 未重新操作桌面或外部發布；三個桌面測試排除。新核對視窗未視覺／互動驗收，
+  這組故障測試不取代原規格完整 20 故障矩陣、三平台、真實模型與非技術使用者 Gate。

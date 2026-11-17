@@ -836,6 +836,16 @@ class StudioApp:
         window = tk.Toplevel(self.root)
         self.prepare_dialog(window)
         window.title("發布歷史與版本回復")
+
+        def recover():
+            from .recovery_dialog import open_recovery
+
+            window.destroy()
+            open_recovery(self)
+
+        ttk.Button(window, text="核對未完成發布準備", command=recover).pack(
+            fill="x", padx=12, pady=8
+        )
         listing = tk.Listbox(window, width=80, height=12)
         listing.pack(padx=12, pady=12)
         for row in rows:

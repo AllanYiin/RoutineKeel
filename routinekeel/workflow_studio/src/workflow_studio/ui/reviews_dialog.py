@@ -96,7 +96,7 @@ def open_reviews(app):
                     allowed = (
                         ready
                         and not item["review"]["archived"]
-                        and not item["release_references"]
+                        and not any(r["status"] != "abandoned" for r in item["release_references"])
                         and not any(a["revoked_at"] is None for a in item["approvals"])
                     )
                 elif action == "submit":
@@ -185,7 +185,12 @@ def open_reviews(app):
             )
         for release in item["release_references"]:
             lines.append(
-                f"發布紀錄：{release['status']} · {release['target_root']}\n此建置受發布歷史保護，不能直接封存。"
+                f"發布紀錄：{release['status']} · {release['target_root']}\n"
+                + (
+                    "此準備已結束，檔案保留。"
+                    if release["status"] == "abandoned"
+                    else "此建置受發布歷史保護，不能直接封存。"
+                )
             )
         app._set_text(summary, "\n\n".join(lines))
         report_choice.configure(

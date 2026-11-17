@@ -200,7 +200,7 @@ class BuildReviews:
                 if any(a["revoked_at"] is None for a in details["approvals"]):
                     raise StudioError("APPROVAL_REQUIRED", "請先撤回此建置的有效核准，再封存。")
                 if db.execute(
-                    "SELECT 1 FROM studio_releases WHERE project_id=? AND build_id=?",
+                    "SELECT 1 FROM studio_releases WHERE project_id=? AND build_id=? AND status<>'abandoned'",
                     (project_id, build_id),
                 ).fetchone():
                     raise StudioError(

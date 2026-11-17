@@ -906,6 +906,22 @@ class StudioUIModel:
         with self.service() as studio:
             return Releases(studio).history(self.project_id) if self.project_id else []
 
+    def inspect_release(self, release_id):
+        from ..governance.recovery import ReleaseRecovery
+
+        with self.service() as studio:
+            return ReleaseRecovery(studio).inspect(self.project_id, release_id)
+
+    def reconcile_release(self, release_id, expected_observation, actor, reason):
+        from ..governance.recovery import ReleaseRecovery
+
+        with self.service() as studio:
+            result = ReleaseRecovery(studio).reconcile(
+                self.project_id, release_id, expected_observation, actor=actor, reason=reason
+            )
+        self.approval_id = None
+        return result
+
     def build_history(self, include_archived=False):
         with self.service() as studio:
             return studio.reviews(self.policy).list(

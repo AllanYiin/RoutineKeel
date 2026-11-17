@@ -101,3 +101,13 @@ record_version、狀態、操作者及理由。操作與事件同交易，事件
 審核決策以 sequence 判斷順序，新驗收報告保存開始時的 review_sequence。
 升級前保存 before-v012；已實測升級與獨立 v012 備份還原。
 回退仍須先保留最新 DB／projects／發布快照，避免遺失 v013 期間的審核紀錄。
+
+## v014 發布核對決策
+
+新增不可變 studio_release_reconciliations，保存核對觀察、hash、結果、操作者與理由。
+已確認未生效的 prepared 紀錄可標記 abandoned，原 payload 與套件保留。
+舊紀錄不自動結束或重新核准。升級前保存 before-v013；測試驗證原專案保留
+以及備份還原到獨立 v013 目錄。UPDATE／DELETE 核對事件由觸發器拒絕。
+回退前另存最新 Studio DB、projects 與所有發布工作區的 .studio_releases 及流程資料夾。
+使用相容程式與 before-v013 在新位置還原，不以舊程式強寫 v014；
+備份之後發生的實際發布／停用須另行核對，不能只還原 DB 就宣稱套件狀態已回退。
