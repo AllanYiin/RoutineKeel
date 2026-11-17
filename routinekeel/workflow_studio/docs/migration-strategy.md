@@ -11,3 +11,16 @@
 - 回滾前關閉 Studio 並備份目前 DB／受管檔案，還原相容版本整組資料；
   不把舊程式直接指向較新 DB，不刪除原始來源及 Runtime 成果。
 - migration 與還原測試在隔離目錄進行；未實作或未執行的流程不宣稱驗收通過。
+
+## v001 已實作與還原
+
+`SQLiteRepository` 在首次開啟前備份 v000，再以單一交易建立 Project／Revision
+資料表、不可變版本 trigger 與索引。`application_id` 拒絕外來資料庫；
+較新版本及缺少必要表的資料庫會拒絕開啟。JSON 內容以固定排序序列化並保存 SHA-256。
+寫入中斷由 SQLite rollback journal 恢復；Project version 與新 Revision 同交易提交。
+
+`repository.backup()` 產生 `.sqlite3` 與 `.json`（schema_version、sha256）。
+`SQLiteRepository.restore(snapshot, new_root)` 核對 hash 與 SQLite integrity 後，
+只寫入不存在的目標 DB，拒絕覆寫原工作區；再用相容版本開啟還原資料夾驗證。
+v000 備份代表首次安裝前無 Studio 資料，不能拿來復原後來建立的專案。
+程式回退前請另備份最新 Studio 資料與受管檔案；Stage 0 不具備讀取 v001 資料的能力。

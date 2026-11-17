@@ -33,3 +33,14 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
 - 原始需求 SHA-256：`2322d09b209ef08accc471f722c97c602226b5d66a14b3d9c9a743cbb1365378`。
 
 回滾：撤回 Stage 0 新增套件與測試即可；此階段沒有持久化使用者資料。
+
+## Stage 1
+
+- Studio 專屬環境 `python -m pytest tests/studio -q`：24 passed，1.28 秒。
+  覆蓋 CRUD／重開、同名專案隔離、CAS／重複提交、不可變發布版本、草稿捨棄、
+  100 次建立重開、故障交易、程序退出、遷移重跑、備份／還原、較新版本及損毀拒絕。
+- 底座環境 `python -m pytest tests/studio tests/test_baseline_contract.py tests/test_workflow_service.py tests/test_decoupling.py -q`：
+  44 passed，19.32 秒（之後新增兩個儲存拒絕測試已於 Studio 24 項全測通過）。
+- Ruff check 通過；格式化範圍限 Studio 與其測試。
+- Stage 0 commit：`5543ebd`。本階段沒有修改 Runtime 契約或 Runtime DB。
+- 回滾／備份實測步驟見 migration-strategy.md；既有基線失敗保持單列。

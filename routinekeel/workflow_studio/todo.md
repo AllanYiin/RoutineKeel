@@ -6,8 +6,8 @@
 | Stage | 狀態 | 交付與驗收 | 相依 |
 |---|---|---|---|
 | 0 | 通過 | 獨立套件、Service／Storage 抽象、設定、架構／migration 文件；wheel 建置安裝與 12 項針對性測試通過，既有基線失敗單列 | 現有 checkout |
-| 1 | 進行中 | Project／Revision CRUD、CAS、備份遷移、原子保存；重開、中斷、不可變版本測試 | 0 |
-| 2 | 待執行 | 文字／Mermaid／圖片／資料夾來源 CRUD 與預覽；指紋、惡意 ZIP、越界、比例驗證 | 1 |
+| 1 | 通過 | Project／Revision CRUD、CAS、備份遷移、原子保存；24 項 Studio 測試與 44 項相容回歸通過 | 0 |
+| 2 | 進行中 | 文字／Mermaid／圖片／資料夾來源 CRUD 與預覽；指紋、惡意 ZIP、越界、比例驗證 | 1 |
 | 3 | 待執行 | IR v1、JSON Schema、引用／型別／DAG／版本驗證；生成前拒絕非法 IR | 1–2 |
 | 4 | 待執行 | Registry CRUD、能力匹配、平台／信任／副作用政策；未授權工具拒絕 | 3 |
 | 5 | 待執行 | 可替換 LLM、文字／Mermaid discovery、串流／用量／證據；中斷與無效輸出不提交 | 2–4 |
