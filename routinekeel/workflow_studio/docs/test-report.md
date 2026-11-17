@@ -106,3 +106,13 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
   `dist/studio-stage7-release/be13f0d900184608942a1cc45f15b241/release-check/release/`。
   ZIP SHA-256：`921a92929657c7ba2015e61fa157d1b9284a8eaae56dc0d7363b0d58bc2298eb`。
 - Stage 6 commit：`3621b8a`；新增 SQLite v006 建置紀錄。尚未把候選包當成已驗證／已發布。
+
+## Stage 8
+
+- Studio 環境 `python -m pytest tests/studio -q`：131 passed，22.35 秒。
+- 之後新增並執行 `tests/studio/test_verifier.py::test_self_signed_untrusted_template_still_never_executes`：1 passed，0.26 秒。
+- Ruff check／format 通過。Static Gate 在任何動態執行前拒絕 tamper，以及重新自簽 hash 的未知程式模板。
+- 實際隔離 Runtime 重播驗證內容相符／不符、Runtime 合約失敗、重複提交獨立 Run、
+  報告保存、兩輪修復仍失敗停止、成功修復建立新版本，以及修改成功標準遭拒絕。
+- Stage 7 commit：`66427a1`；新增 SQLite v007 不可變驗證報告表。
+- 真實模型 proposer 未呼叫，非 Windows 平台／真人 UI 仍待；詳見 verifier.md 的能力邊界。

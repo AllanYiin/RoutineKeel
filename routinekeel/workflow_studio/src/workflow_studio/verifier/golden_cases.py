@@ -116,8 +116,8 @@ class GoldenCases:
             )
         return self.get(project_id, case_id)
 
-    def bytes(self, project_id, case_id):
-        case = self.get(project_id, case_id)
+    def bytes(self, project_id, case_id, *, version=None):
+        case = self.get(project_id, case_id, version)
         if case["status"] != "active":
             raise StudioError("TEST_CASE_NOT_FOUND", "測試案例已封存。")
         self._validate(project_id, case["specification"])

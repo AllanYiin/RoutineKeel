@@ -66,6 +66,8 @@ class SQLiteRepository:
                 required |= {"studio_evidence_graphs", "studio_test_cases"}
             if SCHEMA_VERSION >= 6:
                 required |= {"studio_builds"}
+            if SCHEMA_VERSION >= 7:
+                required |= {"studio_verifications"}
             actual = {
                 row[0]
                 for row in self.connection.execute(

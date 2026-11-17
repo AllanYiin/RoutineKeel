@@ -46,6 +46,19 @@ class StudioService:
 
         return Compiler(self).compile(project_id, revision_id, tool_policy)
 
+    def verify(self, project_id, build_id, cases, tool_policy, *, runtime_python=None):
+        from .verifier.report import Verifier
+
+        return Verifier(self, runtime_python).verify(project_id, build_id, cases, tool_policy)
+
+    def repair(self, project_id, build_id, cases, tool_policy, proposer, *, runtime_python=None):
+        from .verifier.repair import RepairLoop
+        from .verifier.report import Verifier
+
+        return RepairLoop(self, Verifier(self, runtime_python)).run(
+            project_id, build_id, cases, tool_policy, proposer
+        )
+
     def save_ir(self, project_id, expected_version, payload, policy):
         return self.projects.save_ir(
             project_id,
