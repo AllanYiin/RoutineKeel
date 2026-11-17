@@ -41,6 +41,11 @@ class StudioService:
 
         return DiscoveryPlanner(self, provider, budget, tool_policy)
 
+    def compile(self, project_id, revision_id, tool_policy):
+        from .compiler.generator import Compiler
+
+        return Compiler(self).compile(project_id, revision_id, tool_policy)
+
     def save_ir(self, project_id, expected_version, payload, policy):
         return self.projects.save_ir(
             project_id,

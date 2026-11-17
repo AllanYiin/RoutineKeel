@@ -1,7 +1,7 @@
 """Ordered, transactional Studio schema migrations."""
 
 APPLICATION_ID = 0x53545544  # STUD; rejects accidentally selected Runtime databases.
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 V001 = (
     """CREATE TABLE studio_projects (
@@ -96,4 +96,11 @@ V005 = (
         BEGIN SELECT RAISE(ABORT, 'immutable evidence graph'); END""",
 )
 
-MIGRATIONS = {1: V001, 2: V002, 3: V003, 4: V004, 5: V005}
+V006 = (
+    """CREATE TABLE studio_builds (
+        build_id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES studio_projects(project_id),
+        revision_id TEXT NOT NULL REFERENCES studio_revisions(revision_id), relative_path TEXT NOT NULL,
+        package_hash TEXT NOT NULL, status TEXT NOT NULL, mapping_json TEXT NOT NULL, created_at TEXT NOT NULL)""",
+)
+
+MIGRATIONS = {1: V001, 2: V002, 3: V003, 4: V004, 5: V005, 6: V006}

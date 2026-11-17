@@ -49,3 +49,10 @@ v000 備份代表首次安裝前無 Studio 資料，不能拿來復原後來建�
 新增不可變證據圖與 Golden Case 版本表；來源 metadata 新增可選 observed_mtime_ns，
 缺少時間資訊的舊來源仍可讀，時間不參與內容指紋或因果確認。
 回退 Stage 5 使用 before-v004 備份並另存最新 DB，避免遺失新證據與驗收案例。
+
+## v006 建置紀錄
+
+新增 build_id／Revision／套件指紋與相對路徑表。建置檔案在完成完整性檢查後才登錄候選紀錄；
+中斷的未登錄資料夾不會被視為可發布版本，保留於 Studio 專用 builds 供診斷。
+從此階段起，完整備份須同時保存 Studio DB 與 projects 受管目錄；回退 v005
+使用 before-v005 備份，保留最新整組資料，不刪除已發布版本或 Runtime 成果。

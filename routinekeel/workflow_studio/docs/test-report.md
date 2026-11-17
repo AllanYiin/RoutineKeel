@@ -94,3 +94,15 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
   中間步驟、比對上限、候選 IR 驗證、關係確認／替換／移除、版本保留與 Golden Case 指紋／封存。
 - Stage 5 commit：`aade591`。新增 SQLite v005 證據圖與 Golden Case 版本資料表。
 - 不把樣本重播匹配當成已還原完整業務規則；Runtime 套件重播由 Stage 7–8 驗證。
+
+## Stage 7
+
+- Studio 環境 `python -m pytest tests/studio -q`：124 passed，9.18 秒；Ruff check／format 通過。
+- 實際 Runtime 獨立 Python 環境執行生成複製包及文字整理→指紋報告包，經 WorkflowService
+  plan／prepare／verify／run；驗證實際生命週期事件、正確 bytes、新 run_id、快取與 registered_requests=0。
+- 不同輸入覆寫既有工作輸出被底座正確拒絕；測試改用新 output 後通過，未改底座保護。
+- 靜態拒絕未支援重試、參數、非終端輸出、索引路徑衝突及後續停用工具；wheel 完整性／去依賴／可重現通過。
+- 既有 tools/release.py.build_project 實測成功；產物位於
+  `dist/studio-stage7-release/be13f0d900184608942a1cc45f15b241/release-check/release/`。
+  ZIP SHA-256：`921a92929657c7ba2015e61fa157d1b9284a8eaae56dc0d7363b0d58bc2298eb`。
+- Stage 6 commit：`3621b8a`；新增 SQLite v006 建置紀錄。尚未把候選包當成已驗證／已發布。
