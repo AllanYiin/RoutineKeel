@@ -90,6 +90,14 @@ class DiscoveryPlanner:
             "tools": [t.signature().model_dump() for t in tools.values()],
             "ir_schema": WorkflowIR.model_json_schema(),
         }
+        from .evidence_graph import EvidenceGraphs
+
+        selected = {(ref[0], ref[1]) for ref in refs}
+        content["folder_evidence"] = [
+            g["graph"]
+            for g in EvidenceGraphs(self.studio.repository).list(project_id)
+            if (g["graph"]["source_id"], g["graph"]["source_version"]) in selected
+        ]
         messages = [
             {"role": "system", "content": SYSTEM},
             {"role": "user", "content": canonical_json(content)},

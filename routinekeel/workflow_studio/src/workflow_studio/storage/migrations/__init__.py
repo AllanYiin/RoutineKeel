@@ -1,7 +1,7 @@
 """Ordered, transactional Studio schema migrations."""
 
 APPLICATION_ID = 0x53545544  # STUD; rejects accidentally selected Runtime databases.
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 V001 = (
     """CREATE TABLE studio_projects (
@@ -81,4 +81,19 @@ V004 = (
         status TEXT NOT NULL, created_at TEXT NOT NULL)""",
 )
 
-MIGRATIONS = {1: V001, 2: V002, 3: V003, 4: V004}
+V005 = (
+    """CREATE TABLE studio_evidence_graphs (
+        graph_id TEXT NOT NULL, version INTEGER NOT NULL,
+        project_id TEXT NOT NULL REFERENCES studio_projects(project_id), payload_json TEXT NOT NULL,
+        status TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(graph_id,version))""",
+    """CREATE TABLE studio_test_cases (
+        case_id TEXT NOT NULL, version INTEGER NOT NULL,
+        project_id TEXT NOT NULL REFERENCES studio_projects(project_id), spec_json TEXT NOT NULL,
+        status TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(case_id,version))""",
+    """CREATE TRIGGER immutable_golden_case BEFORE UPDATE ON studio_test_cases
+        BEGIN SELECT RAISE(ABORT, 'immutable golden case'); END""",
+    """CREATE TRIGGER immutable_evidence_graph BEFORE UPDATE ON studio_evidence_graphs
+        BEGIN SELECT RAISE(ABORT, 'immutable evidence graph'); END""",
+)
+
+MIGRATIONS = {1: V001, 2: V002, 3: V003, 4: V004, 5: V005}

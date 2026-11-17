@@ -86,3 +86,11 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
 - 完成事件與 Revision／usage 同交易提交；帳本未取得 usage 時保留成本估計。
 - Stage 4 commit：`ecf3e9a`。新增 SQLite v004 事件／用量資料表。
 - 真實付費模型及真實業務推導品質未驗證；沒有傳送本機私人來源。這不是最終產品品質 Gate。
+
+## Stage 6
+
+- Studio 環境 `python -m pytest tests/studio -q`：116 passed，3.83 秒；Ruff check 通過。
+- 包含完整成功資料夾、多候選、只有成果、同名異內容、日誌敏感內容不進圖、誤導時間順序、
+  中間步驟、比對上限、候選 IR 驗證、關係確認／替換／移除、版本保留與 Golden Case 指紋／封存。
+- Stage 5 commit：`aade591`。新增 SQLite v005 證據圖與 Golden Case 版本資料表。
+- 不把樣本重播匹配當成已還原完整業務規則；Runtime 套件重播由 Stage 7–8 驗證。

@@ -11,8 +11,8 @@
 | 3 | 通過 | IR v1／JSON Schema、完整節點政策、DAG／型別／來源驗證、不可變 IR；80 項 Studio 測試通過 | 1–2 |
 | 4 | 通過 | Registry 版本／CRUD、能力匹配、政策與四個確定性內建工具；89 項 Studio 測試通過 | 3 |
 | 5 | 本機功能通過 | Provider／文字與 Mermaid discovery／持久化串流／保守預算；108 項測試通過，真實模型品質待整體 Gate | 2–4 |
-| 6 | 進行中 | 資料夾證據圖、候選資料流、來源追蹤、Golden Cases；不把時間當因果 | 2–5 |
-| 7 | 待執行 | Lowering／Adapter／Handler／flow.json／流程包；至少兩個 Golden Cases 由底座實際執行 | 3–6 |
+| 6 | 通過 | 資料夾證據圖、受控樣本重播、候選 IR／角色／未知、版本化 Golden Cases；116 項測試通過 | 2–5 |
+| 7 | 進行中 | Lowering／Adapter／Handler／flow.json／流程包；至少兩個 Golden Cases 由底座實際執行 | 3–6 |
 | 8 | 待執行 | 獨立 Verifier、重播比對、故障與安全報告；最多兩次修復且不更動成功標準 | 7 |
 | 9 | 待執行 | 受控分支、共用輸出契約、執行期 LLM 串流／預算；確定性流程零 API | 7–8 |
 | 10 | 待執行 | 影片預覽／時間證據／多來源融合；固定案例、不確認猜測；未驗收 P2 預設停用 | 2、5–6 |

@@ -34,9 +34,14 @@ class SourceService:
     ):
         path = Path(path)
         files = collect_path(path, self.limits)
-        return self._save(project_id, expected_version, files, path.name, source_id)
+        metadata = {}
+        if path.is_dir():
+            metadata = {name: (path / name).lstat().st_mtime_ns for name in files}
+        elif path.suffix.lower() != ".zip":
+            metadata = {path.name: path.lstat().st_mtime_ns}
+        return self._save(project_id, expected_version, files, path.name, source_id, metadata)
 
-    def _save(self, project_id, expected_version, files, name, source_id):
+    def _save(self, project_id, expected_version, files, name, source_id, metadata=None):
         name = validate_name(name)
         records, blobs = [], {}
         total = 0
@@ -54,6 +59,7 @@ class SourceService:
                     "sha256": digest,
                     "size": len(payload),
                     "preview": asdict(preview),
+                    "observed_mtime_ns": (metadata or {}).get(relative),
                 }
             )
         if not records or len(records) > self.limits.max_files:

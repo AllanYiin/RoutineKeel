@@ -43,3 +43,9 @@ v000 備份代表首次安裝前無 Studio 資料，不能拿來復原後來建�
 新增事件 sequence／project 索引、設計／執行期模型 reservation 與 usage。
 完成事件、Revision 及帳本結算同交易；內層服務使用 SQLite savepoint，外層失敗整體回復。
 回退 Stage 4 使用升級前 before-v003 備份；另存最新 DB 以保存串流與用量歷史。
+
+## v005 資料夾證據與案例
+
+新增不可變證據圖與 Golden Case 版本表；來源 metadata 新增可選 observed_mtime_ns，
+缺少時間資訊的舊來源仍可讀，時間不參與內容指紋或因果確認。
+回退 Stage 5 使用 before-v004 備份並另存最新 DB，避免遺失新證據與驗收案例。
