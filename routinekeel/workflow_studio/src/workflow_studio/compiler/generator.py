@@ -27,7 +27,11 @@ class Compiler:
         ):
             raise StudioError("IR_SCHEMA_INVALID", "請先保存通過驗證的 IR 版本。")
         tools = self.studio.tools.allowed(policy)
-        ir = validate_ir(revision.ir, {k: t.signature() for k, t in tools.items()})
+        ir = validate_ir(
+            revision.ir,
+            {k: t.signature() for k, t in tools.items()},
+            verified_records=self.studio.confirmed_evidence(project_id, revision.ir),
+        )
         check_supported(ir, tools)
         from .handlers import verify_examples
 

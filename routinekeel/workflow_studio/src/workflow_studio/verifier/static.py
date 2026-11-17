@@ -38,7 +38,11 @@ def verify_static(studio, build, policy):
             verified_files[name.removeprefix(prefix)] = archive.read(name)
     revision = studio.projects.get_revision(build["project_id"], build["revision_id"])
     tools = studio.tools.allowed(policy)
-    ir = validate_ir(revision.ir, {k: t.signature() for k, t in tools.items()})
+    ir = validate_ir(
+        revision.ir,
+        {k: t.signature() for k, t in tools.items()},
+        verified_records=studio.confirmed_evidence(build["project_id"], revision.ir),
+    )
     check_supported(ir, tools)
     if (
         sum(n.llm_policy.budget_micro_usd for n in ir.nodes if n.llm_policy)

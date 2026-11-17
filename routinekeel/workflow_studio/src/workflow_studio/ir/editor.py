@@ -128,7 +128,11 @@ class FlowEditor:
             ]
             payload["revision"] = max(ordinals, default=0) + 1
             tools = self.studio.tools.allowed(self.policy)
-            validated = validate_ir(payload, {k: t.signature() for k, t in tools.items()})
+            validated = validate_ir(
+                payload,
+                {k: t.signature() for k, t in tools.items()},
+                verified_records=self.studio.confirmed_evidence(project_id, payload),
+            )
             check_supported(validated, tools)
             changed = self.studio.save_ir(
                 project_id, project.version, validated.model_dump(), self.policy

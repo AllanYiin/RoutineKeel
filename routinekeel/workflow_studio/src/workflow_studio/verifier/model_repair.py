@@ -195,7 +195,7 @@ class ModelRepair:
         ):
             raise StudioError("REVISION_CONFLICT", "模型、預算或工具政策已變動。")
 
-    def _proposal(self, current, original, result):
+    def _proposal(self, current, original, result, project_id):
         if result.ir is None or result.questions:
             raise StudioError("EVIDENCE_INSUFFICIENT", "修復仍需要補充業務規則，已保存模型說明。")
         proposal = result.ir.model_dump()
@@ -216,6 +216,7 @@ class ModelRepair:
             proposal,
             {k: t.signature() for k, t in tools.items()},
             source_versions={(e["source_id"], e["source_version"]) for e in original["evidence"]},
+            verified_records=self.studio.confirmed_evidence(project_id, proposal),
         )
         check_supported(validated, tools)
         for node in validated.nodes:
@@ -326,7 +327,9 @@ class ModelRepair:
                             "repair.needs_clarification",
                             {"questions": result.questions or ["請補充可驗證的業務規則。"]},
                         )
-                    proposal = self._proposal(current, scope["original_ir"], result)
+                    proposal = self._proposal(
+                        current, scope["original_ir"], result, prepared.project_id
+                    )
                     if cancelled():
                         raise StudioError("LLM_STREAM_INTERRUPTED", "已停止修復，未提交提案。")
                     with self.studio.repository.transaction():

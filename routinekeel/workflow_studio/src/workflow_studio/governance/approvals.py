@@ -57,6 +57,8 @@ class Approvals:
         self.validate_cases(project_id, json.loads(report[1]))
         identity = "approval_" + uuid4().hex
         with self.studio.repository.transaction() as db:
+            verify_static(self.studio, build, policy)
+            self.validate_cases(project_id, json.loads(report[1]))
             if self.studio.projects.get_revision(project_id, build["revision_id"]).discarded:
                 raise StudioError("REVISION_IMMUTABLE", "此草稿已捨棄，請先另存新版本並重新驗證。")
             db.execute(

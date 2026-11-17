@@ -210,6 +210,26 @@ class Releases:
             with self.studio.repository.transaction():
                 if Approvals(self.studio).get(project_id, approval_id)["revoked_at"]:
                     raise StudioError("APPROVAL_REQUIRED", "發布前核准已撤回。")
+                verify_static(self.studio, build, policy)
+                if not historical:
+                    latest = self.studio.projects.get(project_id)
+                    if (
+                        latest.current_revision_id != revision.revision_id
+                        or latest.goal != revision.ir["goal"]
+                    ):
+                        raise StudioError(
+                            "REVISION_CONFLICT", "發布準備期間專案已改變，未切換正式版本。"
+                        )
+                    Approvals(self.studio).validate_cases(
+                        project_id, Verifier(self.studio).get(project_id, approval["report_id"])
+                    )
+                    for evidence in revision.ir["evidence"]:
+                        source = self.studio.sources.get(project_id, evidence["source_id"])
+                        if (
+                            source.version != evidence["source_version"]
+                            or source.status != "active"
+                        ):
+                            raise StudioError("REVISION_CONFLICT", "發布準備期間來源已改變。")
                 atomic_bytes(manifest_path, files["flow.json"])
                 applied = self.current(root, workflow_id)
             if applied is None or applied["release_id"] != release_id:

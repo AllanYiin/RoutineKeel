@@ -1,7 +1,7 @@
 """Ordered, transactional Studio schema migrations."""
 
 APPLICATION_ID = 0x53545544  # STUD; rejects accidentally selected Runtime databases.
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 V001 = (
     """CREATE TABLE studio_projects (
@@ -128,4 +128,32 @@ V009 = (
     project_id TEXT PRIMARY KEY REFERENCES studio_projects(project_id), settings_json TEXT NOT NULL)""",
 )
 
-MIGRATIONS = {1: V001, 2: V002, 3: V003, 4: V004, 5: V005, 6: V006, 7: V007, 8: V008, 9: V009}
+V010 = (
+    """CREATE TABLE studio_evidence_decisions (
+        sequence INTEGER PRIMARY KEY AUTOINCREMENT, decision_id TEXT UNIQUE NOT NULL,
+        project_id TEXT NOT NULL REFERENCES studio_projects(project_id),
+        evidence_id TEXT NOT NULL, basis_hash TEXT NOT NULL, basis_json TEXT NOT NULL,
+        action TEXT NOT NULL CHECK(action IN ('confirm','revoke')),
+        target_id TEXT REFERENCES studio_evidence_decisions(decision_id),
+        actor TEXT NOT NULL, reason TEXT NOT NULL, created_at TEXT NOT NULL,
+        CHECK((action='confirm' AND target_id IS NULL) OR (action='revoke' AND target_id IS NOT NULL)))""",
+    "CREATE INDEX studio_evidence_decisions_project ON studio_evidence_decisions(project_id,sequence)",
+    "CREATE UNIQUE INDEX one_evidence_revocation ON studio_evidence_decisions(target_id) WHERE action='revoke'",
+    """CREATE TRIGGER immutable_evidence_decision BEFORE UPDATE ON studio_evidence_decisions
+        BEGIN SELECT RAISE(ABORT, 'immutable evidence decision'); END""",
+    """CREATE TRIGGER retain_evidence_decision BEFORE DELETE ON studio_evidence_decisions
+        BEGIN SELECT RAISE(ABORT, 'retain evidence decision'); END""",
+)
+
+MIGRATIONS = {
+    1: V001,
+    2: V002,
+    3: V003,
+    4: V004,
+    5: V005,
+    6: V006,
+    7: V007,
+    8: V008,
+    9: V009,
+    10: V010,
+}

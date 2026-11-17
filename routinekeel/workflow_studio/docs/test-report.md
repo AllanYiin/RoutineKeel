@@ -216,3 +216,19 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
 - Ruff check／format check（124 files）與 git diff --check 通過。新視窗來源選項以步驟名稱顯示，
   未進行實機視覺操作；這些程式檢查不能代替操作驗收。
 - 完整條件／模型政策表單、手動空白流程起案、規則與工具治理等仍待；詳見 requirement-audit.md。
+
+## 規則證據確認、撤回與 v010
+
+- 新增 append-only 人工決策與內容指紋核對，接入保存／編輯／續編／編譯／靜態驗證／模型修復。
+  工作臺可修改規則說明及引用步驟、確認／撤回、查看理由與來源；不能藉此修改算法或授權外部工具。
+- `python -m pytest tests/studio/test_evidence_decisions.py tests/studio/test_migrations.py tests/studio/test_governance.py -q`：
+  28 passed，18.35 秒。包含來源／版本／claim／locator／ID 變更、跨專案與機器標記冒用拒絕，
+  交易失敗回復、真正包重播及模型修復保留確認、撤回期間發布不切換舊 manifest。
+- v009 → v010 升級前備份、原專案保留、SHA 校驗與還原到獨立 v009 DB 通過。
+  決策使用持久化 sequence；VACUUM 後相同內容的舊確認仍失效，新確認可重新成立。
+- 最終非桌面完整回歸（同前節命令）：288 passed、3 deselected，107.58 秒。
+- Ruff check／format check（128 files）及 git diff --check 通過。
+- 新共用來源預覽元件支援文字與圖片等比顯示，案例歷史已改讀精確版本的 bytes。
+  PNG 舊／新版本內容與尺寸資料測試通過；沒有操控使用者桌面，原生渲染／排版未驗。
+- 這些是本機功能與 fixture 證據，不代表真實模型品質、機器 verified 證據整合、三平台、
+  20 件非技術案例或完整交付已完成。剩餘工作見 requirement-audit.md。

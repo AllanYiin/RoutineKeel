@@ -4,6 +4,8 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 
+from .source_preview import SourcePreview
+
 RULES = {"完全相同（包含排版）": "exact_bytes", "JSON 內容相同（忽略排版）": "json_equal"}
 
 
@@ -61,10 +63,18 @@ def open_cases(app):
     paths = {"input": None, "expected": None}
     file_row = ttk.Frame(window)
     file_row.grid(row=4, column=1, sticky="ew", padx=(0, 12), pady=6)
+    previews = ttk.Notebook(window)
+    previews.grid(row=5, column=1, sticky="nsew", padx=(0, 12))
+    assets = {
+        side: SourcePreview(previews, font=app.analysis.cget("font"))
+        for side in ("input", "expected")
+    }
+    previews.add(assets["input"], text="此版本輸入")
+    previews.add(assets["expected"], text="此版本正確成果")
     preview = ScrolledText(
-        window, wrap="word", state="disabled", width=1, font=app.analysis.cget("font")
+        previews, wrap="word", state="disabled", width=1, font=app.analysis.cget("font")
     )
-    preview.grid(row=5, column=1, sticky="nsew", padx=(0, 12))
+    previews.add(preview, text="待替換檔案")
     state = {"case": None, "version": None, "rows": [], "saved": (), "index": None}
 
     def snapshot():
@@ -96,10 +106,10 @@ def open_cases(app):
         output.set(spec.get("output_name", outputs[0] if len(outputs) == 1 else ""))
         rule.set(next(label for label, key in RULES.items() if key == spec["comparison"]))
         paths.update(input=None, expected=None)
-        content = model.case_preview(case["case_id"], case["version"])
-        app._set_text(
-            preview, "試做輸入\n" + content["input"] + "\n\n正確成果\n" + content["expected"]
-        )
+        for side, asset in model.case_assets(case["case_id"], case["version"]).items():
+            assets[side].show(asset["name"], asset["content"], asset["preview"])
+        app._set_text(preview, "目前未選取替換檔案。")
+        previews.select(assets["input"])
         state["saved"] = snapshot()
 
     def select(_event=None):
@@ -141,6 +151,7 @@ def open_cases(app):
                 )
                 + "\n\n儲存時會檢查格式、內容指紋及比較規則；失敗不會改寫舊案例。",
             )
+            previews.select(preview)
 
     for side, label in (("input", "替換輸入檔"), ("expected", "替換正確成果")):
         ttk.Button(file_row, text=label, command=lambda side=side: choose(side)).pack(

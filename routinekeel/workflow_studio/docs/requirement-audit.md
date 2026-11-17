@@ -11,10 +11,10 @@
 | FR-01 專案 CRUD／續編 | project/service.py；test_projects.py、test_ui_workflow.py | 確認 UI 軟刪除、第三版草稿續編及正式歷史保留的完整使用者路徑 |
 | FR-02 來源 CRUD／預覽 | ingestion/service.py、preview 與 folder 模組；來源相關測試 | UI 說明修改；所有已接受格式的最終視覺矩陣 |
 | FR-03 草稿版本與差異 | project/history.py、版本與差異 UI、test_history_editing.py | 續編新版本／明確還原目標／捨棄保護已驗；新視窗實機走查待驗 |
-| FR-04 業務規則 CRUD | discovery/evidence_graph.py 保存確認／替換／移除 | 工作臺不能只顯示 JSON；需讓非技術使用者修改規則與確認證據 |
+| FR-04 業務規則 CRUD | governance/evidence.py、v010、規則／來源／引用步驟／確認撤回 UI；test_evidence_decisions.py | 規則文字及引用與人工確認已補；實際分支／模型政策表單、資料夾關係圖決策 UI 與機器 verified 證據整合仍待 |
 | FR-05 工具註冊及政策 | registry/catalog.py、policy.py；test_registry.py | 管理者操作入口、生成工具可重用流程與第三方相容邊界的端到端證據 |
 | FR-06 節點 CRUD | ir/editor.py 原子編輯；GraphDraft／連線交付物視窗；test_graph_editing.py | 新增基本動作、重用生成步驟、來源／依賴／輸入格式／交付物及合併刪除已補；完整條件／模型政策表單、新空白流程手動起案及實機走查仍待 |
-| FR-07 案例 CRUD／預期實際 | GoldenCases.save/get/archive/history；案例編輯及歷史 UI、test_case_editing.py | 版本化修改、替換、封存後重開及核准失效已驗；二進位案例歷史的直接內容預覽與新視窗走查待補 |
+| FR-07 案例 CRUD／預期實際 | GoldenCases.save/get/archive/history；案例編輯、文字與圖片歷史預覽；test_case_editing.py | 版本化修改、替換、封存後重開及核准失效已驗；新圖片預覽與視窗走查待驗 |
 | FR-08 生成版本 CRUD | Compiler.compile/get；獨立 build/report | 尚缺完整版本封存與 UI 程式／報告瀏覽 |
 | FR-09 人工決策 CRUD | Approvals.approve/get/revoke 與 hash 綁定 | 待辦、退回理由及封存決策的完整操作流程 |
 | FR-10 發布／回滾／停用 | governance/release.py；test_governance.py | 20 個受控故障點、跨專案相同 workflow_id 的直接回歸、跨平台實測 |
@@ -29,7 +29,7 @@
 | 原需求 | 現有證據 | 未完成驗收 |
 |---|---|---|
 | §8 IR、邏輯參照、節點強制契約、有限分支 | ir 模組、compiler/compatibility.py、branch_lowering.py；IR／branch 測試 | 逐欄位核對 Runtime 語意與拒絕路徑；不能把 IR 接受但 Compiler 不支援當成已實作 |
-| §9 狀態／migration／不可變／交易 | SQLite v009、備份還原、CAS、版本記錄；本輪複合交易回修 | 長操作中斷狀態、100 次 CRUD 重開與正式指標故障矩陣 |
+| §9 狀態／migration／不可變／交易 | SQLite v010、v009 升級備份還原、CAS、版本與決策紀錄；複合交易 | 長操作中斷狀態、100 次 CRUD 重開與正式指標故障矩陣 |
 | §10 共用 Service／事件／串流 | service.py、discovery events 與 usage | generation、verification、approval 事件與所有狀態持久化須逐項核對；CLI 目前只有部分入口 |
 | §11 UI／預覽／停止／顏色＋文字 | 原生 Windows 檢視與使用者回饋；ui-review.md | 不操作目前使用者桌面；其他平台實機及所有新增表單待走查 |
 | §12 非功能與基準 | 安全路徑、來源 snapshots、隔離重播、無網路默認 | 100 來源零模型、20 節點 p95 <500ms、100 次 CRUD、100 次不同輸入隔離、20 故障；均需固定硬體與資料證據 |

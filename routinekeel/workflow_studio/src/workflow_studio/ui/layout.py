@@ -267,6 +267,9 @@ def build_workbench(app):
         fill="x",
         pady=(0, s(6)),
     )
+    app.button(
+        flow, "業務規則／證據確認", app.edit_evidence, requires="workflow", fill="x", pady=(0, s(6))
+    )
     diagram = ttk.Frame(flow)
     diagram.pack(fill="both", expand=True)
     app.canvas = tk.Canvas(

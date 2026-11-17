@@ -87,6 +87,18 @@ class StudioService:
 
         return FlowEditor(self, tool_policy)
 
+    def evidence(self, tool_policy):
+        from .governance.evidence import EvidenceRules
+
+        return EvidenceRules(self, tool_policy)
+
+    def confirmed_evidence(self, project_id, payload):
+        from .governance.evidence import EvidenceRecords
+
+        return EvidenceRecords(self.repository).confirmed_ids(
+            project_id, payload.get("evidence", [])
+        )
+
     def status(self) -> dict:
         return {"version": __version__, "schema_version": self.repository.schema_version}
 

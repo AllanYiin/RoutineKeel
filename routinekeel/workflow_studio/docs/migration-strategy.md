@@ -69,3 +69,12 @@ v008 新增核准及發布日誌；v009 保存非機密模型設定。升級前�
 發布工作區的 `.studio_releases` 保存版本快照、journal 與目前指標；此目錄與 Studio DB／projects
 都屬備份範圍。回退前先保留整組最新資料，使用相容版本的 DB 備份，不用舊程式強寫新 schema。
 已安裝流程的 outputs 不隨 Studio 更新刪除；manifest 切換失敗以 journal 核對並恢復狀態。
+
+## v010 規則確認及撤回
+
+新增 append-only `studio_evidence_decisions`，使用持久化 sequence、完整依據快照、hash、
+確認者、理由與撤回參照。UPDATE／DELETE 被觸發器阻擋；專案內容仍使用不可變 Revision。
+原有 v009 資料不會自動被標記已確認。升級前保存一致性 before-v009 備份。
+已實測 v009 → v010、原專案保留、備份校驗及還原到獨立 v009 目錄，並驗證 VACUUM 不改變撤回判斷。
+若回退程式，先另存最新 Studio DB、projects 及發布快照，再用 before-v009 恢復到新目錄；
+回退後的新確認紀錄不在 v009 備份中，不應刪除或覆蓋原 v010 資料以免遺失稽核歷史。

@@ -174,6 +174,7 @@ class ProjectService:
         return self._commit_revision(project_id, expected_version, ir, "draft")
 
     def save_ir(self, project_id: str, expected_version: int, payload: dict, tools) -> Revision:
+        from ..governance.evidence import EvidenceRecords
         from ..ir.validator import validate_ir
 
         versions = {
@@ -184,7 +185,10 @@ class ProjectService:
                 (project_id,),
             )
         }
-        validated = validate_ir(payload, tools, source_versions=versions)
+        records = EvidenceRecords(self.repository).confirmed_ids(
+            project_id, payload.get("evidence", [])
+        )
+        validated = validate_ir(payload, tools, source_versions=versions, verified_records=records)
         return self._commit_revision(
             project_id, expected_version, validated.model_dump(), "ir_ready"
         )

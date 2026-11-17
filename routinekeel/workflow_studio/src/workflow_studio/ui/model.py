@@ -250,6 +250,58 @@ class StudioUIModel:
         with self.service() as studio:
             return {k: tool.model_dump() for k, tool in studio.tools.allowed(self.policy).items()}
 
+    def evidence_sources(self):
+        revision = self.revision()
+        with self.service() as studio:
+            sources = {(s.source_id, s.version): s for s in studio.sources.list(self.project_id)}
+            for evidence in revision.ir.get("evidence", []) if revision else []:
+                key = (evidence["source_id"], evidence["source_version"])
+                if key not in sources:
+                    sources[key] = studio.sources.get(self.project_id, key[0], version=key[1])
+            return [
+                {"source_id": s.source_id, "version": s.version, "name": s.name, **record}
+                for s in sources.values()
+                for record in s.manifest["files"]
+            ]
+
+    def evidence_decisions(self):
+        with self.service() as studio:
+            return studio.evidence(self.policy).records.list(self.project_id)
+
+    def evidence_content(self, source_id, version, path):
+        with self.service() as studio:
+            return studio.sources.content(self.project_id, source_id, path, version=version)
+
+    def edit_evidence(self, expected_version, evidence, node_ids):
+        with self.service() as studio:
+            result = studio.evidence(self.policy).edit(
+                self.project_id, expected_version, evidence, node_ids=node_ids
+            )
+        self.build_id = self.approval_id = None
+        self.candidates = []
+        return result
+
+    def decide_evidence(self, expected_version, evidence_id, actor, reason, *, revoke=False):
+        with self.service() as studio:
+            result = studio.evidence(self.policy).decide(
+                self.project_id,
+                expected_version,
+                evidence_id,
+                actor=actor,
+                reason=reason,
+                revoke=revoke,
+            )
+        self.build_id = self.approval_id = None
+        return result
+
+    def remove_evidence(self, expected_version, evidence_id):
+        with self.service() as studio:
+            result = studio.evidence(self.policy).remove(
+                self.project_id, expected_version, evidence_id
+            )
+        self.build_id = self.approval_id = None
+        return result
+
     def node_template(
         self,
         node_id,
@@ -309,6 +361,25 @@ class StudioUIModel:
                     "\n（預覽已截斷）" if len(raw) > 16000 else ""
                 )
             return preview
+
+    def case_assets(self, case_id, version):
+        with self.service() as studio:
+            spec = GoldenCases(studio).get(self.project_id, case_id, version)["specification"]
+            assets = {}
+            for side in ("input", "expected"):
+                ref = spec[side]
+                source = studio.sources.get(
+                    self.project_id, ref["source_id"], version=ref["version"]
+                )
+                record = next(r for r in source.manifest["files"] if r["path"] == ref["path"])
+                assets[side] = {
+                    "name": ref["path"],
+                    "preview": record["preview"],
+                    "content": studio.sources.content(
+                        self.project_id, ref["source_id"], ref["path"], version=ref["version"]
+                    ),
+                }
+            return assets
 
     def update_case(
         self,

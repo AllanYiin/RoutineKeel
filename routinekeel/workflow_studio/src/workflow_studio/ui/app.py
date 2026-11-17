@@ -652,6 +652,11 @@ class StudioApp:
 
         open_graph(self)
 
+    def edit_evidence(self):
+        from .evidence_dialog import open_evidence
+
+        open_evidence(self)
+
     def add_case(self):
         source = filedialog.askopenfilename(title="選擇試做輸入", parent=self.root)
         expected = (
