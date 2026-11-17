@@ -14,7 +14,7 @@
 | Linux/macOS | 三平台 CI 通過，macOS GUI 未覆蓋 | Ubuntu 401 passed／3 skipped、macOS 402 passed／2 skipped、Windows 383 passed／21 skipped；三個測試 job success。macOS Finder／Tk 視窗操作仍需實機。 |
 | 冷啟動與回滾演練 | Windows 部分通過 | 乾淨 0.2.11 包的 `run_app.bat list/run/doctor`、乾淨 0.2.12 包的 Worker／MCP 安裝及重連均已測。`before-v001` 備份與 checksum 通過；未修改的本機舊版 `flow_base-0.2.9.zip` wheel 經 PowerShell 7 安裝後，`history` 可讀 `run_old`。舊 `run_app.bat` 在此主機的 Windows PowerShell 5.1 因缺 `Get-FileHash` 失敗；非技術使用者手動走查仍待回報。 |
 | 使用者資料 | 維持隔離 | `dist/`、模型、`.venv`、私人設定、成果及日誌不得提交或打包。 |
-| 發布 | 舊工作流已自動發布，人工 Gate 未完成 | PR #3 合併後的 [run #13](https://github.com/AllanYiin/RoutineKeel/actions/runs/43994026339) 在三平台通過後發布 [build-00fff1c](https://github.com/AllanYiin/RoutineKeel/releases/tag/build-00fff1c390432ee24c01ba85bcb87376ea0004c1)。是否保留該 Release 待使用者決定；後續發行須在走查完成後明確手動觸發，並重跑三平台 Gate。 |
+| 發布 | 舊工作流已自動發布，人工 Gate 未完成 | PR #3 合併後的 [run #13](https://github.com/AllanYiin/RoutineKeel/actions/runs/43994026339) 在三平台通過後發布 [build-00fff1c](https://github.com/AllanYiin/RoutineKeel/releases/tag/build-00fff1c390432ee24c01ba85bcb87376ea0004c1)；使用者已選擇保留該 Release。保留已發布版本不等於真人走查通過；後續發行須在走查完成後明確手動觸發，並重跑三平台 Gate。 |
 
 回滾順序：先停止 queue-worker 與新 Run → 保留 `share_states`／`share_logs`／`outputs` → 核對新舊 DB schema → 若退回不支援 v004 的舊版底座，先按 `upgrade-and-rollback.md` 的備份校驗與還原流程處理 DB → 再替換 `flow_base`。不可只覆蓋 wheel 就讓舊版程式寫新版資料庫。
 
