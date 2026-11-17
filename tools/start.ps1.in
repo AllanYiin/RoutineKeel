@@ -35,7 +35,12 @@ $TranscriptActive = $true
 Set-FlowLaunchState 'preparing'
 Write-Host 'flow_base：正在檢查並準備環境，首次啟動可能需要下載工具。'
 $env:UV_CACHE_DIR = Join-Path $env:FLOW_BASE_HOME 'packages'
+$LocalPythonMarker = Join-Path $LaunchStateDir 'use-local-python'
+$LocalPythonDir = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'RoutineKeel\python' }
 $env:UV_PYTHON_INSTALL_DIR = Join-Path $env:FLOW_BASE_HOME 'python'
+if ($LocalPythonDir -and (Test-Path -LiteralPath $LocalPythonMarker -PathType Leaf)) {
+    $env:UV_PYTHON_INSTALL_DIR = $LocalPythonDir
+}
 $env:UV_NO_MODIFY_PATH = '1'
 $env:UV_NO_PROGRESS = '1'
 $env:UV_NO_ENV_FILE = '1'
@@ -115,6 +120,23 @@ $Venv = Join-Path $env:FLOW_BASE_WORKSPACE '.venv'
 $Python = Join-Path $Venv 'Scripts\python.exe'
 $PythonCheck = 'import pathlib,sys; sys.exit(0 if sys.version_info[:2] == (3,12) and pathlib.Path(sys.prefix).resolve() == pathlib.Path(sys.argv[1]).resolve() else 1)'
 $RuntimeCheck = 'import flow_base,flow_base.cli,sys; sys.exit(0 if flow_base.__version__ == sys.argv[1] else 1)'
+function New-FlowVenv {
+    Write-Host ('uv managed Python directory: ' + $env:UV_PYTHON_INSTALL_DIR)
+    # Keep native stderr visible and inspect it without PowerShell treating it as terminating.
+    $ErrorActionPreference = 'Continue'
+    $PSNativeCommandUseErrorActionPreference = $false
+    $MinorLinkFailed = $false
+    $global:LASTEXITCODE = 1
+    & $UvExe venv --no-config --no-project --python 3.12 $Venv 2>&1 |
+        ForEach-Object {
+            $Line = [string]$_
+            Write-Host $Line
+            if ($Line -match 'Failed to create Python minor version link directory|Missing expected target directory for Python minor version link') {
+                $MinorLinkFailed = $true
+            }
+        }
+    return @{ ExitCode = $LASTEXITCODE; MinorLinkFailed = $MinorLinkFailed }
+}
 function Test-FlowPython {
     if (-not (Test-Path -LiteralPath $Python)) { return $false }
     try {
@@ -152,9 +174,23 @@ if (($Saved -ne $Expected) -or (-not (Test-FlowRuntime))) {
         }
         Write-Host 'Creating local .venv from the pinned runtime package...'
         Set-Content -Path $Creating -Value 'creating' -Encoding ASCII
-        & $UvExe venv --no-config --no-project --python 3.12 $Venv
-        if ($LASTEXITCODE -ne 0) { throw 'Virtual environment creation failed.' }
+        $Creation = New-FlowVenv
+        if ($Creation.ExitCode -ne 0 -and $Creation.MinorLinkFailed -and
+            $LocalPythonDir -and ($env:UV_PYTHON_INSTALL_DIR -ne $LocalPythonDir)) {
+            Write-Host 'uv 無法建立 Python 版本連結。改用本機應用程式資料目錄重試。'
+            $env:UV_PYTHON_INSTALL_DIR = $LocalPythonDir
+            $Creation = New-FlowVenv
+        }
+        if ($Creation.ExitCode -ne 0) {
+            if ($Creation.MinorLinkFailed) {
+                throw ('uv 無法在此目錄建立 Python 版本連結。請確認目錄可寫入且支援 Windows 目錄連結：' + $env:UV_PYTHON_INSTALL_DIR)
+            }
+            throw ('Virtual environment creation failed (uv exit code ' + $Creation.ExitCode + ').')
+        }
         if (-not (Test-FlowPython)) { throw 'Expected local .venv with Python 3.12; refusing to install into another interpreter.' }
+        if ($LocalPythonDir -and ($env:UV_PYTHON_INSTALL_DIR -eq $LocalPythonDir)) {
+            [System.IO.File]::WriteAllText($LocalPythonMarker, '')
+        }
         & $UvExe pip install --no-config --python $Python --no-build $Wheel
         if ($LASTEXITCODE -ne 0) { throw 'Runtime installation failed.' }
         if (-not (Test-FlowRuntime)) { throw 'Installed runtime did not pass its Python/version/import check.' }

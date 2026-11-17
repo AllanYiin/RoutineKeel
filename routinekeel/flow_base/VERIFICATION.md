@@ -1,5 +1,11 @@
 # 驗證紀錄
 
+## Windows 啟動器的 uv Python 版本連結修正（2026-11-17）
+
+以 Linux PowerShell 7.6.10 執行啟動器和流程環境回歸，共 **18 passed**。啟動器新增五種情境，涵蓋一般啟動、連結錯誤重試成功並在下次重建時沿用本機目錄、備援也失敗、缺少 `LOCALAPPDATA`，以及不屬於目錄連結的下載錯誤。測試用 uv 替身寫入 stderr 並回傳非零退出碼，同時核對啟動狀態、原始錯誤、嘗試路徑及既有虛擬環境備份。流程環境的三項測試核對各平台傳給 uv 的目錄，以及環境就緒後寫入的 `location.json`。Windows PowerShell 5.1 雙擊及實際失敗磁碟仍待實機驗證。
+
+`share_states/launcher/use-local-python` 記錄工作區已驗證的備援選擇。若工作區磁碟已支援 uv 需要的連結，移除該標記即可讓後續環境建置回到工作區的 `share_states/python`。既有虛擬環境透過各自的 `pyvenv.cfg` 繼續連到建立時所用的 Python。
+
 ## 0.2.10 生命週期及 Codex 收據（2026-11-16）
 
 新增 22 個案例涵蓋新／舊 rollout、App Server 通知、累計去重、明確 Session 綁定、多視窗拒絕誤認、缺失欄位、半行續讀、壞行、來源／計數重設、終止快照固定、CLI 查詢、三種輸出模式與 action 成功／失敗生命週期。針對性測試連同既有進度用量案例共 **35 passed**。
