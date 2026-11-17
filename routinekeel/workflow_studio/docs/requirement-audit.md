@@ -10,11 +10,11 @@
 |---|---|---|
 | FR-01 專案 CRUD／續編 | project/service.py；test_projects.py、test_ui_workflow.py | 確認 UI 軟刪除、第三版草稿續編及正式歷史保留的完整使用者路徑 |
 | FR-02 來源 CRUD／預覽 | ingestion/service.py、preview 與 folder 模組；來源相關測試 | UI 說明修改；所有已接受格式的最終視覺矩陣 |
-| FR-03 草稿版本與差異 | project/service.py 保存／捨棄不可變 Revision | UI 版本瀏覽、差異與捨棄操作尚未完整提供 |
+| FR-03 草稿版本與差異 | project/history.py、版本與差異 UI、test_history_editing.py | 續編新版本／明確還原目標／捨棄保護已驗；新視窗實機走查待驗 |
 | FR-04 業務規則 CRUD | discovery/evidence_graph.py 保存確認／替換／移除 | 工作臺不能只顯示 JSON；需讓非技術使用者修改規則與確認證據 |
 | FR-05 工具註冊及政策 | registry/catalog.py、policy.py；test_registry.py | 管理者操作入口、生成工具可重用流程與第三方相容邊界的端到端證據 |
 | FR-06 節點 CRUD | IR 驗證；ui/model.py 可改輸出名、strip、生成參數與刪除 | 新增節點、修改來源／依賴及完整合約的表單尚缺；目前不能等同完整編輯器 |
-| FR-07 案例 CRUD／預期實際 | GoldenCases.save/get/archive；比較規則與版本綁定 | UI 重新編輯案例輸入、預期、規則與差異查看；本輪已補新增規則與交易一致性 |
+| FR-07 案例 CRUD／預期實際 | GoldenCases.save/get/archive/history；案例編輯及歷史 UI、test_case_editing.py | 版本化修改、替換、封存後重開及核准失效已驗；二進位案例歷史的直接內容預覽與新視窗走查待補 |
 | FR-08 生成版本 CRUD | Compiler.compile/get；獨立 build/report | 尚缺完整版本封存與 UI 程式／報告瀏覽 |
 | FR-09 人工決策 CRUD | Approvals.approve/get/revoke 與 hash 綁定 | 待辦、退回理由及封存決策的完整操作流程 |
 | FR-10 發布／回滾／停用 | governance/release.py；test_governance.py | 20 個受控故障點、跨專案相同 workflow_id 的直接回歸、跨平台實測 |

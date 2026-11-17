@@ -106,6 +106,14 @@ class GoldenCases:
         results = [self.get(project_id, r[0]) for r in rows]
         return [r for r in results if include_archived or r["status"] == "active"]
 
+    def history(self, project_id, case_id):
+        self.get(project_id, case_id)
+        versions = self.studio.repository.connection.execute(
+            "SELECT version FROM studio_test_cases WHERE project_id=? AND case_id=? ORDER BY version",
+            (project_id, case_id),
+        ).fetchall()
+        return [self.get(project_id, case_id, row[0]) for row in versions]
+
     def archive(self, project_id, case_id, expected_version):
         with self.studio.repository.transaction() as db:
             self.studio.projects._editable(db, project_id, expected_version)

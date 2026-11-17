@@ -57,6 +57,8 @@ class Approvals:
         self.validate_cases(project_id, json.loads(report[1]))
         identity = "approval_" + uuid4().hex
         with self.studio.repository.transaction() as db:
+            if self.studio.projects.get_revision(project_id, build["revision_id"]).discarded:
+                raise StudioError("REVISION_IMMUTABLE", "此草稿已捨棄，請先另存新版本並重新驗證。")
             db.execute(
                 "INSERT INTO studio_approvals VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL)",
                 (

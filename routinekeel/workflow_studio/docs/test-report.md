@@ -185,3 +185,20 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
 - Ruff check／format check（116 files）及 `git diff --check` 通過。
 - 工作臺按鈕與確認／串流／報告接線已實作，UI model 完整流程已驗；未啟動視窗做視覺驗收。
   全部模型輸出仍為 fixture，未呼叫付費 Provider，未發布到外部服務。
+
+## 版本續編與案例編輯
+
+- 新增 `project/history.py` 及工作臺版本／案例歷史視窗：版本差異、從歷史另存新版、明確還原舊目標、
+  未發布草稿捨棄、案例輸入／預期／規則／交付物修改、封存後由歷史重新建立使用版本。
+- 專項與原有專案回歸：
+  `python -m pytest tests/studio/test_history_editing.py tests/studio/test_case_editing.py tests/studio/test_projects.py -q`：
+  21 passed，3.69 秒。首次執行因新測試誤用工具欄位名稱失敗，改用既有 record_version 契約後通過。
+- 完整非桌面回歸（同前節命令）：258 passed、3 deselected，94.83 秒。
+  包含舊版資料保持不變、續編版號不回退、目標還原失敗交易回復、跨專案／過期編輯拒絕，
+  正式 manifest 不因續編改變，以及案例更新使舊核准失效。
+- 隨後將「捨棄／核准」再檢查放入同一寫入交易，防止驗證與 INSERT 間的競爭。
+  `python -m pytest tests/studio/test_history_editing.py tests/studio/test_case_editing.py tests/studio/test_governance.py -q`：
+  15 passed，13.62 秒，含注入捨棄發生於核准檢查中的競爭路徑；不與完整回歸加總。
+- Ruff check／format check（121 files）及 git diff --check 通過。
+- 新歷史視窗、唯讀狀態及捲軸尚未實機視覺複驗；遵守使用者停止桌面控制的限制。
+  案例歷史的二進位內容仍需直接預覽能力，完整節點／規則／工具管理等缺口仍在需求審核表。

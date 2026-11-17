@@ -246,6 +246,7 @@ def build_workbench(app):
         row, "建立專案", app.create_project, requires="new", style="Primary.TButton", side="left"
     )
     app.button(row, "儲存目標", app.save_project, requires="editable", side="left", padx=s(6))
+    app.button(row, "版本與差異", app.version_history, requires="project", side="left")
     app.save_state = tk.StringVar()
     ttk.Label(row, textvariable=app.save_state, foreground="#B45309", font=(family, 10)).pack(
         side="right"
@@ -335,7 +336,14 @@ def build_workbench(app):
     ttk.Label(result, textvariable=app.case_label, wraplength=s(310), foreground="#64748B").pack(
         fill="x", pady=s(4)
     )
-    app.button(result, "案例對應／封存", app.manage_cases, requires="cases", fill="x", pady=s(3))
+    app.button(
+        result,
+        "編輯案例／歷史／封存",
+        app.manage_cases,
+        requires="case_history",
+        fill="x",
+        pady=s(3),
+    )
     app.verify_button = app.button(
         result,
         "建立候選包並試做",

@@ -31,6 +31,12 @@ class StudioService:
         return SourceService(self.repository)
 
     @property
+    def history(self):
+        from .project.history import RevisionHistory
+
+        return RevisionHistory(self)
+
+    @property
     def tools(self):
         from .registry.catalog import Catalog
 

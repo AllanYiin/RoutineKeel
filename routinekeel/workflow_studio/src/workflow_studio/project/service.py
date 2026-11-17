@@ -243,7 +243,27 @@ class ProjectService:
         with self.repository.transaction() as db:
             project = self._editable(db, project_id, expected_version)
             revision = self.get_revision(project_id, revision_id)
-            if revision.status not in {RevisionStatus.DRAFT, RevisionStatus.REJECTED}:
+            protected = (
+                db.execute(
+                    "SELECT 1 FROM studio_approvals WHERE project_id=? AND revision_id=? AND revoked_at IS NULL",
+                    (project_id, revision_id),
+                ).fetchone()
+                or db.execute(
+                    "SELECT 1 FROM studio_releases r JOIN studio_builds b ON r.build_id=b.build_id "
+                    "WHERE r.project_id=? AND b.revision_id=?",
+                    (project_id, revision_id),
+                ).fetchone()
+            )
+            if (
+                revision.status
+                not in {
+                    RevisionStatus.DRAFT,
+                    RevisionStatus.NEEDS_CLARIFICATION,
+                    RevisionStatus.IR_READY,
+                    RevisionStatus.REJECTED,
+                }
+                or protected
+            ):
                 raise StudioError("REVISION_IMMUTABLE", "只能捨棄未發布的草稿或退回版本。")
             if revision.discarded:
                 return project

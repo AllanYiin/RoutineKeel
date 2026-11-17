@@ -209,6 +209,10 @@ class StudioUIModel:
             )
 
             def ref(s):
+                if len(s.manifest["files"]) != 1:
+                    raise StudioError(
+                        "INPUT_INVALID", "每個案例來源必須只有一個檔案，不能只取壓縮包的第一項。"
+                    )
                 r = s.manifest["files"][0]
                 return {
                     "source_id": s.source_id,
@@ -231,9 +235,107 @@ class StudioUIModel:
         self.approval_id = None
         return result
 
-    def cases(self):
+    def cases(self, include_archived=False):
         with self.service() as studio:
-            return GoldenCases(studio).list(self.project_id) if self.project_id else []
+            return (
+                GoldenCases(studio).list(self.project_id, include_archived)
+                if self.project_id
+                else []
+            )
+
+    def case_history(self, case_id):
+        with self.service() as studio:
+            return GoldenCases(studio).history(self.project_id, case_id)
+
+    def case_preview(self, case_id, version):
+        with self.service() as studio:
+            case = GoldenCases(studio).get(self.project_id, case_id, version)
+            preview = {}
+            for side in ("input", "expected"):
+                ref = case["specification"][side]
+                raw = studio.sources.content(
+                    self.project_id, ref["source_id"], ref["path"], version=ref["version"]
+                )
+                try:
+                    text = raw.decode("utf-8")[:16000]
+                except UnicodeDecodeError:
+                    text = "此為二進位資料，請在來源預覽查看原始內容。"
+                preview[side] = f"{ref['path']} · {len(raw)} bytes\n{text}" + (
+                    "\n（預覽已截斷）" if len(raw) > 16000 else ""
+                )
+            return preview
+
+    def update_case(
+        self,
+        case_id,
+        source_version,
+        expected_version,
+        *,
+        name,
+        comparison,
+        output_name=None,
+        input_path=None,
+        expected_path=None,
+    ):
+        with self.service() as studio, studio.repository.transaction() as db:
+            studio.projects._editable(db, self.project_id, expected_version)
+            catalog = GoldenCases(studio)
+            spec = catalog.get(self.project_id, case_id, source_version)["specification"]
+            spec.update(name=name, comparison=comparison)
+            if output_name:
+                spec["output_name"] = output_name
+            else:
+                spec.pop("output_name", None)
+            for side, path in (("input", input_path), ("expected", expected_path)):
+                if path is None:
+                    continue
+                if not Path(path).is_file():
+                    raise StudioError("INPUT_INVALID", "請選擇單一案例檔案。")
+                source = studio.sources.import_path(
+                    self.project_id, studio.projects.get(self.project_id).version, path
+                )
+                if len(source.manifest["files"]) != 1:
+                    raise StudioError("INPUT_INVALID", "每個案例來源必須只有一個檔案。")
+                record = source.manifest["files"][0]
+                spec[side] = {
+                    "source_id": source.source_id,
+                    "version": source.version,
+                    "path": record["path"],
+                    "sha256": record["sha256"],
+                }
+            result = catalog.save(
+                self.project_id, studio.projects.get(self.project_id).version, spec, case_id=case_id
+            )
+        self.approval_id = None
+        return result
+
+    def revision_history(self):
+        with self.service() as studio:
+            return studio.projects.revisions(self.project_id, include_discarded=True)
+
+    def compare_revisions(self, before_id, after_id):
+        with self.service() as studio:
+            return studio.history.compare(self.project_id, before_id, after_id)
+
+    def reuse_revision(self, revision_id, expected_version, *, restore_goal=False):
+        with self.service() as studio:
+            result = studio.history.reuse(
+                self.project_id,
+                revision_id,
+                expected_version,
+                self.policy,
+                restore_goal=restore_goal,
+            )
+        self.build_id = self.approval_id = None
+        self.candidates = []
+        return result
+
+    def discard_revision(self, revision_id, expected_version):
+        with self.service() as studio:
+            result = studio.history.discard(self.project_id, revision_id, expected_version)
+        self.build_id = self.approval_id = None
+        self.candidates = []
+        return result
 
     def set_case_output(self, case_id, output_name):
         p = self.project()
@@ -245,10 +347,12 @@ class StudioUIModel:
         self.approval_id = None
         return result
 
-    def archive_case(self, case_id):
+    def archive_case(self, case_id, expected_version=None):
         p = self.project()
         with self.service() as studio:
-            result = GoldenCases(studio).archive(p.project_id, case_id, p.version)
+            result = GoldenCases(studio).archive(
+                p.project_id, case_id, p.version if expected_version is None else expected_version
+            )
         self.approval_id = None
         return result
 

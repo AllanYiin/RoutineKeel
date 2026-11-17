@@ -45,6 +45,7 @@ class StudioApp:
         self.button_rules = {}
         self.display_ir = None
         self.case_count = 0
+        self.case_history_count = 0
         self.last_report = None
         self._build()
         self.refresh_projects()
@@ -92,6 +93,7 @@ class StudioApp:
             and self.candidate_choice.current() >= 0,
             "node": workflow and self.selected_node is not None,
             "cases": active and self.case_count > 0,
+            "case_history": active and self.case_history_count > 0,
             "verify": workflow and self.case_count > 0,
             "repair": active
             and self.model.provider is not None
@@ -152,6 +154,7 @@ class StudioApp:
         self.current_project = self.selected_source = self.selected_node = None
         self.display_ir = self.last_report = self.display_image = None
         self.case_count = 0
+        self.case_history_count = 0
         self.name_var.set("")
         self.goal_var.set("")
         self.success_var.set("")
@@ -250,6 +253,7 @@ class StudioApp:
                 self.source_tree.insert(source.source_id, "end", iid=identity, text=record["path"])
                 self.source_rows[identity] = (source, record)
         self.case_count = len(self.model.cases())
+        self.case_history_count = len(self.model.cases(include_archived=True))
         self.case_label.set(f"已設定 {self.case_count} 個固定成功案例")
         if self.selected_source in self.source_rows:
             self.source_tree.selection_set(self.selected_source)
@@ -680,45 +684,14 @@ class StudioApp:
             self.refresh_project()
 
     def manage_cases(self):
-        cases = self.model.cases()
-        outputs = list(self.model.revision().ir["outputs"]) if self.model.revision() else []
-        window = tk.Toplevel(self.root)
-        self.prepare_dialog(window)
-        window.title("試做案例與交付物")
-        listing = tk.Listbox(window, width=65, height=10)
-        listing.pack(padx=12, pady=12)
-        for case in cases:
-            listing.insert(
-                "end",
-                case["specification"]["name"]
-                + " → "
-                + case["specification"].get("output_name", "尚未指定")
-                + (
-                    " [JSON 內容]"
-                    if case["specification"]["comparison"] == "json_equal"
-                    else " [完全相同]"
-                ),
-            )
-        choice = ttk.Combobox(window, values=outputs, state="readonly")
-        choice.pack(fill="x", padx=12)
-        if outputs:
-            choice.current(0)
+        from .cases_dialog import open_cases
 
-        def apply(archive=False):
-            if not listing.curselection():
-                return
-            identity = cases[listing.curselection()[0]]["case_id"]
-            try:
-                self.model.archive_case(identity) if archive else self.model.set_case_output(
-                    identity, choice.get()
-                )
-                window.destroy()
-                self.refresh_project()
-            except Exception as exc:
-                self.error(exc)
+        open_cases(self)
 
-        ttk.Button(window, text="儲存對應", command=apply).pack(pady=6)
-        ttk.Button(window, text="封存選取案例", command=lambda: apply(True)).pack(pady=6)
+    def version_history(self):
+        from .history_dialog import open_history
+
+        open_history(self)
 
     def verify(self):
         self.status.set("正在準備候選包與試做條件……")
