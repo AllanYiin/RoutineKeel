@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import sys
 import time
+from filelock import FileLock
 
 ACTIVE = ContextVar('flow_base_reporter', default=None)
 
@@ -28,8 +29,29 @@ def amount(done, total, unit):
     return f'{done:g}/{total:g} {unit}'
 
 
+def append_console(path, rendered, *, max_bytes=4_000_000, max_segments=4):
+    """Bound per-Run human logs without changing the current console.log path."""
+    data = (rendered + '\n').encode('utf-8')
+    if len(data) > max_bytes:
+        data = data[:max_bytes-64] + b'\n[console entry truncated]\n'
+    with FileLock(path.with_name('console.lock'), timeout=30):
+        if path.exists() and path.stat().st_size + len(data) > max_bytes:
+            segments = sorted(path.parent.glob('console.[0-9][0-9][0-9][0-9][0-9][0-9].log'))
+            last = max((int(item.stem.split('.')[1]) for item in segments), default=0)
+            rotated = path.parent / f'console.{last+1:06}.log'
+            os.replace(path, rotated)
+            segments.append(rotated)
+            while len(segments) > max_segments:
+                segments.pop(0).unlink()
+                with path.open('ab') as marker:
+                    marker.write(b'[earlier console log truncated]\n')
+        with path.open('ab') as output:
+            output.write(data)
+            output.flush()
+
+
 class Reporter:
-    def __init__(self, title, flow_id, run_id, logdir, total_steps):
+    def __init__(self, title, flow_id, run_id, logdir, total_steps, runtime=None):
         self.title, self.flow_id, self.run_id = title, flow_id, run_id
         self.logdir, self.total_steps = Path(logdir), total_steps
         self.started = self.stage_started = time.monotonic()
@@ -41,6 +63,8 @@ class Reporter:
         from .codex_tokens import SessionMonitor
         self.usage = UsageMeter(host=SessionMonitor())
         self.completed_steps = 0
+        from .observability.events import EventRecorder
+        self.event_recorder = EventRecorder(runtime, run_id, self.logdir)
 
     def emit(self, event, lines=(), *, banner=False, **data):
         from .runtime import atomic_json
@@ -48,10 +72,9 @@ class Reporter:
                    'workflow_title': self.title, 'step': self.step_id, 'step_index': self.index,
                    'total_steps': self.total_steps, 'label': self.label,
                    'elapsed_seconds': round(time.monotonic()-self.started, 1), **data}
-        self.logdir.mkdir(parents=True, exist_ok=True)
-        with (self.logdir/'events.jsonl').open('a', encoding='utf-8') as out:
-            out.write(json.dumps(payload, ensure_ascii=False)+'\n')
-        atomic_json(self.logdir/'live_progress.json', payload)
+        self.event_recorder.append_legacy(payload)
+        from .diagnostics import redact
+        atomic_json(self.logdir/'live_progress.json', redact(payload))
         # Keep an uncoloured human copy even when the caller requests JSON/quiet.
         # Preserve adapter-provided multi-line result links instead of flattening them.
         rendered_lines = [clean(part) for line in lines for part in str(line).splitlines()]
@@ -60,8 +83,7 @@ class Reporter:
             if banner:
                 rule = '=' * 72
                 rendered = '\n' + rule + '\n' + rendered + '\n' + rule + '\n'
-            with (self.logdir / 'console.log').open('a', encoding='utf-8') as out:
-                out.write(rendered + '\n')
+            append_console(self.logdir / 'console.log', rendered)
             if banner or event == 'progress':
                 heading = clean(rendered_lines[0]) if rendered_lines else event
                 text = '# ' + heading + '\n\n' + '\n\n'.join(rendered_lines[1:]) + '\n'
@@ -88,6 +110,8 @@ class Reporter:
         return {'console_log': str(self.logdir / 'console.log'),
                 'live_status': str(self.logdir / 'live_status.md'),
                 'events': str(self.logdir / 'events.jsonl'),
+                'flight_events': str(self.logdir / 'flight.jsonl'),
+                'flight_manifest': str(self.logdir / 'flight_manifest.json'),
                 'display_notice': '請將開始、節點與終止狀態轉述在對話正文；終端工具輸出可能被折疊。'}
 
     def start(self):
@@ -166,12 +190,24 @@ class Reporter:
     def fail(self, code, message, interrupted=False, diagnostic=None):
         self.finished = True
         label = '工作流已中斷' if interrupted else '工作流執行失敗'
+        from .observability.errors import explain_error
+        from .observability.diagnostics import safe_export
+        explanation = explain_error(code, cause_status=(diagnostic or {}).get('cause_status', 'unknown'))
+        confidence = {'confirmed': '已確認', 'suspected': '可能', 'unknown': '尚未確認'}[explanation['cause_status']]
+        error_id = (diagnostic or {}).get('error_id', '未取得')
+        event_details = safe_export(diagnostic) if diagnostic else None
+        if event_details is not None:
+            event_details['message'] = explanation['user_message']
         from .usage import usage_lines
         tokens = self.usage.finish()
         self.emit('workflow_interrupted' if interrupted else 'workflow_failed',
             ['F L O W _ B A S E   >>>   WORKFLOW STOP', f'【FLOW_BASE｜{label}】 {self.title}', f'停在：{self.label}',
-             f'原因：{code}｜{message}', f'紀錄：{self.logdir}', '未宣告工作流完成。', *usage_lines(tokens)],
-            banner=True, error=code, error_message=message, error_details=diagnostic,
+             f'原因：{explanation["user_title"]}｜{explanation["user_message"]}',
+             f'確定程度：{confidence}｜錯誤碼：{code}｜錯誤編號：{error_id}',
+             '下一步：' + explanation['suggested_actions'][0],
+             f'紀錄：{self.logdir}', '未宣告工作流完成。', *usage_lines(tokens)],
+            banner=True, error=code, error_message=explanation['user_message'],
+            error_details=event_details,
             status='interrupted' if interrupted else 'failed',token_usage=tokens)
 
     def resource_event(self, name, data):

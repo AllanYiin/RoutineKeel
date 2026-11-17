@@ -13,7 +13,11 @@ from flow_base.usage import UsageMeter, normalize_usage
 from test_workspace import workspace, ROOT
 
 
-def test_real_progress_and_terminal_state_are_persisted(tmp_path,capsys):
+def test_real_progress_and_terminal_state_are_persisted(tmp_path,capsys,monkeypatch):
+    class UnavailableSession:
+        def summary(self, finish=False):
+            return {'status': 'unavailable', 'reason': '測試中未綁定 Session'}
+    monkeypatch.setattr('flow_base.codex_tokens.SessionMonitor', UnavailableSession)
     reporter=Reporter('測試流程','flow_test','run_test',tmp_path,2)
     reporter.start();reporter.enter(SimpleNamespace(id='one',handler='unit.work'),1,'長時間任務')
     reporter.progress({'event':'progress','completed':3,'total':10,'unit':'區段','label':'處理'})
@@ -23,7 +27,7 @@ def test_real_progress_and_terminal_state_are_persisted(tmp_path,capsys):
     reporter.end({'status':'needs_review','output':'out'},{'label':'等待人工確認'})
     text=capsys.readouterr().err
     assert '快取命中' in text and '等待人工確認' in text and '已快取：0' in text
-    assert '宿主對話用量：無法取得' in text
+    assert 'Codex／宿主對話用量：無法取得' in text
     assert json.loads((tmp_path/'live_progress.json').read_text())['event']=='workflow_finished'
 
 

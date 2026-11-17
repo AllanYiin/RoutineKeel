@@ -1,6 +1,7 @@
 """Build one ZIP per component in dist, with a separate test workspace."""
 from pathlib import Path
 import argparse
+import ast
 import hashlib
 import json
 import re
@@ -54,6 +55,14 @@ def project_info(path):
             raise ValueError(f'Invalid package or archive name in {path}')
     if not re.fullmatch(r'\d+\.\d+\.\d+', version):
         raise ValueError(f'Expected major.minor.patch in {path}')
+    if path == BASE:
+        tree = ast.parse((path / 'src/flow_base/__init__.py').read_text(encoding='utf-8'))
+        declared = [node.value.value for node in tree.body
+                    if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)
+                    and any(isinstance(target, ast.Name) and target.id == '__version__'
+                            for target in node.targets)]
+        if declared != [version]:
+            raise ValueError('flow_base.__version__ must match pyproject.toml before packaging')
     return name, version, archive
 
 
@@ -98,6 +107,23 @@ def write_bootstrap(dest, wheel, version):
     (dest / 'start.sh').chmod(0o755)
 
 
+def write_ui_launchers(dest):
+    """Expose optional local tools through the existing bootstrap scripts."""
+    wrappers = {
+        'open_ui.bat': '@echo off\r\ncall "%~dp0run_app.bat" ui %*\r\n',
+        'open_ui.sh': '#!/bin/sh\nHERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec sh "$HERE/run_app.sh" ui "$@"\n',
+        'open_ui.command': '#!/bin/sh\nHERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec sh "$HERE/run_app.command" ui "$@"\n',
+        'queue_worker.bat': '@echo off\r\ncall "%~dp0run_app.bat" queue-worker %*\r\n',
+        'queue_worker.sh': '#!/bin/sh\nHERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec sh "$HERE/run_app.sh" queue-worker "$@"\n',
+        'queue_worker.command': '#!/bin/sh\nHERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec sh "$HERE/run_app.command" queue-worker "$@"\n',
+    }
+    for name, body in wrappers.items():
+        target = dest / name
+        target.write_text(body, encoding='ascii', newline='')
+        if name.endswith(('.sh', '.command')):
+            target.chmod(0o755)
+
+
 def build_project(path, staging):
     name, version, archive_name = project_info(path)
     wheels = staging / 'wheels'
@@ -121,6 +147,9 @@ def build_project(path, staging):
     if path == BASE:
         write_bootstrap(dest, wheel, version)
         run([sys.executable, str(launcher), '--root', str(dest), '--flow-base-package'])
+        write_ui_launchers(dest)
+        shutil.copyfile(path / 'docs/user-guide.md', dest / 'user-guide.md')
+        shutil.copyfile(path / 'docs/mcp-local.md', dest / 'mcp-local.md')
         sources = [(BASE, 'routinekeel/flow_base/'), (ROOT / 'tools', 'tools/')]
     else:
         manifest = json.loads((path / 'flow.template.json').read_text(encoding='utf-8'))
@@ -139,7 +168,15 @@ def build_project(path, staging):
     with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as archive:
         for file in sorted(dest.iterdir()):
             if file.is_file():
-                archive.write(file, f'{path.name}/{file.name}')
+                member = f'{path.name}/{file.name}'
+                if file.suffix in {'.sh', '.command'}:
+                    info = zipfile.ZipInfo(member)
+                    info.create_system = 3
+                    info.external_attr = 0o100755 << 16
+                    info.compress_type = zipfile.ZIP_DEFLATED
+                    archive.writestr(info, file.read_bytes())
+                else:
+                    archive.write(file, member)
     with zipfile.ZipFile(output) as archive:
         if archive.testzip() is not None:
             raise ValueError(f'Corrupted release file: {output}')
@@ -174,7 +211,9 @@ def main():
             if target.exists():
                 shutil.rmtree(target)
             (staging / name).rename(target)
-    print(json.dumps(reports, ensure_ascii=False, indent=2))
+    # GitHub Windows runners may use cp1252 stdout; keep the console report ASCII.
+    # The published versions.json remains UTF-8 with the original folder names.
+    print(json.dumps(reports, ensure_ascii=True, indent=2))
 
 
 if __name__ == '__main__':

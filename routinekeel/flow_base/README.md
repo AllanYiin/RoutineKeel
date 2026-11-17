@@ -1,6 +1,10 @@
-# flow_base 0.2.11
+# flow_base 0.2.12
 
 **學員使用：解壓縮後，開啟 `flow_base` 資料夾，Windows 雙擊 `run_app.bat`、macOS 雙擊 `run_app.command`，Linux 執行 `run_app.sh`。** 不必先安裝 uv、Python、PowerShell 7 或手動執行 pip。Windows 使用內建 Windows PowerShell；命令視窗會顯示準備進度，完成後進入共用自然語言入口。
+
+想用圖形工作台時，開啟同資料夾的 `open_ui.bat`（Windows）、`open_ui.command`（macOS），或執行 `open_ui.sh`（Linux）。可選檔、預先檢查、開始／取消、查看歷史、成果與錯誤；原有 `run_app` 入口仍可照常使用。部分格式沒有內建內容預覽時，工作台會明確顯示檔名、大小與原因。詳細操作見同資料夾的 `user-guide.md`。
+
+需要讓 Codex 透過本機 MCP 提交工作時，先**另外開啟** `queue_worker.bat`／`.command`／`.sh`；它會逐件處理 SQLite 佇列，不由 MCP Client 啟動。MCP `submit_workflow` 立即回 `execution_id`；`get_workflow_status`／`get_workflow_result` 可在重開 Codex 後用同一 ID 查詢。Worker 未開啟時狀態保持 `queued`，不會假裝已在背景執行。MCP 選配安裝與宿主設定見同資料夾的 `mcp-local.md`。
 
 找不到 uv 時，底層啟動器會按 OS／CPU 架構下載固定版本、校驗 SHA-256，再以它取得 Python 3.12。uv 存在但無法執行時，Windows 會嘗試後續候選及私有下載。首次啟動需要網路；後續使用快取。macOS/Linux 在沒有 uv 時需要 curl 或 wget，以及 unzip。
 

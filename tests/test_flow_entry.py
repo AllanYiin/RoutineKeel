@@ -123,6 +123,7 @@ def test_preparation_failure_then_retry_records_both_states(workspace):
     assert not cli(workspace, 'history')['result']  # installation is not a task run
 
 
+@pytest.mark.skipif(os.name == 'nt' or shutil.which('sh') is None, reason='POSIX sh is required')
 def test_task_wrapper_delegates_with_actual_path_and_preserves_arguments(tmp_path):
     folder = tmp_path/'工作區 空格'/'字幕 新名稱'
     folder.mkdir(parents=True)
@@ -148,6 +149,7 @@ exit 19
     assert b'call ' not in bat.lower()  # avoid second CMD expansion of path characters
 
 
+@pytest.mark.skipif(os.name == 'nt' or shutil.which('sh') is None, reason='POSIX sh is required')
 def test_missing_base_explains_layout_without_creating_private_environment(tmp_path):
     folder = tmp_path/'字幕'
     folder.mkdir()

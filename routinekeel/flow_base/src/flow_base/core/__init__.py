@@ -1,0 +1,1 @@
+"""Per-invocation core state."""

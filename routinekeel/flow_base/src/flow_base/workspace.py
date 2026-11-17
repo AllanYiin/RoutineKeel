@@ -10,10 +10,12 @@ import tempfile
 import zipfile
 import uuid
 import keyword
+import sqlite3
+from contextlib import closing, nullcontext
 from pathlib import Path, PurePosixPath
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, model_validator, field_validator
 
 from .contracts import Contract
 from .runtime import FlowError, Runtime, atomic_json, read_json, sha256
@@ -23,6 +25,7 @@ class Manifest(Contract):
     schema_version: Literal[1] = 1
     runtime_api: Literal['0.2'] = '0.2'
     output_layout: Literal['flat-v1', 'categorized-v1'] = 'flat-v1'
+    outputs: dict[str, str] = Field(default_factory=dict)
     id: str | None = Field(default=None, pattern=r'^[A-Za-z][A-Za-z0-9_.-]{0,127}$')
     module: str | None = Field(default=None, pattern=r'^[A-Za-z_][A-Za-z0-9_]*$')
     llm_policy: Literal['optional', 'forbidden'] = 'optional'
@@ -39,6 +42,15 @@ class Manifest(Contract):
     parameter_paths: list[str] = Field(default_factory=list)
     rules: list[dict] = Field(default_factory=list)
     defaults: dict = Field(default_factory=dict)
+
+    @field_validator('outputs')
+    @classmethod
+    def safe_named_outputs(cls, value):
+        for name, step_id in value.items():
+            if (not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}', name) or name in {'.', '..'} or
+                    not re.fullmatch(r'[a-z][a-z0-9_-]{0,31}', step_id)):
+                raise ValueError('Manifest outputs require safe names and Step IDs')
+        return value
 
     @model_validator(mode='after')
     def validate_module(self):
@@ -64,7 +76,7 @@ class Workspace:
         self.runtime.initialize()
         self.runtime.logs.mkdir(parents=True, exist_ok=True)
 
-    def discover(self):
+    def discover(self, *, read_only=False):
         result = {}
         if not self.root.is_dir():
             return result
@@ -78,25 +90,47 @@ class Workspace:
                 raise FlowError('TASK_FOLDER', '流程資料夾及 flow.json 不得是符號連結', path=str(folder))
             manifest = Manifest.model_validate(read_json(path))
             if manifest.id is None:
-                with self.runtime.lock('manifest:' + str(path), timeout=30):
-                    data = read_json(path)
+                from .runtime import digest
+                generated = 'workflow_' + digest({'folder': folder.name, 'module': manifest.python_module,
+                                                   'package': manifest.sha256})[:32]
+                if read_only:
+                    data = manifest.model_dump()
+                    data['id'] = generated
                     manifest = Manifest.model_validate(data)
-                    if manifest.id is None:
-                        data['id'] = 'workflow_' + uuid.uuid4().hex
-                        atomic_json(path, data)
+                else:
+                    with self.runtime.lock('manifest:' + str(path), timeout=30):
+                        data = read_json(path)
                         manifest = Manifest.model_validate(data)
+                        if manifest.id is None:
+                            data['id'] = generated
+                            atomic_json(path, data)
+                            manifest = Manifest.model_validate(data)
             if manifest.id in result:
                 raise FlowError('TASK_DUPLICATE', '兩個資料夾包含同一流程識別碼；請保留一份，避免混用歷史',
                                 folders=[str(result[manifest.id].folder), str(folder)])
             task = Task(folder, manifest)
             result[manifest.id] = task
-        for task in result.values():
-            m = task.manifest
-            task.flow_id = self.runtime.register_flow(m.id, m.version, task.fingerprint, m.title)
+        if read_only:
+            from .runtime import digest
+            known = {}
+            database = self.runtime.home / 'state.sqlite3'
+            if database.is_file():
+                try:
+                    with closing(sqlite3.connect(database.as_uri() + '?mode=ro&immutable=1', uri=True)) as db:
+                        known = dict(db.execute('SELECT task_id,flow_id FROM flows'))
+                except sqlite3.Error:
+                    pass
+            for task in result.values():
+                task.flow_id = known.get(task.manifest.id) or 'flow_' + digest({'task_id': task.manifest.id})[:32]
+                task.flow_id_status = 'registered' if task.manifest.id in known else 'provisional'
+        else:
+            for task in result.values():
+                m = task.manifest
+                task.flow_id = self.runtime.register_flow(m.id, m.version, task.fingerprint, m.title)
         return result
 
-    def task(self, name):
-        tasks = self.discover()
+    def task(self, name, *, read_only=False):
+        tasks = self.discover(read_only=read_only)
         for task in tasks.values():
             if task.flow_id == name:
                 return task
@@ -132,15 +166,18 @@ class Task:
         from .runtime import digest
         return digest(self.manifest.model_dump())
 
-    def load(self, runtime):
+    def load(self, runtime, *, cache_root=None):
         if self._adapter:
             return self._adapter
         m = self.manifest
         wheel = self.folder / m.package
         if not wheel.is_file() or wheel.is_symlink() or sha256(wheel) != m.sha256:
             raise FlowError('TASK_INTEGRITY', 'Task package is missing or differs from flow.json', task=m.id)
-        root = runtime.home / 'plugins' / m.sha256
-        with runtime.lock('plugin:' + m.sha256, timeout=60):
+        if cache_root is not None:
+            Path(cache_root).mkdir(parents=True, exist_ok=True)
+        root = (Path(cache_root) if cache_root is not None else runtime.home / 'plugins') / m.sha256
+        lock = nullcontext() if cache_root is not None else runtime.lock('plugin:' + m.sha256, timeout=60)
+        with lock:
             # Validate the extracted copy as well; a wheel hash alone does not protect cache edits.
             with zipfile.ZipFile(wheel) as z:
                 members = z.infolist()
@@ -224,41 +261,108 @@ class Task:
         log = runtime.logs / self.flow_id / run_id
         atomic_json(log / 'run.json', {'flow_id': self.flow_id, 'run_id': run_id, 'action': name, 'status': 'running'})
         from .presentation import ACTIVE, Reporter
+        from .core.run_context import RunContext, ACTIVE_RUN
         from types import SimpleNamespace
-        reporter = Reporter(self.manifest.title + '｜' + name, self.flow_id, run_id, log, 1)
+        reporter = Reporter(self.manifest.title + '｜' + name, self.flow_id, run_id, log, 1, runtime)
+        from .core.lifecycle import RunStore
+        from .execution.supervisor import Supervisor
+        action_payload = {'flow_id': self.flow_id, 'run_id': run_id, 'action': name,
+                          'folder': self.folder, 'logdir': log}
+        run_token = ACTIVE_RUN.set(RunContext(runtime, run_id, log, reporter,
+                                              event_sink=reporter.event_recorder, action=name, action_payload=action_payload))
         reporter_token = ACTIVE.set(reporter)
-        previous_context = getattr(runtime, 'action_context', None)
-        runtime.action_context = {'flow_id': self.flow_id, 'run_id': run_id, 'action': name,
-                                  'folder': self.folder, 'logdir': log}
+        store = RunStore(runtime)
+        supervisor = None
+        attempt_id = None
+        attempt_finished = False
         try:
+            store.transition(run_id, 'created', 'queued')
+            supervisor = Supervisor(runtime, run_id, ACTIVE_RUN.get())
+            supervisor.__enter__()
+            store.transition(run_id, 'preparing', 'running')
+            reporter.event_recorder.record('run.started')
             reporter.start()
+            attempt_id = store.create_attempt(run_id, name)
+            ACTIVE_RUN.get().attempt_id = attempt_id
+            store.transition_attempt(attempt_id, 'pending', 'running')
+            reporter.event_recorder.record('step.started', attributes={'step_id': name})
             reporter.enter(SimpleNamespace(id=name, handler='adapter.invoke_action'), 1, name)
             result = adapter.invoke_action(runtime, name, parameters)
+            store.transition_attempt(attempt_id, 'running', 'succeeded')
+            attempt_finished = True
+            reporter.event_recorder.record('step.finished', attributes={'step_id': name})
+            if supervisor.heartbeat_error:
+                raise FlowError('SUPERVISOR_HEARTBEAT', '執行期間無法更新監督程序 lease') from supervisor.heartbeat_error
+            if ACTIVE_RUN.get().cancel_requested.is_set():
+                raise FlowError('RUN_CANCEL_REQUESTED', '已確認取消；停止成果發布')
             status = result.get('status', result.get('decision', 'complete')) if isinstance(result, dict) else 'complete'
             report = {'flow_id': self.flow_id, 'run_id': run_id, 'action': name, 'result': result,
                       'status': status, 'token_usage': reporter.usage.finish(), 'presentation': reporter.references()}
+            reporter.event_recorder.record('delivery.staged')
             atomic_json(log / 'report.json', report)
-            reporter.complete('executed')
-            reporter.end(report)
-            runtime.update_run(run_id, status, finished=True)
-            atomic_json(log / 'run.json', {'flow_id': self.flow_id, 'run_id': run_id, 'action': name, 'status': status})
+            store.transition(run_id, 'running', 'publishing')
+            store.record_delivery(run_id, log / 'report.json')
+            reporter.event_recorder.record('delivery.verified', attributes={'status': 'verified'})
+            store.transition(run_id, 'publishing', 'succeeded', result_status=str(status).lower(), delivery_status='published')
+            reporter.event_recorder.record('delivery.published', attributes={'result_status': str(status).lower()})
+            reporter.event_recorder.record('run.finished', attributes={'result_status': str(status).lower()})
+            try:
+                reporter.complete('executed')
+                reporter.end(report)
+                runtime.update_run(run_id, status, finished=True)
+                atomic_json(log / 'run.json', {'flow_id': self.flow_id, 'run_id': run_id, 'action': name, 'status': status})
+            except Exception as post_error:
+                from .diagnostics import record_exception
+                try:
+                    report['post_delivery_diagnostic'] = record_exception(post_error, log / 'post_delivery', run_id=run_id)['diagnostic_json']
+                except Exception:
+                    report['post_delivery_diagnostic'] = 'unavailable'
             return report
         except BaseException as exc:
             from .diagnostics import record_exception, launcher_id
+            from .observability.diagnostics import guard_secondary
             code = exc.code if isinstance(exc, FlowError) else type(exc).__name__
-            status = 'interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed'
+            cancelled = isinstance(exc, FlowError) and exc.code in {'PROCESS_CANCELLED', 'RUN_CANCEL_REQUESTED'}
+            status = 'cancelled' if cancelled else ('interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed')
+            if attempt_id and not attempt_finished:
+                try:
+                    reporter.event_recorder.record('step.failed', severity='ERROR',
+                                                   attributes={'step_id': name, 'code': code})
+                except Exception:
+                    pass
+            try:
+                reporter.event_recorder.record('run.interrupted' if isinstance(exc, KeyboardInterrupt) else ('run.cancelled' if cancelled else 'run.failed'),
+                                               severity='ERROR', attributes={'code': code})
+            except Exception:
+                pass
             diagnostic = record_exception(exc, log, flow_id=self.flow_id, run_id=run_id,
                                           action=name, launch_id=launcher_id(runtime))
-            reporter.fail(code, diagnostic['message'], interrupted=isinstance(exc, KeyboardInterrupt), diagnostic=diagnostic)
-            runtime.update_run(run_id, status, error=code, finished=True)
-            atomic_json(log / 'failure.json', {'flow_id': self.flow_id, 'run_id': run_id, 'action': name,
-                                             'error': code, 'error_details': diagnostic, 'token_usage': reporter.usage.finish(),
-                                             'presentation': reporter.references()})
-            atomic_json(log / 'run.json', {'flow_id': self.flow_id, 'run_id': run_id, 'action': name, 'status': status})
+            guard_secondary(exc, diagnostic, 'finish_attempt', lambda: store.finish_attempt_failure(
+                attempt_id, interrupted=isinstance(exc, KeyboardInterrupt), cancelled=cancelled,
+                error_id=diagnostic['error_id']), runtime=runtime)
+            guard_secondary(exc, diagnostic, 'finish_failure', lambda: store.finish_failure(run_id,
+                interrupted=isinstance(exc, KeyboardInterrupt), cancelled=cancelled, error_id=diagnostic['error_id']), runtime=runtime)
+            state = guard_secondary(exc, diagnostic, 'read_run_status', lambda: store.get(run_id), runtime=runtime)
+            status = state['execution_status'] if state else status
+            guard_secondary(exc, diagnostic, 'reporter.fail', lambda: reporter.fail(code, diagnostic['message'],
+                interrupted=isinstance(exc, KeyboardInterrupt), diagnostic=diagnostic), runtime=runtime)
+            guard_secondary(exc, diagnostic, 'update_run', lambda: runtime.update_run(run_id, status, error=code, finished=True), runtime=runtime)
+            guard_secondary(exc, diagnostic, 'failure.json', lambda: atomic_json(log / 'failure.json',
+                {'flow_id': self.flow_id, 'run_id': run_id, 'action': name, 'error': code,
+                 'error_details': diagnostic, 'token_usage': reporter.usage.finish(),
+                 'presentation': reporter.references()}), runtime=runtime)
+            guard_secondary(exc, diagnostic, 'run.json', lambda: atomic_json(log / 'run.json',
+                {'flow_id': self.flow_id, 'run_id': run_id, 'action': name, 'status': status}), runtime=runtime)
             raise
         finally:
+            if supervisor is not None:
+                try:
+                    supervisor.__exit__(None, None, None)
+                except BaseException as cleanup_error:
+                    from .diagnostics import record_exception
+                    record_exception(cleanup_error, log / 'cleanup', runtime=runtime, run_id=run_id)
             ACTIVE.reset(reporter_token)
-            runtime.action_context = previous_context
+            ACTIVE_RUN.reset(run_token)
 
 
 def catalog(workspace):

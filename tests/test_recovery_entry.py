@@ -1,7 +1,9 @@
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
+from contextlib import closing
 from pathlib import Path
 from types import SimpleNamespace
 import pytest
@@ -34,8 +36,20 @@ def test_action_context_is_scoped_and_status_is_persisted(workspace,monkeypatch,
     assert ws.runtime.action_context is prior
     state=read_json(observed['logdir']/'run.json')
     assert state['status']==('failed' if fail else 'REVIEW_REQUIRED')
+    with closing(ws.runtime.connect()) as db:
+        attempt=db.execute('SELECT attempt_id,status,error_id FROM step_attempts WHERE run_id=?',
+                           (observed['run_id'],)).fetchone()
+    assert attempt['status']==('failed' if fail else 'succeeded')
+    assert bool(attempt['error_id']) == fail
+    events=ws.runtime.events(observed['run_id'],limit=100)['events']
+    assert any(event['name']=='step.started' and event['step_attempt_id']==attempt['attempt_id']
+               for event in events)
+    terminal = 'step.failed' if fail else 'step.finished'
+    assert any(event['name']==terminal and event['step_attempt_id']==attempt['attempt_id']
+               for event in events)
 
 
+@pytest.mark.skipif(os.name == 'nt' or shutil.which('sh') is None, reason='POSIX sh is required')
 def test_generated_recovery_entry_delegates_without_new_installer(tmp_path):
     spec=importlib.util.spec_from_file_location('recovery_launcher',ROOT/'routinekeel/flow_base/scripts/flow_base_profile.py')
     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)

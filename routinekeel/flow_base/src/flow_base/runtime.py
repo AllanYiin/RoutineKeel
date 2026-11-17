@@ -6,14 +6,14 @@ import json
 import os
 import platform
 import shutil
-import signal
 import sqlite3
-import subprocess
 import sys
 import tempfile
 import time
 import uuid
+import warnings
 from contextlib import closing, contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
 from filelock import FileLock, Timeout
@@ -100,7 +100,9 @@ def default_home() -> Path:
 
 
 def existing_parent(path: Path):
-    while not path.exists():
+    while not path.is_dir():
+        if path.parent == path:
+            raise OSError('找不到可用的磁碟目錄')
         path = path.parent
     return path
 
@@ -153,74 +155,11 @@ def log_tail(log, limit=8000):
         return ''
 
 
-def run_process(argv, *, timeout=60, cwd=None, env=None, log: Path | None = None, progress=None):
-    """No shell evaluation. Bounded subprocesses, with process-tree termination."""
-    kwargs = {"start_new_session": True} if os.name != "nt" else {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
-    if log:
-        log.parent.mkdir(parents=True, exist_ok=True)
-    offset = log.stat().st_size if log and log.exists() else 0
-    pending = b""
-    stream = log.open("ab") if log else subprocess.PIPE
-    try:
-        p = subprocess.Popen([str(x) for x in argv], cwd=cwd, env=env, stdin=subprocess.DEVNULL,
-                             stdout=stream, stderr=subprocess.STDOUT, **kwargs)
-    except OSError as e:
-        if log:
-            stream.close()
-        raise FlowError("PROCESS_START", str(e), executable=str(argv[0])) from e
-    def poll_progress():
-        nonlocal offset, pending
-        if not log or progress is None: return
-        with log.open('rb') as reader:
-            reader.seek(offset)
-            block = reader.read(65536)
-            offset = reader.tell()
-        pending += block
-        while b'\n' in pending:
-            line, pending = pending.split(b'\n',1)
-            if len(line) > 16384: continue
-            try:
-                data = json.loads(line)
-            except (ValueError, UnicodeError):
-                continue
-            if isinstance(data,dict) and data.get('event') == 'progress': progress(data)
-        if len(pending) > 16384: pending = b''
-        progress({'event':'heartbeat'})
-    try:
-        if progress is None or not log:
-            out, _ = p.communicate(timeout=timeout)
-        else:
-            deadline = time.monotonic() + timeout
-            while True:
-                remaining = deadline-time.monotonic()
-                if remaining <= 0: raise subprocess.TimeoutExpired(argv,timeout)
-                try:
-                    out, _ = p.communicate(timeout=min(0.5,remaining))
-                    poll_progress()
-                    break
-                except subprocess.TimeoutExpired:
-                    poll_progress()
-    except BaseException as e:
-        if os.name == "nt":
-            subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        else:
-            try:
-                os.killpg(p.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-        p.wait()
-        if not isinstance(e, subprocess.TimeoutExpired):
-            raise
-        raise FlowError("PROCESS_TIMEOUT", "Process exceeded its time limit", timeout=timeout,
-                        output=log_tail(log), log=str(log) if log else None) from e
-    finally:
-        if log:
-            stream.close()
-    text = out.decode("utf-8", errors="replace") if out else ""
-    if p.returncode:
-        raise FlowError("PROCESS_FAILED", "Process returned a nonzero exit code", exit_code=p.returncode,
-                        executable=str(argv[0]), output=text[-8000:] if text else log_tail(log), log=str(log) if log else None)
-    return text
+def run_process(argv, *, timeout=60, cwd=None, env=None, log: Path | None = None, progress=None, cancel_event=None, grace_seconds=10, max_log_bytes=4_000_000, max_log_segments=4):
+    from .execution.process import run_process as controlled
+    return controlled(argv, timeout=timeout, cwd=cwd, env=env, log=log, progress=progress,
+                      cancel_event=cancel_event, grace_seconds=grace_seconds,
+                      max_log_bytes=max_log_bytes, max_log_segments=max_log_segments)
 
 
 def inspect_environment(home: Path, output: Path | None = None):
@@ -240,6 +179,18 @@ class Runtime:
         self.workers = {}
         self.logs = self.home.parent / "share_logs"
         self.secret_names = {"FLOW_BASE_API_KEY"}
+        self._legacy_action_context = ContextVar(f'action_context_{id(self)}', default=None)
+
+    @property
+    def action_context(self):
+        """Compatibility facade for adapters that read action metadata."""
+        from .core.run_context import current
+        context = current(self)
+        return context.action_payload if context and context.action_payload is not None else self._legacy_action_context.get()
+
+    @action_context.setter
+    def action_context(self, value):
+        self._legacy_action_context.set(value)
 
     def record_token_usage(self, request_id, usage=None, *, pending=False):
         """Adapters register provider receipts without sharing prompt/response text."""
@@ -255,28 +206,33 @@ class Runtime:
         self.home.mkdir(parents=True, exist_ok=True)
         # Journal mode belongs to the database. Serialize the initial transition
         # across processes; ordinary connections must not try to change it.
-        with FileLock(self.home / 'state.initialize.lock', timeout=30), closing(self.connect()) as db:
-            if db.execute("PRAGMA journal_mode").fetchone()[0] != "wal":
-                db.execute("PRAGMA journal_mode=WAL")
-            db.executescript("""
-            CREATE TABLE IF NOT EXISTS steps(
-              cache_key TEXT PRIMARY KEY, status TEXT NOT NULL, artifact TEXT,
-              artifact_hash TEXT, updated REAL NOT NULL);
-            CREATE TABLE IF NOT EXISTS requests(
-              id TEXT PRIMARY KEY, job TEXT NOT NULL, cache_key TEXT NOT NULL,
-              reserved INTEGER NOT NULL, charged INTEGER, status TEXT NOT NULL,
-              response TEXT, created REAL NOT NULL);
-            CREATE INDEX IF NOT EXISTS requests_job ON requests(job);
-            CREATE TABLE IF NOT EXISTS flows(
-              flow_id TEXT PRIMARY KEY, task_id TEXT NOT NULL UNIQUE,
-              version TEXT NOT NULL, fingerprint TEXT NOT NULL, title TEXT NOT NULL,
-              created REAL NOT NULL, updated REAL NOT NULL);
-            CREATE TABLE IF NOT EXISTS runs(
-              run_id TEXT PRIMARY KEY, flow_id TEXT NOT NULL REFERENCES flows(flow_id),
-              job_id TEXT, status TEXT NOT NULL, source TEXT, output TEXT,
-              started REAL NOT NULL, finished REAL, error TEXT);
-            CREATE INDEX IF NOT EXISTS runs_flow ON runs(flow_id, started);
-            """)
+        with FileLock(self.home / 'state.initialize.lock', timeout=30):
+            database = self.home / 'state.sqlite3'
+            existed = database.exists()
+            with closing(self.connect()) as db:
+                from .storage.migrations import migrate
+                migrate(db, database, existed=existed)
+                if db.execute("PRAGMA journal_mode").fetchone()[0] != "wal":
+                    db.execute("PRAGMA journal_mode=WAL")
+            from .core.lifecycle import RunStore
+            from .execution.supervisor import identity_matches
+            store = RunStore(self)
+            store.reconcile(identity_matches)
+            from .storage.delivery import delivery_root, recover_transactions
+            with closing(self.connect()) as db:
+                outputs = [row[0] for row in db.execute('SELECT DISTINCT r.output FROM runs r JOIN deliveries d ON d.run_id=r.run_id WHERE r.output IS NOT NULL')]
+            for name in outputs:
+                try:
+                    output = Path(name).resolve()
+                    if not (delivery_root(output) / 'transactions').is_dir():
+                        continue
+                    path = self.home / 'locks' / (digest('output:' + str(output)) + '.lock')
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    with FileLock(path, timeout=0.1):
+                        recover_transactions(output, store)
+                except (FlowError, OSError, Timeout):
+                    # Read-only history remains available; a later output lock retries.
+                    continue
 
     def connect(self):
         db = sqlite3.connect(self.home / "state.sqlite3", timeout=30)
@@ -296,17 +252,30 @@ class Runtime:
                 db.execute('UPDATE flows SET version=?,fingerprint=?,title=?,updated=? WHERE flow_id=?',
                            (version, fingerprint, title, now, flow_id))
             else:
-                flow_id = 'flow_' + uuid.uuid4().hex
+                flow_id = 'flow_' + digest({'task_id': task_id})[:32]
                 db.execute('INSERT INTO flows VALUES(?,?,?,?,?,?,?)',
                            (flow_id, task_id, version, fingerprint, title, now, now))
         return flow_id
 
-    def start_run(self, flow_id, source, output):
+    def start_run(self, flow_id, source, output, *, job_id=None, spec_hash=None, idempotency_key=None):
+        from .core.lifecycle import RunStore
+        self.initialize()
+        with closing(self.connect()) as db:
+            flow = db.execute('SELECT version,fingerprint FROM flows WHERE flow_id=?', (flow_id,)).fetchone()
+        if flow is None:
+            raise FlowError('FLOW_UNKNOWN', '找不到已登錄工作流', flow_id=flow_id)
+        job_id = job_id or digest({'flow_id': flow_id, 'source': str(source), 'output': str(output)})[:32]
+        revision_id = 'rev_' + digest({'flow_id': flow_id, 'version': flow['version'], 'fingerprint': flow['fingerprint']})[:32]
+        spec_hash = spec_hash or digest({'revision_id': revision_id, 'source': str(source), 'output': str(output)})
         run_id = 'run_' + uuid.uuid4().hex
-        with self.connect() as db:
-            db.execute('INSERT INTO runs VALUES(?,?,?,?,?,?,?,?,?)',
-                       (run_id, flow_id, None, 'starting', str(source), str(output), time.time(), None, None))
-        return run_id
+        actual = RunStore(self).create(run_id=run_id, job_id=job_id, revision_id=revision_id,
+                                     spec_hash=spec_hash, idempotency_key=idempotency_key,
+                                     flow_id=flow_id, source=source, output=output,
+                                     revision_fingerprint=flow['fingerprint'], revision_version=flow['version'])
+        if actual == run_id:
+            from .observability.events import EventRecorder
+            EventRecorder(self, run_id, self.logs / flow_id / run_id).record('run.created')
+        return actual
 
     def update_run(self, run_id, status, *, job_id=None, error=None, finished=False):
         with self.connect() as db:
@@ -321,6 +290,15 @@ class Runtime:
             else:
                 rows = db.execute('SELECT * FROM runs ORDER BY started DESC LIMIT ?', (limit,))
             return [dict(row) for row in rows]
+
+    def events(self, run_id, *, cursor=None, limit=100):
+        self.initialize()
+        with closing(self.connect()) as db:
+            row = db.execute('SELECT flow_id FROM runs WHERE run_id=?', (run_id,)).fetchone()
+        if row is None:
+            raise FlowError('RUN_UNKNOWN', '找不到指定 Run', run_id=run_id)
+        from .observability.events import EventRecorder
+        return EventRecorder(self, run_id, self.logs / row['flow_id'] / run_id).read(cursor=cursor, limit=limit)
 
     @contextmanager
     def lock(self, key, timeout=1):
@@ -408,14 +386,23 @@ class Runtime:
                 argv += ["--offline"]
             from .presentation import ACTIVE
             reporter = ACTIVE.get()
+            from .core.run_context import current
+            context = current(self)
             run_process(argv, cwd=root, env=env, timeout=1800, log=self.logs / "install" / (self.profile_key(profile) + ".log"),
-                        progress=reporter.progress if reporter else None)
+                        progress=reporter.progress if reporter else None,
+                        cancel_event=context.cancel_requested if context else None)
             if not python.is_file():
                 raise FlowError("ENV_INVALID", "Profile Python was not created")
             atomic_json(location, current)
         return python
 
-    def worker(self, profile, request, *, timeout=60, log=None):
+    def worker(self, profile, request, *, timeout=60, log=None, context=None):
+        from .core.run_context import current
+        context = context or current(self)
+        if context is not None and context.runtime is not self:
+            raise FlowError('RUN_CONTEXT_MISMATCH', 'Worker context belongs to another Runtime')
+        if context is None and log is None:
+            warnings.warn('Worker has no RunContext; pass context explicitly across threads', RuntimeWarning, stacklevel=2)
         _, python = self.environment(profile)
         if not python.is_file():
             raise FlowError("ENV_MISSING", "Run prepare first", profile=profile)
@@ -426,18 +413,21 @@ class Runtime:
         path = Path(name)
         response = path.with_suffix(".response.json")
         try:
-            atomic_json(path, {**request, "response_path": str(response)})
-            env = os.environ.copy()
-            env.update({"HF_HUB_OFFLINE": "1", "TOKENIZERS_PARALLELISM": "false",
-                        "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"})
-            # Worker never receives credentials belonging to the LLM service.
-            for secret in self.secret_names:
-                env.pop(secret, None)
-            worker_log = log or (getattr(self, 'run_logdir', None) or self.logs / "workers") / (path.stem + ".log")
+            from .observability.trace import current_span
+            active_span = current_span()
+            metadata = ({'run_id': context.run_id, 'attempt_id': context.attempt_id,
+                         'span_id': active_span.span_id if active_span else context.span_id,
+                         'parent_span_id': active_span.parent_span_id if active_span else None}
+                        if context is not None else {})
+            atomic_json(path, {**request, **metadata, "response_path": str(response)})
+            from .execution.process import worker_environment
+            env = worker_environment()
+            worker_log = log or ((context.logdir if context else self.logs / 'workers') / (path.stem + '.log'))
             from .presentation import ACTIVE
-            reporter = ACTIVE.get()
+            reporter = context.reporter if context else ACTIVE.get()
             run_process([python, self.workers[profile], path], timeout=timeout, env=env, log=worker_log,
-                        progress=reporter.progress if reporter else None)
+                        progress=reporter.progress if reporter else None,
+                        cancel_event=context.cancel_requested if context else None)
             return read_json(response)
         finally:
             path.unlink(missing_ok=True)

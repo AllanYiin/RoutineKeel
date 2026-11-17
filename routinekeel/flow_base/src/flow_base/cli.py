@@ -8,12 +8,13 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from . import __version__
-from .engine import plan, run_workflow
-from .intent import Intent, local_intent, model_intent, resolve
-from .resources import export_resources, import_resources
+from .intent import Intent, local_intent, model_intent
 from .runtime import FlowError, inspect_environment, read_json, atomic_json
 from .workspace import Workspace, catalog
 from .diagnostics import cli_error
+from .observability.diagnostics import guard_secondary
+from .core.service import WorkflowService
+from .core.types import PlanRequest, StartRequest, SubmitRequest
 
 
 def parser():
@@ -22,6 +23,22 @@ def parser():
     p.add_argument('--workspace', type=Path, help='工作區根目錄；啟動腳本會自動設定')
     commands = p.add_subparsers(dest='command')
     commands.add_parser('list', help='列出同層含 flow.json 的流程，不載入任務程式')
+    commands.add_parser('ui', help='開啟本機圖形工作台；無圖形環境時仍可用 CLI')
+    commands.add_parser('mcp-stdio', help='啟動可選的本機 MCP stdio 工具入口')
+    c = commands.add_parser('queue-worker', help='另外啟動本機任務佇列 Worker；不由 MCP 派生')
+    c.add_argument('--once', action='store_true', help='處理一件工作後退出；沒有工作時立即退出')
+    c.add_argument('--poll-interval', type=float, default=0.5)
+    c.add_argument('--idle-timeout', type=float, default=0.0, help='閒置多少秒後退出；0 表示持續等待')
+    c = commands.add_parser('submit', help='驗證後把工作寫入持久化佇列，立即回傳 execution_id')
+    c.add_argument('--task', required=True)
+    c.add_argument('--input', type=Path, required=True)
+    c.add_argument('--output', type=Path)
+    c.add_argument('--config', type=Path)
+    c.add_argument('--offline', action='store_true')
+    c.add_argument('--idempotency-key')
+    for name in ('execution-status', 'execution-result', 'execution-cancel'):
+        c = commands.add_parser(name, help='以 execution_id 查詢或取消佇列工作')
+        c.add_argument('execution_id')
     from .codex_tokens import add_arguments
     add_arguments(commands.add_parser('tokens', help='讀取指定 Codex Session 的最新累計用量'))
     commands.add_parser('inspect', help='檢查作業系統、CPU、GPU、Python 與空間')
@@ -63,22 +80,55 @@ def parser():
     c.add_argument('--intent', type=Path, required=True)
     c.add_argument('--execute', action='store_true')
     c.add_argument('--offline', action='store_true')
+    for name, help_text in (
+        ('doctor', '唯讀檢查本機環境與狀態'),
+        ('diagnose', '依 run_id 查執行、診斷與最後事件'),
+        ('logs', '列出指定 Run 的本機紀錄'),
+        ('explain-error', '依 error_id 或錯誤碼顯示白話說明'),
+        ('export-diagnostics', '預覽或明確匯出已遮罩診斷')):
+        c = commands.add_parser(name, help=help_text)
+        c.add_argument('--format', choices=['human', 'json'], default='human')
+        if name in {'diagnose', 'logs', 'export-diagnostics'}:
+            c.add_argument('run_id')
+        elif name == 'explain-error':
+            c.add_argument('identifier')
+        if name == 'logs':
+            c.add_argument('--tail', type=int, default=0, help='明確顯示至多 100 行已遮罩 console 尾端')
+        if name == 'export-diagnostics':
+            c.add_argument('--output', type=Path, help='明確指定新的本機 JSON 檔案')
+            c.add_argument('--confirm', action='store_true', help='已檢視預覽並確認匯出')
     return p
 
 
 def route(workspace, intent, execute=False, offline=False, *, base_overrides=None):
-    task, workflow, source, output, questions = resolve(workspace, intent, base_overrides=base_overrides)
+    from .engine import merge
+    from .outputs import choose_output
+    service = WorkflowService(workspace, authorized_external_paths=[intent.input, intent.output])
+    if not intent.task:
+        questions = intent.questions or ['請指定工作流程。']
+        return {'status': 'needs_input', 'intent': intent.model_dump(), 'questions': questions, 'executed': False}
+    task = workspace.task(intent.task, read_only=not execute)
+    task.validate_intent_overrides(intent.overrides)
+    questions = list(intent.questions)
+    if not intent.input:
+        questions.append('請提供輸入檔案路徑，或使用 --input。')
+    source = service._path(intent.input, allow_external=True) if intent.input else None
+    output = choose_output(workspace.runtime, task, source, intent.output)
     if questions:
         return {'status': 'needs_input', 'intent': intent.model_dump(), 'questions': questions, 'executed': False}
+    overrides = merge(base_overrides or {}, intent.overrides)
     if execute:
-        return run_workflow(workspace.runtime, task, workflow, source, output, offline=offline)
+        return service.run_workflow_sync(StartRequest(task=task.manifest.id, source=source,
+            output=output, overrides=overrides, offline=offline, allow_external_paths=True))
+    planned = service.plan_workflow(PlanRequest(task=task.manifest.id, source=source,
+        output=output, overrides=overrides, offline=offline, allow_external_paths=True))
     return {'status': 'planned', 'intent': intent.model_dump(), 'output': str(output),
-            'plan': plan(workspace.runtime, task, workflow, source, output), 'executed': False}
+            'plan': planned.plan, 'executed': False}
 
 
 def chat(workspace, selected=None, *, overrides=None, offline=False):
     print('flow_base：請描述需求。/list 列流程、/input 路徑 補輸入、/output 路徑 改輸出、/router llm 啟用已設定模型、/quit 離開。預設為離線常用語句模式。')
-    available = catalog(workspace)
+    available = WorkflowService(workspace).list_workflows()
     if selected:
         print('目前流程：' + selected.manifest.title)
         print('請輸入 /input 檔案路徑，或描述需求；檢查計畫後輸入 /run 開始。')
@@ -100,7 +150,7 @@ def chat(workspace, selected=None, *, overrides=None, offline=False):
             break
         try:
             if line == '/list':
-                emit(catalog(workspace))
+                emit(WorkflowService(workspace).list_workflows())
             elif line in {'/router llm', '/router local'}:
                 if line == '/router llm' and selected and selected.manifest.llm_policy == 'forbidden':
                     raise FlowError('LOCAL_LLM_FORBIDDEN', '這個流程禁止 LLM API 呼叫；請用本機語句模式。')
@@ -136,7 +186,7 @@ def chat(workspace, selected=None, *, overrides=None, offline=False):
                     print('輸入 /run 執行這個計畫，或輸入新的需求。')
         except (FlowError, ValueError, OSError, KeyError) as exc:
             pending = None
-            emit(cli_error(workspace.runtime, exc))
+            emit_error(workspace.runtime, exc)
     return {'status': 'closed'}
 
 
@@ -144,12 +194,13 @@ def launch(workspace, args):
     import uuid
     task = workspace.task_at(args.folder)
     runtime = workspace.runtime
+    service = WorkflowService(workspace)
     if args.action:
         parameters = read_json(args.params) if args.params else {}
         if not isinstance(parameters, dict):
             raise FlowError('TASK_ACTION_PARAMETERS', '能力參數必須是 JSON object')
         print('正在執行流程能力：' + args.action, file=sys.stderr, flush=True)
-        return task.invoke_action(runtime, args.action, parameters)
+        return service.invoke_action(task.manifest.id, args.action, parameters)
     launch_id = 'launch_' + uuid.uuid4().hex
     state_path = runtime.home / 'launcher' / (launch_id + '.json')
     state = {'launch_id': launch_id, 'flow_id': task.flow_id, 'title': task.manifest.title, 'status': 'preparing'}
@@ -157,20 +208,20 @@ def launch(workspace, args):
     try:
         config = read_json(args.config) if args.config else {}
         print('正在準備流程：' + task.manifest.title, flush=True)
-        adapter = task.load(runtime)
-        workflow = task.configuration(runtime, config)
-        if hasattr(adapter, 'describe'):
-            for line in adapter.describe(workflow):
-                print(line, flush=True)
-        prepared = adapter.prepare(runtime, workflow, args.offline)
-        verified = adapter.verify(runtime, workflow)
-        if prepared.get('ok') is False or verified.get('ok') is False:
-            raise FlowError('TASK_PREPARE', '流程環境驗證未通過', verification=verified)
+        launched = service.launch_prepare(task.manifest.id, overrides=config, offline=args.offline)
+        for line in launched['description']:
+            print(line, flush=True)
+        prepared, verified = launched['prepared'], launched['verified']
     except (Exception, KeyboardInterrupt) as exc:
-        state.update(status='failed', error=cli_error(runtime, exc)['error'])
-        atomic_json(state_path, state)
-        atomic_json(runtime.logs / 'launcher' / (launch_id + '.json'), state)
-        print('流程準備失敗；排除錯誤後重新開啟同一入口即可。紀錄：' + str(state_path), file=sys.stderr)
+        primary = cli_error(runtime, exc)
+        state.update(status='failed', error=primary['error'])
+        diagnostic = primary['error']['diagnostic']
+        guard_secondary(exc, diagnostic, 'launcher_state', lambda: atomic_json(state_path, state), runtime=runtime)
+        guard_secondary(exc, diagnostic, 'launcher_log',
+                        lambda: atomic_json(runtime.logs / 'launcher' / (launch_id + '.json'), state), runtime=runtime)
+        guard_secondary(exc, diagnostic, 'launcher_notice',
+                        lambda: print('流程準備失敗；排除錯誤後重新開啟同一入口即可。紀錄：' + str(state_path), file=sys.stderr),
+                        runtime=runtime)
         raise
     state.update(status='ready')
     atomic_json(state_path, state)
@@ -184,30 +235,138 @@ def emit(value):
     print(json.dumps(value, ensure_ascii=False, indent=2))
 
 
+def emit_error(runtime, exc, code=None):
+    """A broken diagnostic or output channel cannot replace the original error."""
+    try:
+        result = cli_error(runtime, exc, code)
+    except BaseException:
+        original_code = exc.code if isinstance(exc, FlowError) else type(exc).__name__
+        result = {'ok': False, 'error': {'code': code or original_code,
+                  'message': '錯誤診斷暫時無法保存', 'details': {}, 'diagnostic': {'error_id': 'unavailable'}}}
+    try:
+        emit(result)
+    except BaseException:
+        try:
+            print(f"{result['error']['code']}: {result['error']['diagnostic']['error_id']}", file=sys.stderr)
+        except BaseException:
+            pass
+    return result
+
+
+def diagnostic_command(workspace, args):
+    from .observability.commands import (doctor, diagnose, logs, explain_error_id,
+                                          export_preview, human_text)
+    runtime = workspace.runtime
+    try:
+        if args.command == 'doctor':
+            result = doctor(workspace)
+        elif args.command == 'diagnose':
+            result = diagnose(runtime, args.run_id)
+        elif args.command == 'logs':
+            result = logs(runtime, args.run_id, tail=args.tail)
+        elif args.command == 'explain-error':
+            result = explain_error_id(runtime, args.identifier)
+        else:
+            result = export_preview(runtime, args.run_id,
+                                    destination=args.output, confirm=args.confirm)
+        if args.format == 'json':
+            emit({'ok': True, 'result': result})
+        else:
+            print(human_text(args.command, result))
+        return 1 if (args.command == 'doctor' and result.get('status') == 'needs_attention') or (
+            args.command == 'diagnose' and result.get('execution_status') in {'failed','interrupted','cancelled'}) else 0
+    except FlowError as exc:
+        if args.format == 'json':
+            emit_error(runtime, exc)
+        else:
+            try:
+                error = cli_error(runtime, exc)
+                explanation = error['error'].get('user_explanation') or {}
+                error_id = error['error']['diagnostic']['error_id']
+            except BaseException:
+                from .observability.errors import explain_exception
+                explanation = explain_exception(exc)
+                error_id = 'unavailable'
+            print('問題：' + explanation.get('user_title', '診斷查詢失敗'), file=sys.stderr)
+            print(explanation.get('user_message', '請記下錯誤編號。'), file=sys.stderr)
+            if explanation.get('suggested_actions'):
+                print('下一步：' + explanation['suggested_actions'][0], file=sys.stderr)
+            print('錯誤編號：' + error_id, file=sys.stderr)
+        return 2
+    except Exception as exc:
+        if args.format == 'json':
+            emit_error(runtime, exc, 'UNEXPECTED_ERROR')
+        else:
+            try:
+                result = cli_error(runtime, exc, 'UNEXPECTED_ERROR')
+                error_id = result['error']['diagnostic']['error_id']
+            except BaseException:
+                error_id = 'unavailable'
+            print('診斷功能發生未預期錯誤；請記下錯誤編號交給維護者。', file=sys.stderr)
+            print('錯誤編號：' + error_id, file=sys.stderr)
+        return 3
+
+
 def main(argv=None):
     args = parser().parse_args(argv)
     workspace = Workspace(args.workspace)
     runtime = workspace.runtime
+    service = WorkflowService(workspace, authorized_external_paths=[
+        getattr(args, 'input', None), getattr(args, 'output', None)])
     try:
         command = args.command or ('chat' if sys.stdin.isatty() else 'list')
+        if command == 'ui':
+            try:
+                from .ui.app import run_ui
+                run_ui(workspace.root)
+                return 0
+            except Exception as exc:
+                if isinstance(exc, (ImportError, OSError)) or type(exc).__name__ == 'TclError':
+                    print('本機圖形介面無法啟動；可使用原有 CLI。' + str(exc), file=sys.stderr)
+                    return 2
+                raise
+        if command == 'mcp-stdio':
+            from .adapters.mcp_stdio import run_stdio
+            try:
+                run_stdio(workspace.root)
+                return 0
+            except FlowError as exc:
+                print(f'{exc.code}: {exc}', file=sys.stderr)
+                return 2
         if command == 'tokens':
             from .codex_tokens import query
             result = query(args)
         elif command == 'list':
-            result = catalog(workspace)
+            result = service.list_workflows()
         elif command == 'catalog':
-            result = {'runtime_api': '0.2', 'tasks': catalog(workspace), 'intent_schema': Intent.model_json_schema(),
+            result = {'runtime_api': '0.2', 'tasks': service.list_workflows(), 'intent_schema': Intent.model_json_schema(),
                       'execution': 'dispatch --intent intent.json --execute', 'policy': 'Select installed IDs and declared parameter_paths only; no generated code.'}
+        elif command in {'doctor', 'diagnose', 'logs', 'explain-error', 'export-diagnostics'}:
+            return diagnostic_command(workspace, args)
         elif command == 'inspect':
             result = inspect_environment(runtime.home)
         elif command == 'action':
             parameters = read_json(args.params)
-            if not isinstance(parameters, dict):
-                raise FlowError('TASK_ACTION_PARAMETERS', '能力參數必須是 JSON object')
-            result = workspace.task(args.task).invoke_action(runtime, args.name, parameters)
+            result = service.invoke_action(args.task, args.name, parameters)
         elif command == 'history':
-            flow_id = workspace.task(args.task).flow_id if args.task else None
-            result = runtime.history(flow_id, max(1, min(args.limit, 1000)))
+            result = service.history(args.task, args.limit)
+        elif command == 'queue-worker':
+            from .execution.queue_worker import run_queue_worker
+            result = run_queue_worker(workspace.root, once=args.once,
+                                      poll_interval=args.poll_interval,
+                                      idle_timeout=args.idle_timeout)
+        elif command == 'submit':
+            config = read_json(args.config) if args.config else {}
+            result = service.submit_workflow(SubmitRequest(
+                task=args.task, source=args.input, output=args.output,
+                overrides=config, offline=args.offline,
+                idempotency_key=args.idempotency_key)).model_dump()
+        elif command == 'execution-status':
+            result = service.get_workflow_status(args.execution_id)
+        elif command == 'execution-result':
+            result = service.get_workflow_result(args.execution_id)
+        elif command == 'execution-cancel':
+            result = service.cancel_workflow(args.execution_id)
         elif command == 'chat':
             result = chat(workspace, workspace.task(args.task) if args.task else None)
         elif command == 'launch':
@@ -228,43 +387,46 @@ def main(argv=None):
             if command == 'ask' and args.router == 'local':
                 result['routing_mode'] = 'offline_phrase_rules'
                 result['routing_note'] = '常用語句比對並非完整語意理解；複雜需求請用宿主 Agent dispatch 或 --router llm。執行前請檢查參數。'
-        else:
-            task = workspace.task(args.task)
-            adapter = task.load(runtime)
+        elif command == 'plan':
             config = read_json(args.config) if args.config else {}
-            workflow = task.configuration(runtime, config)
-            def local(path):
-                return (workspace.root / path).resolve() if path is not None else None
-            source, output = local(args.input), local(args.output)
-            if command == 'plan':
-                result = plan(runtime, task, workflow, source, output)
-            elif command == 'prepare':
-                result = adapter.prepare(runtime, workflow, args.offline)
-            elif command == 'verify':
-                result = adapter.verify(runtime, workflow)
-            elif command == 'run':
-                result = run_workflow(runtime, task, workflow, source, output, offline=args.offline)
-            elif command == 'demo':
-                if not hasattr(adapter, 'demo'):
-                    raise FlowError('TASK_CAPABILITY', 'This task does not provide a demo')
-                from .engine import run_demo
-                result = run_demo(runtime, task, output)
-            else:
-                if not hasattr(adapter, 'resources'):
-                    raise FlowError('TASK_CAPABILITY', 'This task has no downloadable resources')
-                resources = adapter.resources()
-                result = export_resources(runtime, output, args.resource, resources) if command == 'cache-export' else import_resources(runtime, source, resources)
+            result = service.plan_workflow(PlanRequest(task=args.task, source=args.input,
+                output=args.output, overrides=config, offline=args.offline,
+                allow_external_paths=True)).plan
+        elif command == 'run':
+            config = read_json(args.config) if args.config else {}
+            result = service.run_workflow_sync(StartRequest(task=args.task, source=args.input,
+                output=args.output, overrides=config, offline=args.offline,
+                allow_external_paths=True))
+        elif command == 'prepare':
+            config = read_json(args.config) if args.config else {}
+            result = service.prepare_workflow(args.task, overrides=config, offline=args.offline)
+        elif command == 'verify':
+            config = read_json(args.config) if args.config else {}
+            result = service.verify_workflow(args.task, overrides=config)
+        elif command == 'demo':
+            config = read_json(args.config) if args.config else {}
+            result = service.demo_workflow(args.task, args.output, overrides=config)
+        elif command == 'cache-export':
+            config = read_json(args.config) if args.config else {}
+            result = service.transfer_cache(args.task, direction='export', output=args.output,
+                                            resources=args.resource, overrides=config)
+        elif command == 'cache-import':
+            config = read_json(args.config) if args.config else {}
+            result = service.transfer_cache(args.task, direction='import', source=args.input,
+                                            overrides=config)
+        else:
+            raise FlowError('INVALID_CONFIGURATION', '未知命令')
         emit({'ok': True, 'result': result})
         return 0
     except FlowError as exc:
-        emit(cli_error(runtime, exc))
+        emit_error(runtime, exc)
         return 2
     except (ValidationError, ValueError, OSError, KeyError, ImportError) as exc:
-        emit(cli_error(runtime, exc, 'INPUT_OR_ENVIRONMENT'))
+        emit_error(runtime, exc, 'INPUT_OR_ENVIRONMENT')
         return 2
     except KeyboardInterrupt as exc:
-        emit(cli_error(runtime, exc, 'INTERRUPTED'))
+        emit_error(runtime, exc, 'INTERRUPTED')
         return 130
     except Exception as exc:
-        emit(cli_error(runtime, exc, 'UNEXPECTED_ERROR'))
+        emit_error(runtime, exc, 'UNEXPECTED_ERROR')
         return 1

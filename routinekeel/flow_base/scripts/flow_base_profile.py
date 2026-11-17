@@ -13,8 +13,8 @@ echo flow_base: preparing environment and starting...
 set "FLOW_BASE_EXIT=%ERRORLEVEL%"
 if not "%FLOW_BASE_EXIT%"=="0" (
   echo.
-  echo Startup failed. Keep the error above and check share_logs\launcher.
-  echo You can retry by opening this file again.
+  echo flow_base returned code %FLOW_BASE_EXIT%. Review the result above and share_logs\launcher.
+  echo If an action failed, address its diagnostic and retry when appropriate.
   pause
 )
 exit /b %FLOW_BASE_EXIT%
@@ -72,8 +72,8 @@ if not exist "%~dp0..\flow_base\start.ps1" (
 set "FLOW_BASE_EXIT=%ERRORLEVEL%"
 if not "%FLOW_BASE_EXIT%"=="0" (
   echo.
-  echo Workflow startup failed. Keep the message above and check share_logs\launcher.
-  echo Retry by opening this file again.
+  echo Workflow returned code %FLOW_BASE_EXIT%. Review the result above and share_logs\launcher.
+  echo If an action failed, address its diagnostic and retry when appropriate.
   pause
 )
 exit /b %FLOW_BASE_EXIT%

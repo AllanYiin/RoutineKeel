@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import subprocess
+from contextlib import closing
 import sys
 import zipfile
 from pathlib import Path
@@ -57,6 +58,15 @@ def test_two_task_packages_share_state_and_separate_logs(workspace):
     demo = cli(workspace, 'demo', '--task', 'ai_flow01', '--output', workspace/'demo')['result']
     assert demo['asr_executed'] is False
     assert (workspace/'demo/artifacts/subtitles.srt').is_file()
+    runtime = Workspace(workspace).runtime
+    with closing(runtime.connect()) as db:
+        attempt = db.execute('SELECT attempt_id,status FROM step_attempts WHERE run_id=?',
+                             (demo['run_id'],)).fetchone()
+    assert attempt['status'] == 'succeeded'
+    assert any(event['name'] == 'step.started' and event['step_attempt_id'] == attempt['attempt_id']
+               for event in runtime.events(demo['run_id'], limit=100)['events'])
+    assert any(event['name'] == 'step.finished' and event['step_attempt_id'] == attempt['attempt_id']
+               for event in runtime.events(demo['run_id'], limit=100)['events'])
     assert (workspace/'share_states/state.sqlite3').is_file()
     assert first['flow_id'] == again['flow_id']
     assert first['run_id'] != again['run_id']
@@ -163,10 +173,10 @@ def test_archive_escape_is_rejected(workspace):
 
 
 def test_plugin_cache_tamper_is_repaired(workspace):
-    cli(workspace, 'plan', '--task', 'ai_flow02')
+    cli(workspace, 'prepare', '--task', 'ai_flow02')
     file = next((workspace/'share_states/plugins').glob('*/ai_flow02/adapter.py'))
     file.write_text('raise RuntimeError("tamper")')
-    assert cli(workspace, 'plan', '--task', 'ai_flow02')['result']['ready_to_prepare']
+    assert cli(workspace, 'prepare', '--task', 'ai_flow02')['result']['ok']
     assert 'tamper' not in file.read_text()
 
 
@@ -208,6 +218,8 @@ def test_distributions_never_bundle_environment_or_models():
             if name == 'flow_base':
                 assert wheel_hash in z.read(folder+'/start.sh').decode('utf-8')
                 assert wheel_hash in z.read(folder+'/start.ps1').decode('utf-8-sig')
+                assert all(folder + '/' + entry in z.namelist() for entry in
+                           ('queue_worker.bat', 'queue_worker.sh', 'queue_worker.command', 'mcp-local.md'))
             else:
                 manifest = json.loads(z.read(folder+'/flow.json'))
                 assert manifest['sha256'] == wheel_hash
@@ -215,9 +227,14 @@ def test_distributions_never_bundle_environment_or_models():
             import io
             with zipfile.ZipFile(io.BytesIO(z.read(folder+'/source.zip'))) as source:
                 assert not any('.venv' in n.split('/') for n in source.namelist())
+                if name == 'flow_base':
+                    assert any(n.endswith('specs/mcp-queue-v1.md') for n in source.namelist())
     version = tomllib.loads((ROOT/'routinekeel/flow_base/pyproject.toml').read_text())['project']['version']
     with zipfile.ZipFile(ROOT/'dist/wheels'/f'flow_base-{version}-py3-none-any.whl') as z:
-        assert not any('subtitles' in n or 'worker.py' in n or 'profiles/' in n for n in z.namelist())
+        assert {'flow_base/core/queue.py', 'flow_base/execution/queue_worker.py',
+                'flow_base/storage/migrations/v004.py'} <= set(z.namelist())
+        assert not any(n.startswith(('ai_flow01/', 'ai_flow02/')) or 'subtitles' in n or
+                       n.endswith('/worker.py') or 'profiles/' in n for n in z.namelist())
 
 
 def test_failed_run_has_registered_ids(workspace):

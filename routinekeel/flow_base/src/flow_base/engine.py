@@ -2,9 +2,14 @@
 from __future__ import annotations
 
 import dataclasses
+import uuid
 from pathlib import Path
 from .presentation import Reporter, ACTIVE
+from .core.run_context import RunContext, ACTIVE_RUN
+from .core.lifecycle import RunStore
+from .execution.supervisor import Supervisor
 from .diagnostics import record_exception, launcher_id
+from .observability.diagnostics import guard_secondary
 
 from . import __version__
 from .runtime import FlowError, Runtime, atomic_json, digest, read_json, require_space, sha256, event
@@ -88,12 +93,51 @@ def plan(runtime, task, workflow, source=None, output=None):
     for step in workflow.steps:
         if step.handler not in adapter.handlers:
             result['blocked'].append({'code': 'HANDLER_MISSING', 'handler': step.handler})
+    declared_outputs = getattr(workflow, 'outputs', {})
+    if declared_outputs != task.manifest.outputs:
+        result['blocked'].append({'code': 'OUTPUT_DECLARATION',
+                                  'message': 'Workflow outputs 必須與已安裝 Manifest 的宣告一致'})
+    if not declared_outputs:
+        result['warnings'] = [*result.get('warnings', []),
+                              '沿用最後 Step 作為 legacy 單一輸出；新流程請宣告具名 outputs。']
     result['ready_to_prepare'] = not result['blocked']
     result.update(task=task.manifest.id, flow_id=task.flow_id, task_version=task.manifest.version)
     result.update(output=str(output) if output else None,
                   output_selection='workflow_default' if output == default_output else 'explicit',
                   output_layout=output_layout(output, task.manifest.output_layout) if output else task.manifest.output_layout)
     return result
+
+
+def _execution_identity(runtime, task, source, output):
+    """Match the historical job key while allowing the Run to be recorded first."""
+    from .outputs import output_layout
+    source, output = Path(source).resolve(), Path(output).resolve()
+    input_hash = sha256(source) if source.is_file() else None
+    def location(path):
+        try:
+            return {'workspace_relative': path.relative_to(runtime.home.parent).as_posix()}
+        except ValueError:
+            return {'external_absolute': str(path)}
+    output_identity = location(output)
+    if output.is_relative_to((task.folder / 'outputs').resolve()) and output_layout(output, task.manifest.output_layout) == 'categorized-v1':
+        output_identity = {'flow_relative': output.relative_to(task.folder.resolve()).as_posix()}
+    job = digest({'flow_id': task.flow_id, 'input': input_hash, 'output': output_identity})[:32]
+    return job, input_hash, location
+
+
+def _execution_spec_hash(runtime, task, workflow, input_hash, output, offline):
+    adapter = task.load(runtime)
+    profile_key = adapter.profile_key(runtime, workflow)
+    effective = workflow.model_dump()
+    selection = effective.get('execution_selection')
+    if isinstance(selection, dict):
+        # Free RAM/disk/VRAM and probe timestamps are evidence, not execution
+        # semantics. Keep the requested and selected policy for identity.
+        effective['execution_selection'] = {key: selection[key] for key in
+            ('policy_version', 'requested', 'selected') if key in selection}
+    return digest({'revision': task.fingerprint, 'workflow': effective,
+                   'input_hash': input_hash, 'output': str(Path(output).resolve()),
+                   'profile_key': profile_key, 'offline': offline})
 
 
 def run_demo(runtime, task, output):
@@ -105,78 +149,199 @@ def run_demo(runtime, task, output):
     run_id = runtime.start_run(task.flow_id, 'demonstration_fixture', output)
     logs = runtime.logs / task.flow_id / run_id
     from types import SimpleNamespace
-    reporter = Reporter(task.manifest.title + '｜示範資料（非正式處理）', task.flow_id, run_id, logs, 1)
+    reporter = Reporter(task.manifest.title + '｜示範資料（非正式處理）', task.flow_id, run_id, logs, 1, runtime)
+    run_token = ACTIVE_RUN.set(RunContext(runtime, run_id, logs, reporter, event_sink=reporter.event_recorder))
     reporter_token = ACTIVE.set(reporter)
+    store = RunStore(runtime)
+    supervisor = None
+    attempt_id = None
+    attempt_finished = False
     try:
+        store.transition(run_id, 'created', 'queued')
+        supervisor = Supervisor(runtime, run_id, ACTIVE_RUN.get())
+        supervisor.__enter__()
+        reporter.event_recorder.record('run.preparing')
+        store.transition(run_id, 'preparing', 'running')
+        reporter.event_recorder.record('run.started')
         reporter.start()
+        attempt_id = store.create_attempt(run_id, 'demo')
+        ACTIVE_RUN.get().attempt_id = attempt_id
+        store.transition_attempt(attempt_id, 'pending', 'running')
+        reporter.event_recorder.record('step.started', attributes={'step_id': 'demo'})
         reporter.enter(SimpleNamespace(id='demo', handler='adapter.demo'), 1, '建立示範資料')
         result = task.load(runtime).demo(runtime, artifact_directory(output, task.manifest.output_layout))
+        store.transition_attempt(attempt_id, 'running', 'succeeded')
+        attempt_finished = True
+        reporter.event_recorder.record('step.finished', attributes={'step_id': 'demo'})
+        if supervisor.heartbeat_error:
+            raise FlowError('SUPERVISOR_HEARTBEAT', '執行期間無法更新監督程序 lease') from supervisor.heartbeat_error
+        if ACTIVE_RUN.get().cancel_requested.is_set():
+            raise FlowError('RUN_CANCEL_REQUESTED', '已確認取消；停止成果發布')
         result.update(flow_id=task.flow_id, run_id=run_id, output=str(output), output_layout=task.manifest.output_layout)
         result['token_usage'] = reporter.usage.finish()
         result['presentation'] = reporter.references()
-        runtime.update_run(run_id, 'complete', finished=True)
+        reporter.event_recorder.record('delivery.staged', attributes={'output_layout': task.manifest.output_layout})
         atomic_json(output / 'report.json', result)
         write_delivery_index(output, result)
         atomic_json(logs / 'report.json', result)
-        reporter.complete('executed')
-        reporter.end(result, {'label': '示範結束：未執行正式處理，不能當作驗收證據。'})
+        store.transition(run_id, 'running', 'publishing')
+        delivery_index = output / 'deliverables.json'
+        store.record_delivery(run_id, delivery_index if delivery_index.is_file() else output / 'report.json')
+        reporter.event_recorder.record('delivery.verified', attributes={'status': 'verified'})
+        store.transition(run_id, 'publishing', 'succeeded', result_status='demonstration', delivery_status='published')
+        reporter.event_recorder.record('delivery.published', attributes={'result_status': 'demonstration'})
+        reporter.event_recorder.record('run.finished', attributes={'result_status': 'demonstration'})
+        try:
+            runtime.update_run(run_id, 'complete', finished=True)
+            reporter.complete('executed')
+            reporter.end(result, {'label': '示範結束：未執行正式處理，不能當作驗收證據。'})
+        except Exception as post_error:
+            try:
+                result['post_delivery_diagnostic'] = record_exception(post_error, logs / 'post_delivery', run_id=run_id)['diagnostic_json']
+            except Exception:
+                result['post_delivery_diagnostic'] = 'unavailable'
         return result
     except BaseException as exc:
-        status = 'interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed'
+        cancelled = isinstance(exc, FlowError) and exc.code in {'PROCESS_CANCELLED', 'RUN_CANCEL_REQUESTED'}
+        status = 'cancelled' if cancelled else ('interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed')
         code = exc.code if isinstance(exc, FlowError) else type(exc).__name__
+        if attempt_id and not attempt_finished:
+            try:
+                reporter.event_recorder.record('step.failed', severity='ERROR',
+                                               attributes={'step_id': 'demo', 'code': code})
+            except Exception:
+                pass
+        try:
+            reporter.event_recorder.record('run.interrupted' if isinstance(exc, KeyboardInterrupt) else ('run.cancelled' if cancelled else 'run.failed'),
+                                           severity='ERROR', attributes={'code': code})
+        except Exception:
+            pass
         diagnostic = record_exception(exc, logs, flow_id=task.flow_id, run_id=run_id, launch_id=launcher_id(runtime))
-        reporter.fail(code, diagnostic['message'], interrupted=isinstance(exc, KeyboardInterrupt), diagnostic=diagnostic)
-        runtime.update_run(run_id, status, error=code, finished=True)
-        atomic_json(logs / 'failure.json', {'flow_id': task.flow_id, 'run_id': run_id, 'status': status, 'error': code, 'error_details': diagnostic,
-                                                'token_usage': reporter.usage.finish(), 'presentation': reporter.references()})
+        guard_secondary(exc, diagnostic, 'finish_attempt', lambda: store.finish_attempt_failure(
+            attempt_id, interrupted=isinstance(exc, KeyboardInterrupt), cancelled=cancelled,
+            error_id=diagnostic['error_id']), runtime=runtime)
+        guard_secondary(exc, diagnostic, 'finish_failure', lambda: store.finish_failure(run_id,
+            interrupted=isinstance(exc, KeyboardInterrupt), cancelled=cancelled, error_id=diagnostic['error_id']), runtime=runtime)
+        state = guard_secondary(exc, diagnostic, 'read_run_status', lambda: store.get(run_id), runtime=runtime)
+        status = state['execution_status'] if state else status
+        guard_secondary(exc, diagnostic, 'reporter.fail', lambda: reporter.fail(code, diagnostic['message'],
+            interrupted=isinstance(exc, KeyboardInterrupt), diagnostic=diagnostic), runtime=runtime)
+        guard_secondary(exc, diagnostic, 'update_run', lambda: runtime.update_run(run_id, status, error=code, finished=True), runtime=runtime)
+        guard_secondary(exc, diagnostic, 'failure.json', lambda: atomic_json(logs / 'failure.json',
+            {'flow_id': task.flow_id, 'run_id': run_id, 'status': status, 'error': code, 'error_details': diagnostic,
+             'token_usage': reporter.usage.finish(), 'presentation': reporter.references()}), runtime=runtime)
         if isinstance(exc, FlowError):
-            exc.details.update(flow_id=task.flow_id, run_id=run_id)
+            guard_secondary(exc, diagnostic, 'attach_error_ids',
+                lambda: exc.details.update(flow_id=task.flow_id, run_id=run_id), runtime=runtime)
         raise
     finally:
+        if supervisor is not None:
+            try:
+                supervisor.__exit__(None, None, None)
+            except BaseException as cleanup_error:
+                record_exception(cleanup_error, logs / 'cleanup', runtime=runtime, run_id=run_id)
         ACTIVE.reset(reporter_token)
+        ACTIVE_RUN.reset(run_token)
 
 
-def run_workflow(runtime, task, workflow, source, output=None, *, offline=False, prepared=None):
+def reserve_workflow_run(runtime, task, workflow, source, output=None, *, offline=False, idempotency_key=None):
     from .outputs import choose_output
     output = choose_output(runtime, task, source, output)
-    run_id = runtime.start_run(task.flow_id, source, output)
+    job_id, input_hash, _ = _execution_identity(runtime, task, source, output)
+    spec_hash = _execution_spec_hash(runtime, task, workflow, input_hash, output, offline)
+    run_id = runtime.start_run(task.flow_id, source, output, job_id=job_id, spec_hash=spec_hash,
+                               idempotency_key=idempotency_key)
+    return run_id, output, spec_hash
+
+
+def run_workflow(runtime, task, workflow, source, output=None, *, offline=False, prepared=None, reserved_run_id=None):
+    from .outputs import choose_output
+    output = choose_output(runtime, task, source, output)
+    job_id, input_hash, _ = _execution_identity(runtime, task, source, output)
+    spec_hash = _execution_spec_hash(runtime, task, workflow, input_hash, output, offline)
+    if reserved_run_id is None:
+        run_id = runtime.start_run(task.flow_id, source, output, job_id=job_id, spec_hash=spec_hash)
+    else:
+        execution = RunStore(runtime).get(reserved_run_id)
+        if execution is None or execution['execution_status'] != 'created' or execution['job_id'] != job_id or execution['execution_spec_hash'] != spec_hash:
+            raise FlowError('RUN_SPEC_MISMATCH', '保留的 Run 與目前執行規格不一致', run_id=reserved_run_id)
+        run_id = reserved_run_id
     logs = runtime.logs / task.flow_id / run_id
     logs.mkdir(parents=True, exist_ok=True)
-    previous_logs = getattr(runtime, 'run_logdir', None)
-    runtime.run_logdir = logs
     atomic_json(logs / 'run.json', {'flow_id': task.flow_id, 'run_id': run_id, 'task': task.manifest.id, 'status': 'starting'})
-    reporter = Reporter(task.manifest.title, task.flow_id, run_id, logs, len(workflow.steps))
+    reporter = Reporter(task.manifest.title, task.flow_id, run_id, logs, len(workflow.steps), runtime)
+    run_token = ACTIVE_RUN.set(RunContext(runtime, run_id, logs, reporter, event_sink=reporter.event_recorder))
     reporter_token = ACTIVE.set(reporter)
+    store = RunStore(runtime)
+    supervisor = None
     try:
+        store.transition(run_id, 'created', 'queued')
+        supervisor = Supervisor(runtime, run_id, ACTIVE_RUN.get())
+        supervisor.__enter__()
+        reporter.event_recorder.record('run.preparing')
         reporter.start()
         report = _run_workflow(runtime, task, workflow, source, output, run_id=run_id, offline=offline, prepared=prepared)
-        runtime.update_run(run_id, report.get('status', 'complete'), job_id=report.get('job_id'), finished=True)
-        atomic_json(logs / 'run.json', {'flow_id': task.flow_id, 'run_id': run_id, 'job_id': report.get('job_id'), 'status': report.get('status', 'complete')})
-        adapter = task.load(runtime)
-        summary = adapter.result_summary(report) if hasattr(adapter, 'result_summary') else None
-        reporter.end(report, summary)
+        try:
+            if supervisor.heartbeat_error:
+                raise FlowError('SUPERVISOR_HEARTBEAT', '執行期間無法更新監督程序 lease') from supervisor.heartbeat_error
+            if store.get(run_id)['execution_status'] != 'succeeded':
+                raise FlowError('DELIVERY_INCOMPLETE', '交付與 Run 終態尚未一致', run_id=run_id)
+            reporter.event_recorder.record('delivery.published', attributes={'result_status': str(report.get('status', 'unknown')).lower()})
+            reporter.event_recorder.record('run.finished', attributes={'result_status': str(report.get('status', 'unknown')).lower()})
+            runtime.update_run(run_id, report.get('status', 'complete'), job_id=report.get('job_id'), finished=True)
+            atomic_json(logs / 'run.json', {'flow_id': task.flow_id, 'run_id': run_id, 'job_id': report.get('job_id'), 'status': report.get('status', 'complete')})
+            adapter = task.load(runtime)
+            summary = adapter.result_summary(report) if hasattr(adapter, 'result_summary') else None
+            reporter.end(report, summary)
+        except Exception as post_error:
+            try:
+                report['post_delivery_diagnostic'] = record_exception(post_error, logs / 'post_delivery', run_id=run_id)['diagnostic_json']
+            except Exception:
+                report['post_delivery_diagnostic'] = 'unavailable'
         return report
     except BaseException as exc:
-        status = 'interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed'
+        cancelled = isinstance(exc, FlowError) and exc.code in {'PROCESS_CANCELLED', 'RUN_CANCEL_REQUESTED'}
+        status = 'cancelled' if cancelled else ('interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed')
         code = exc.code if isinstance(exc, FlowError) else type(exc).__name__
+        try:
+            reporter.event_recorder.record('run.interrupted' if isinstance(exc, KeyboardInterrupt) else ('run.cancelled' if cancelled else 'run.failed'),
+                                           severity='ERROR', attributes={'code': code})
+        except Exception:
+            pass
         diagnostic = record_exception(exc, logs, flow_id=task.flow_id, run_id=run_id,
                                       launch_id=launcher_id(runtime), step=reporter.step_id)
-        reporter.fail(code, diagnostic['message'], interrupted=isinstance(exc, KeyboardInterrupt), diagnostic=diagnostic)
-        runtime.update_run(run_id, status, error=code, finished=True)
-        atomic_json(logs / 'run.json', {'flow_id': task.flow_id, 'run_id': run_id, 'task': task.manifest.id,
-                                       'status': status, 'error': code})
-        atomic_json(logs / 'failure.json', {'flow_id': task.flow_id, 'run_id': run_id, 'status': status, 'error': code, 'error_details': diagnostic,
-                                                'token_usage': reporter.usage.finish(), 'presentation': reporter.references()})
+        guard_secondary(exc, diagnostic, 'finish_failure', lambda: store.finish_failure(run_id,
+            interrupted=isinstance(exc, KeyboardInterrupt), cancelled=cancelled, error_id=diagnostic['error_id']), runtime=runtime)
+        state = guard_secondary(exc, diagnostic, 'read_run_status', lambda: store.get(run_id), runtime=runtime)
+        status = state['execution_status'] if state else status
+        guard_secondary(exc, diagnostic, 'reporter.fail', lambda: reporter.fail(code, diagnostic['message'],
+            interrupted=isinstance(exc, KeyboardInterrupt), diagnostic=diagnostic), runtime=runtime)
+        guard_secondary(exc, diagnostic, 'update_run', lambda: runtime.update_run(run_id, status, error=code, finished=True), runtime=runtime)
+        guard_secondary(exc, diagnostic, 'run.json', lambda: atomic_json(logs / 'run.json',
+            {'flow_id': task.flow_id, 'run_id': run_id, 'task': task.manifest.id,
+             'status': status, 'error': code}), runtime=runtime)
+        guard_secondary(exc, diagnostic, 'failure.json', lambda: atomic_json(logs / 'failure.json',
+            {'flow_id': task.flow_id, 'run_id': run_id, 'status': status, 'error': code, 'error_details': diagnostic,
+             'token_usage': reporter.usage.finish(), 'presentation': reporter.references()}), runtime=runtime)
         if isinstance(exc, FlowError):
-            exc.details.update(flow_id=task.flow_id, run_id=run_id)
+            guard_secondary(exc, diagnostic, 'attach_error_ids',
+                lambda: exc.details.update(flow_id=task.flow_id, run_id=run_id), runtime=runtime)
         raise
     finally:
+        if supervisor is not None:
+            try:
+                supervisor.__exit__(None, None, None)
+            except BaseException as cleanup_error:
+                record_exception(cleanup_error, logs / 'cleanup', runtime=runtime, run_id=run_id)
         ACTIVE.reset(reporter_token)
-        runtime.run_logdir = previous_logs
+        ACTIVE_RUN.reset(run_token)
 
 
 def _run_workflow(runtime, task, workflow, source, output, *, run_id, offline=False, prepared=None):
     from .outputs import output_layout, artifact_directory, validate_tree, write_delivery_index
+    from .storage.artifacts import MANIFEST, build_artifact_set, validate_artifact_set
+    from .storage.delivery import (prepare_staging, promote_staging,
+                                   recover_transactions, delivery_root)
     adapter = task.load(runtime)
     source, output = Path(source).resolve(), Path(output).resolve()
     if not source.is_file():
@@ -188,40 +353,40 @@ def _run_workflow(runtime, task, workflow, source, output, *, run_id, offline=Fa
     if p['blocked']:
         raise FlowError('PREFLIGHT_BLOCKED', 'Resolve preflight issues', blockers=p['blocked'])
     runtime.initialize()
-    input_hash = sha256(source)
-    # Relative locations preserve job ownership after moving a whole workspace.
-    def location(path):
-        try:
-            return {'workspace_relative': path.relative_to(runtime.home.parent).as_posix()}
-        except ValueError:
-            return {'external_absolute': str(path)}
-    output_identity = location(output)
-    if output.is_relative_to((task.folder / 'outputs').resolve()) and output_layout(output, task.manifest.output_layout) == 'categorized-v1':
-        output_identity = {'flow_relative': output.relative_to(task.folder.resolve()).as_posix()}
-    job = digest({'flow_id': task.flow_id, 'input': input_hash, 'output': output_identity})[:32]
+    job, input_hash, location = _execution_identity(runtime, task, source, output)
+    from .core.run_context import current
+    current(runtime).job_id = job
     runtime.update_run(run_id, 'waiting', job_id=job)
     work = runtime.home / 'jobs' / task.flow_id / job
     logs = runtime.logs / task.flow_id / run_id
     with runtime.lock('output:' + str(output), timeout=1):
+        recover_transactions(output, RunStore(runtime))
+        transactions = delivery_root(output) / 'transactions'
+        if transactions.is_dir() and any(transactions.iterdir()):
+            raise FlowError('DELIVERY_RECOVERY_REQUIRED', '交付交易尚未完成恢復，請先處理診斷紀錄')
         validate_tree(output)
-        report_path = output / 'report.json'
+        previous_report = output / 'report.json'
         layout = output_layout(output, task.manifest.output_layout)
         if output.exists() and (not output.is_dir() or any(output.iterdir())):
-            if not report_path.is_file() or read_json(report_path).get('job_id') != job:
+            if not previous_report.is_file() or read_json(previous_report).get('job_id') != job:
                 raise FlowError('OUTPUT_EXISTS', 'Output contains another job; choose an empty directory')
         work.mkdir(parents=True, exist_ok=True)
         logs.mkdir(parents=True, exist_ok=True)
         if hasattr(adapter, 'check_output'):
             adapter.check_output(runtime, workflow, artifact_directory(output, layout))
-        output.mkdir(parents=True, exist_ok=True)
+        stage = prepare_staging(output, run_id)
+        report_path = stage / 'report.json'
         history = []
         atomic_json(report_path, {'job_id': job, 'status': 'preparing', 'runtime': __version__, 'output_layout': layout})
         try:
             runtime.update_run(run_id, 'preparing', job_id=job)
+            recorder = ACTIVE.get().event_recorder
             if prepared is None:
                 adapter.prepare(runtime, workflow, offline)
                 adapter.inspect_input(runtime, workflow, source)
+                recorder.record('resource.verify_started')
                 prepared = adapter.verify(runtime, workflow)
+                recorder.record('resource.verified')
             ACTIVE.get().environment_ready(prepared)
             snapshot = {'runtime': __version__, 'task': task.manifest.id, 'task_version': task.manifest.version,
                         'flow_id': task.flow_id, 'run_id': run_id,
@@ -230,8 +395,18 @@ def _run_workflow(runtime, task, workflow, source, output, *, run_id, offline=Fa
             atomic_json(work / 'snapshot.json', snapshot)
             ctx = Context(runtime, workflow, source, work, job, prepared, offline, logs, task.flow_id, run_id)
             runtime.update_run(run_id, 'running', job_id=job)
+            store = RunStore(runtime)
+            store.transition(run_id, 'preparing', 'running')
+            recorder.record('run.started')
             artifacts = {}
+            root_span = current(runtime).span_id
             for index, step in enumerate(workflow.steps, 1):
+                if current(runtime).cancel_requested.is_set():
+                    raise FlowError('RUN_CANCEL_REQUESTED', '已確認取消；停止後續節點')
+                current(runtime).attempt_id = store.create_attempt(run_id, step.id)
+                current(runtime).parent_span_id = root_span
+                current(runtime).span_id = 'span_' + uuid.uuid4().hex
+                recorder.record('step.started', attributes={'step_id': step.id})
                 label = adapter.step_title(step) if hasattr(adapter, 'step_title') else step.id
                 ACTIVE.get().enter(step, index, label)
                 deps = {name: artifacts[name] for name in step.needs}
@@ -242,14 +417,28 @@ def _run_workflow(runtime, task, workflow, source, output, *, run_id, offline=Fa
                               'settings': adapter.step_settings(workflow, step.handler, prepared),
                               'profile': adapter.profile_key(runtime, workflow),
                               'job': job if adapter.job_scoped(step.handler) else None})
+                cacheable = (step.cacheable if step.cacheable is not None else
+                             step.side_effects in {None, 'none'})
+                declared_set = bool(step.output_artifacts) or step.id in getattr(workflow, 'outputs', {}).values()
+                store.set_attempt_cache_key(current(runtime).attempt_id, key)
                 with runtime.lock('step:' + key, timeout=600):
-                    artifact = runtime.cached(key)
+                    artifact = runtime.cached(key) if cacheable else None
+                    if artifact and declared_set and validate_artifact_set(artifact, step.output_artifacts) is None:
+                        artifact = None
                     if artifact and hasattr(adapter, 'artifact_valid') and not adapter.artifact_valid(runtime, step.handler, artifact):
                         artifact = None
                     if artifact:
                         status = 'cached'
+                        if declared_set:
+                            store.record_step_artifact_set(run_id, current(runtime).attempt_id,
+                                                           key, artifact.parent / MANIFEST)
+                        store.transition_attempt(current(runtime).attempt_id, 'pending', 'cached')
+                        recorder.record('step.cache_hit', attributes={'step_id': step.id, 'cache_key': key})
                     else:
-                        target = runtime.home / 'artifacts' / key / 'result.json'
+                        store.transition_attempt(current(runtime).attempt_id, 'pending', 'running')
+                        artifact_folder = (key + '/' + run_id if cacheable and declared_set else
+                                           key if cacheable else key + '-' + run_id)
+                        target = runtime.home / 'artifacts' / artifact_folder / 'result.json'
                         target.parent.mkdir(parents=True, exist_ok=True)
                         atomic_json(logs / 'pending_step.json', {'flow_id': task.flow_id, 'run_id': run_id,
                             'job_id': job, 'step': step.id, 'handler': step.handler,
@@ -258,7 +447,14 @@ def _run_workflow(runtime, task, workflow, source, output, *, run_id, offline=Fa
                         artifact = Path(adapter.handlers[step.handler](ctx, step, deps, target)).resolve()
                         if not artifact.is_relative_to(target.parent.resolve()) or not artifact.is_file():
                             raise FlowError('HANDLER_CONTRACT', 'Handler must return a file in its assigned artifact directory')
-                        runtime.remember(key, artifact)
+                        if declared_set:
+                            build_artifact_set(artifact, step.output_artifacts)
+                            store.record_step_artifact_set(run_id, current(runtime).attempt_id,
+                                                           key, artifact.parent / MANIFEST)
+                        if cacheable:
+                            runtime.remember(key, artifact)
+                        store.transition_attempt(current(runtime).attempt_id, 'running', 'succeeded')
+                        recorder.record('step.finished', attributes={'step_id': step.id, 'artifact_hash': sha256(artifact)})
                         status = 'executed'
                     artifacts[step.id] = artifact
                     row = {'id': step.id, 'handler': step.handler, 'status': status, 'cache_key': key}
@@ -266,25 +462,60 @@ def _run_workflow(runtime, task, workflow, source, output, *, run_id, offline=Fa
                     ACTIVE.get().complete(status)
                     atomic_json(work / 'progress.json', {'flow_id': task.flow_id, 'run_id': run_id, 'job_id': job, 'steps': history})
                     atomic_json(logs / 'progress.json', {'flow_id': task.flow_id, 'run_id': run_id, 'job_id': job, 'steps': history})
+                current(runtime).attempt_id = None
+                current(runtime).span_id = root_span
+                current(runtime).parent_span_id = None
             terminal = artifacts[workflow.steps[-1].id]
-            if layout == 'categorized-v1' and hasattr(adapter, 'publish_outputs'):
-                report = adapter.publish_outputs(terminal, output, workflow)
+            if current(runtime).cancel_requested.is_set():
+                raise FlowError('RUN_CANCEL_REQUESTED', '已確認取消；停止成果發布')
+            recorder.record('delivery.staged', attributes={'output_layout': layout})
+            RunStore(runtime).transition(run_id, 'running', 'publishing')
+            if getattr(workflow, 'outputs', {}):
+                from .outputs import publish_named_outputs
+                report = publish_named_outputs(stage, workflow, artifacts, layout)
+            elif layout == 'categorized-v1' and hasattr(adapter, 'publish_outputs'):
+                report = adapter.publish_outputs(terminal, stage, workflow)
             else:
-                report = adapter.publish(terminal, artifact_directory(output, layout), workflow)
+                report = adapter.publish(terminal, artifact_directory(stage, layout), workflow)
             report['token_usage'] = ACTIVE.get().usage.finish()
             report['presentation'] = ACTIVE.get().references()
+            if not getattr(workflow, 'outputs', {}):
+                report.setdefault('compatibility_warnings', []).append('此流程沿用最後 Step 的 legacy 輸出映射。')
             report.update(flow_id=task.flow_id, run_id=run_id, job_id=job, runtime=__version__, steps=history, snapshot=snapshot, output=str(output), output_layout=layout)
             atomic_json(report_path, report)
-            write_delivery_index(output, report)
+            write_delivery_index(stage, report)
+            recorder.record('delivery.verified', attributes={'status': 'verified'})
             atomic_json(logs / 'report.json', report)
+            promote_staging(output, stage, run_id, store)
             return report
         except BaseException as exc:
-            diagnostic = record_exception(exc, logs, flow_id=task.flow_id, run_id=run_id, job_id=job,
+            run_context = current(runtime)
+            active_attempt = run_context.attempt_id if run_context else None
+            diagnostic = record_exception(exc, logs, runtime=runtime, flow_id=task.flow_id, run_id=run_id, job_id=job,
                                           launch_id=launcher_id(runtime), step=ACTIVE.get().step_id)
-            failure = {'job_id': job, 'status': 'interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed',
+            state = guard_secondary(exc, diagnostic, 'read_run_status', lambda: RunStore(runtime).get(run_id), runtime=runtime)
+            if state and state['execution_status'] == 'publishing':
+                try:
+                    ACTIVE.get().event_recorder.record('delivery.failed', severity='ERROR',
+                        attributes={'code': exc.code if isinstance(exc, FlowError) else type(exc).__name__})
+                except Exception:
+                    pass
+            if active_attempt:
+                try:
+                    ACTIVE.get().event_recorder.record('step.failed', severity='ERROR',
+                        attributes={'step_id': ACTIVE.get().step_id or 'unknown',
+                                    'code': exc.code if isinstance(exc, FlowError) else type(exc).__name__})
+                except Exception:
+                    pass
+            cancelled = isinstance(exc, FlowError) and exc.code in {'PROCESS_CANCELLED', 'RUN_CANCEL_REQUESTED'}
+            guard_secondary(exc, diagnostic, 'finish_attempt_failure', lambda: RunStore(runtime).finish_attempt_failure(active_attempt,
+                interrupted=isinstance(exc, KeyboardInterrupt), cancelled=cancelled, error_id=diagnostic['error_id']), runtime=runtime)
+            failure = {'job_id': job, 'status': 'cancelled' if cancelled else ('interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed'),
                        'flow_id': task.flow_id, 'run_id': run_id, 'output_layout': layout,
                        'error': exc.code if isinstance(exc, FlowError) else type(exc).__name__, 'error_details': diagnostic, 'steps': history,
-                       'token_usage': ACTIVE.get().usage.finish(), 'presentation': ACTIVE.get().references()}
-            atomic_json(report_path, failure)
-            atomic_json(logs / 'report.json', failure)
+                       'token_usage': guard_secondary(exc, diagnostic, 'usage.finish', lambda: ACTIVE.get().usage.finish(), runtime=runtime),
+                       'presentation': guard_secondary(exc, diagnostic, 'reporter.references', lambda: ACTIVE.get().references(), runtime=runtime)}
+            if stage.exists():
+                guard_secondary(exc, diagnostic, 'stage_failure', lambda: atomic_json(stage / 'failure.json', failure), runtime=runtime)
+            guard_secondary(exc, diagnostic, 'run_report', lambda: atomic_json(logs / 'report.json', failure), runtime=runtime)
             raise

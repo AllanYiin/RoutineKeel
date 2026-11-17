@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from .runtime import FlowError, atomic_bytes, atomic_json, digest, read_json, sha256
+from .runtime import FlowError, atomic_bytes, atomic_copy, atomic_json, digest, read_json, sha256
 
 LAYOUT = 'categorized-v1'
 
@@ -120,3 +120,31 @@ def write_delivery_index(output, report):
         'schema_version': 1, 'output_layout': LAYOUT, 'flow_id': report.get('flow_id'),
         'job_id': report.get('job_id'), 'run_id': report.get('run_id'), 'status': status,
         'report': 'report.json', 'files': files})
+
+
+def publish_named_outputs(stage, workflow, artifacts, layout):
+    """Deliver all declared terminal ArtifactSets without invoking a legacy publisher."""
+    from .storage.artifacts import validate_artifact_set
+
+    stage = Path(stage)
+    steps = {step.id: step for step in workflow.steps}
+    delivered = {}
+    for name, step_id in workflow.outputs.items():
+        primary = Path(artifacts[step_id])
+        manifest = validate_artifact_set(primary, steps[step_id].output_artifacts)
+        if manifest is None:
+            raise FlowError('ARTIFACT_SET_INVALID', '具名終點的 ArtifactSet 不完整', output=name)
+        destination = artifact_directory(stage, layout) / name
+        reject_links(destination)
+        paths = []
+        for row in manifest['files']:
+            source = primary.parent.joinpath(*row['path'].split('/'))
+            target = destination.joinpath(*row['path'].split('/'))
+            reject_links(target)
+            if not target.resolve().is_relative_to(stage.resolve()):
+                raise FlowError('DELIVERY_PATH', '具名產物越出 staging', output=name)
+            atomic_copy(source, target)
+            paths.append(target.relative_to(stage).as_posix())
+        delivered[name] = {'step_id': step_id, 'primary': (destination / manifest['primary']).relative_to(stage).as_posix(),
+                           'files': paths}
+    return {'status': 'complete', 'named_outputs': delivered}
