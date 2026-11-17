@@ -198,6 +198,14 @@ def build_workbench(app):
     )
     app.button(
         actions,
+        "檢查案例關係與版本",
+        app.review_folder_relations,
+        requires="active",
+        fill="x",
+        pady=(0, s(5)),
+    )
+    app.button(
+        actions,
         "AI 整理選取來源",
         app.analyze,
         requires="analysis",

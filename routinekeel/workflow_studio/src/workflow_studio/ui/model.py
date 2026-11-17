@@ -277,14 +277,122 @@ class StudioUIModel:
 
     def accept_candidate(self, index):
         p = self.project()
+        if type(index) is not int or not 0 <= index < len(self.candidates):
+            raise StudioError("EVIDENCE_INSUFFICIENT", "請重新選擇有效候選流程。")
         candidate = self.candidates[index]
-        with self.service() as studio, studio.repository.transaction():
-            revision = studio.save_ir(p.project_id, p.version, candidate["ir"], self.policy)
-            GoldenCases(studio).from_candidate(
-                p.project_id, studio.projects.get(p.project_id).version, candidate
+        with self.service() as studio:
+            revision = FolderDiscovery(studio).accept(
+                p.project_id, p.version, candidate, self.policy
             )
         self.build_id = self.approval_id = None
+        self.candidates = []
         return revision
+
+    def folder_graphs(self, source_id=None):
+        from ..discovery.evidence_graph import EvidenceGraphs
+
+        with self.service() as studio:
+            return [
+                g
+                for g in EvidenceGraphs(studio.repository).list(
+                    self.project_id, include_archived=True
+                )
+                if source_id is None or g["graph"]["source_id"] == source_id
+            ]
+
+    def folder_graph(self, graph_id):
+        from ..discovery.evidence_graph import EvidenceGraphs
+
+        with self.service() as studio, studio.repository.transaction():
+            graphs = EvidenceGraphs(studio.repository)
+            history = graphs.history(self.project_id, graph_id)
+            source = studio.sources.get(self.project_id, history[-1]["graph"]["source_id"])
+            return {
+                "history": history,
+                "project_version": studio.projects.get(self.project_id).version,
+                "source_current": source.status == "active"
+                and source.version == history[-1]["graph"]["source_version"],
+            }
+
+    def decide_folder_relation(
+        self, graph_id, expected_version, relation_id, action, actor, reason, *, alternative_id=None
+    ):
+        from ..discovery.evidence_graph import EvidenceGraphs
+        from ..registry.catalog import Catalog
+
+        Catalog._reviewer(actor, reason, required=True)
+        with self.service() as studio:
+            graphs = EvidenceGraphs(studio.repository)
+            if action == "replace":
+                result = graphs.replace_relation(
+                    self.project_id,
+                    graph_id,
+                    expected_version,
+                    relation_id,
+                    alternative_id,
+                    actor=actor,
+                    reason=reason,
+                )
+            else:
+                result = graphs.revise_relation(
+                    self.project_id,
+                    graph_id,
+                    expected_version,
+                    relation_id,
+                    decision=action,
+                    actor=actor,
+                    reason=reason,
+                )
+        self.candidates = []
+        return result
+
+    def revise_folder_roles(self, graph_id, expected_version, roles, actor, reason):
+        from ..discovery.evidence_graph import EvidenceGraphs
+        from ..registry.catalog import Catalog
+
+        Catalog._reviewer(actor, reason, required=True)
+        with self.service() as studio:
+            snapshot = EvidenceGraphs(studio.repository).active(self.project_id, graph_id)
+            result = FolderDiscovery(studio).analyze(
+                self.project_id,
+                snapshot["graph"]["source_id"],
+                expected_version,
+                roles=roles,
+                max_comparisons=snapshot["graph"]["comparison_limit"],
+                graph_id=graph_id,
+                actor=actor,
+                reason=reason,
+            )
+        self.candidates = []
+        return result
+
+    def candidates_from_graph(self, graph_id):
+        with self.service() as studio:
+            self.candidates = FolderDiscovery(studio).candidate_irs(
+                self.project_id, graph_id, self.policy
+            )
+        return self.candidates
+
+    def folder_asset(self, graph_id, version, path):
+        from ..discovery.evidence_graph import EvidenceGraphs
+
+        with self.service() as studio:
+            graph = EvidenceGraphs(studio.repository).get(self.project_id, graph_id, version)[
+                "graph"
+            ]
+            source = studio.sources.get(
+                self.project_id, graph["source_id"], version=graph["source_version"]
+            )
+            record = next((r for r in source.manifest["files"] if r["path"] == path), None)
+            if record is None:
+                raise StudioError("SOURCE_NOT_FOUND", "此檔案不在證據圖的來源版本。")
+            return {
+                "name": path,
+                "preview": record["preview"],
+                "content": studio.sources.content(
+                    self.project_id, source.source_id, path, version=source.version
+                ),
+            }
 
     def revision(self):
         p = self.project()

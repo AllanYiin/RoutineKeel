@@ -24,13 +24,35 @@ class FolderDiscovery:
     def __init__(self, studio):
         self.studio = studio
 
-    def analyze(self, project_id, source_id, expected_version, *, roles=None, max_comparisons=200):
+    def analyze(
+        self,
+        project_id,
+        source_id,
+        expected_version,
+        *,
+        roles=None,
+        max_comparisons=200,
+        graph_id=None,
+        actor=None,
+        reason=None,
+    ):
         if type(max_comparisons) is not int or not 1 <= max_comparisons <= 1000:
             raise StudioError("INPUT_INVALID", "樣本比對上限須介於 1 與 1000。")
         source = self.studio.sources.get(project_id, source_id)
         if source.status != "active":
             raise StudioError("SOURCE_REMOVED", "來源已移除。")
         roles = roles or {}
+        previous = None
+        if graph_id:
+            previous = EvidenceGraphs(self.studio.repository).active(project_id, graph_id)
+            if previous["graph"]["source_id"] != source_id:
+                raise StudioError("INPUT_INVALID", "角色修訂必須使用原證據圖的來源。")
+            prior_roles = {
+                r["path"]: r["role"]
+                for r in previous["graph"]["files"]
+                if r["role_basis"] == "user_supplied"
+            }
+            roles = {**prior_roles, **roles}
         files = source.manifest["files"]
         if not set(roles) <= {r["path"] for r in files} or not set(roles.values()) <= {
             "input",
@@ -138,7 +160,14 @@ class FolderDiscovery:
                     }
                 )
         graph["timestamps"] = "未將檔案時間或檔名順序視為因果證據；來源副本以內容指紋為準。"
-        return EvidenceGraphs(self.studio.repository).save(project_id, expected_version, graph)
+        if previous:
+            graph["decisions"] = previous["graph"].get("decisions", [])
+            EvidenceGraphs.audit(
+                graph, "roles", actor, reason, roles=roles, previous_version=previous["version"]
+            )
+        return EvidenceGraphs(self.studio.repository).save(
+            project_id, expected_version, graph, graph_id=graph_id
+        )
 
     def candidate_irs(self, project_id, graph_id, policy, *, max_candidates=20):
         """Enumerate bounded acyclic paths; every result remains an inferred candidate."""
@@ -146,15 +175,13 @@ class FolderDiscovery:
 
         if type(max_candidates) is not int or not 1 <= max_candidates <= 20:
             raise StudioError("INPUT_INVALID", "候選數須介於 1 與 20。")
-        snapshot = EvidenceGraphs(self.studio.repository).get(project_id, graph_id)
-        if snapshot["status"] != "active":
-            raise StudioError("EVIDENCE_INSUFFICIENT", "證據圖已封存。")
+        snapshot = EvidenceGraphs(self.studio.repository).active(project_id, graph_id)
         graph = snapshot["graph"]
         project = self.studio.projects.get(project_id)
         tools = self.studio.tools.allowed(policy)
         accepted = [
             r.ir
-            for r in self.studio.projects.revisions(project_id)
+            for r in self.studio.projects.revisions(project_id, include_discarded=True)
             if r.ir.get("ir_version") == "1.0" and r.status != "draft"
         ]
         ordinal = max((r["revision"] for r in accepted), default=0) + 1
@@ -218,7 +245,7 @@ class FolderDiscovery:
                         "source_id": graph["source_id"],
                         "source_version": graph["source_version"],
                         "evidence_locator": edge["to"],
-                        "claim": edge["claim"],
+                        "claim": self.relation_claim(snapshot, edge),
                         "confidence_label": "inferred",
                     }
                 )
@@ -254,3 +281,48 @@ class FolderDiscovery:
                 }
             )
         return results
+
+    @staticmethod
+    def relation_claim(snapshot, edge):
+        from ..project.models import canonical_json
+
+        return (
+            f"{edge['from']} → {edge['to']}；{edge['tool']}@{edge['tool_version']}；"
+            f"參數 {canonical_json(edge['parameters'])}。{edge['claim']} "
+            f"依據 {snapshot['graph_id']} v{snapshot['version']} / {edge['relation_id']}。"
+        )
+
+    def accept(self, project_id, expected_version, candidate, policy):
+        import copy
+
+        from ..governance.evidence import EvidenceRecords
+        from ..verifier.golden_cases import GoldenCases
+
+        with self.studio.repository.transaction():
+            self.studio.projects._editable(
+                self.studio.repository.connection, project_id, expected_version
+            )
+            snapshot = EvidenceGraphs(self.studio.repository).active(
+                project_id, candidate["graph_id"]
+            )
+            if snapshot["version"] != candidate["graph_version"]:
+                raise StudioError("REVISION_CONFLICT", "關係決策已改變，請重新產生候選。")
+            if candidate not in self.candidate_irs(project_id, candidate["graph_id"], policy):
+                raise StudioError(
+                    "REVISION_CONFLICT", "候選與目前來源、目標或工具不符，請重新比對。"
+                )
+            payload = copy.deepcopy(candidate["ir"])
+            edges = {r["relation_id"]: r for r in snapshot["graph"]["relations"]}
+            for evidence, identity in zip(payload["evidence"], candidate["relations"], strict=True):
+                edge = edges[identity]
+                decision = edge.get("verified_by") or {}
+                if edge["confidence_label"] == "human_confirmed" and decision.get("reason"):
+                    evidence["verified_by"] = EvidenceRecords(self.studio.repository).record(
+                        project_id, evidence, actor=decision["actor"], reason=decision["reason"]
+                    )
+                    evidence["confidence_label"] = "human_confirmed"
+            revision = self.studio.save_ir(project_id, expected_version, payload, policy)
+            GoldenCases(self.studio).from_candidate(
+                project_id, self.studio.projects.get(project_id).version, candidate
+            )
+            return revision

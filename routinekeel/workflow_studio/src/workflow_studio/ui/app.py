@@ -465,20 +465,28 @@ class StudioApp:
             raise StudioError("SOURCE_NOT_FOUND", "請先選擇成功案例資料夾。")
         self.status.set("正在比對本機樣本，尋找有證據的處理方式……")
 
-        def done(result):
-            candidates, unknowns = result
-            self.candidate_choice["values"] = [
-                f"候選 {i + 1} · " + " → ".join(self.tool_title(n) for n in c["ir"]["nodes"])
-                for i, c in enumerate(candidates)
-            ]
-            if candidates:
-                self.candidate_choice.current(0)
-            self.status.set(
-                f"找到 {len(candidates)} 個候選；{len(unknowns)} 項仍缺少證據。請查看後再採用。"
-            )
-            self.refresh_project()
+        self._background(
+            lambda: self.model.folder_candidates(self.selected_source), self.show_folder_candidates
+        )
 
-        self._background(lambda: self.model.folder_candidates(self.selected_source), done)
+    def show_folder_candidates(self, result):
+        candidates, unknowns = result
+        self.candidate_choice.set("")
+        self.candidate_choice["values"] = [
+            f"候選 {i + 1} · " + " → ".join(self.tool_title(n) for n in c["ir"]["nodes"])
+            for i, c in enumerate(candidates)
+        ]
+        if candidates:
+            self.candidate_choice.current(0)
+        self.status.set(
+            f"找到 {len(candidates)} 個候選；{len(unknowns)} 項仍缺少證據。可先檢查案例關係再採用。"
+        )
+        self.refresh_project()
+
+    def review_folder_relations(self):
+        from .folder_dialog import open_folder_review
+
+        open_folder_review(self)
 
     def accept_candidate(self):
         index = self.candidate_choice.current()
