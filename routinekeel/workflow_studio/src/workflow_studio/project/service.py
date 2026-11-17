@@ -121,14 +121,49 @@ class ProjectService:
         return self.set_status(project_id, expected_version, ProjectStatus.ACTIVE)
 
     def add_revision(self, project_id: str, expected_version: int, ir: dict) -> Revision:
+        return self._commit_revision(project_id, expected_version, ir, "draft")
+
+    def save_ir(self, project_id: str, expected_version: int, payload: dict, tools) -> Revision:
+        from ..ir.validator import validate_ir
+
+        versions = {
+            (row[0], row[1])
+            for row in self.repository.connection.execute(
+                """SELECT s.source_id,v.version FROM studio_sources s JOIN studio_source_versions v
+            ON s.source_id=v.source_id WHERE s.project_id=?""",
+                (project_id,),
+            )
+        }
+        validated = validate_ir(payload, tools, source_versions=versions)
+        return self._commit_revision(
+            project_id, expected_version, validated.model_dump(), "ir_ready"
+        )
+
+    def _commit_revision(self, project_id, expected_version, ir, status):
         payload = canonical_json(ir)
         digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
         identity = "revision_" + uuid4().hex
         with self.repository.transaction() as db:
             project = self._editable(db, project_id, expected_version)
+            if status == "ir_ready":
+                import json
+
+                accepted = [
+                    json.loads(row[0])
+                    for row in db.execute(
+                        "SELECT ir_json FROM studio_revisions WHERE project_id=? AND status<>'draft'",
+                        (project_id,),
+                    )
+                ]
+                accepted = [item for item in accepted if item.get("ir_version") == "1.0"]
+                if accepted and any(item["workflow_id"] != ir["workflow_id"] for item in accepted):
+                    raise StudioError("REVISION_CONFLICT", "同一專案的工作流識別碼必須保持穩定。")
+                expected_ir = max((item["revision"] for item in accepted), default=0) + 1
+                if ir["revision"] != expected_ir:
+                    raise StudioError("REVISION_CONFLICT", f"IR 預期版本為 {expected_ir}。")
             db.execute(
-                "INSERT INTO studio_revisions VALUES (?,?,?,?,?,'draft',0,?)",
-                (identity, project_id, project.current_revision_id, payload, digest, now()),
+                "INSERT INTO studio_revisions VALUES (?,?,?,?,?,?,0,?)",
+                (identity, project_id, project.current_revision_id, payload, digest, status, now()),
             )
             db.execute(
                 "UPDATE studio_projects SET current_revision_id=?,version=version+1,updated_at=? WHERE project_id=?",

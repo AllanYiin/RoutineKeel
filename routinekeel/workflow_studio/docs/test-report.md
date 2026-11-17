@@ -58,3 +58,13 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
 - Stage 1 commit：`b525708`；Stage 2 來源副本／預覽與清單設計見 source-formats.md。
 - Stage 2 最後回歸：底座環境執行 Studio／baseline／decoupling 為 33 passed、3 skipped
   （Pillow 不在底座環境，三個來源測試模組明示跳過）；Studio 獨立環境重跑為 54 passed、0 skipped。
+
+## Stage 3
+
+- Studio 專屬環境 `python -m pytest tests/studio -q`：80 passed，2.13 秒。
+- 底座環境 `python -m pytest tests/test_baseline_contract.py tests/test_decoupling.py -q`：9 passed，3.34 秒。
+- Ruff check 通過。新增 Pydantic 2.14.3，Studio IR 與 Runtime 契約分離。
+- 包含未知版本／欄位／強轉、缺少工具、循環／非法依賴、型別、路徑、政策、證據、
+  JSON Schema 同步、版本衝突與不可變儲存 roundtrip。詳見 workflow-ir.md。
+- Stage 2 commit：`6cb66ec`。本階段無 DB schema 變更；回滾前備份 Studio DB，
+  舊版只可保留未知 IR 草稿，不能將其當成已驗證可發布版本。

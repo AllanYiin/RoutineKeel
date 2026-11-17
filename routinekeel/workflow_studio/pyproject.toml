@@ -11,6 +11,7 @@ readme = "README.md"
 license = "MIT"
 dependencies = [
     "pillow>=13.0.0",
+    "pydantic==2.14.3",
 ]
 
 [tool.hatch.build.targets.wheel]
