@@ -2,49 +2,50 @@
 
 ## SNAPSHOT — 當前狀態
 
-最後更新：2026-11-17T08:01+08:00
+最後更新：2026-11-17T08:06+08:00
 交接狀態：verified
 
 ### 目標與授權範圍
 
-依 RoutineKeel 底座階段規劃及使用者核定的 MCP 持久化佇列修訂，完成 Stage 0–13 與驗證提交。
+依 RoutineKeel 底座階段規劃及使用者核定的 MCP 持久化佇列修訂，完成 Stage 0–13、逐階段驗收並交付。
 
 ### 目前進度
 
-Stage 0–11 已提交（Stage10 16d0fd6、Stage11 ad753e0）。Stage12 本機整合候選已提交 a0495ba，Windows 382 passed／21 skipped，WSL Linux 390 passed／13 skipped；正式 GitHub Actions 與 macOS 未執行，Stage12 DoD 尚未完成。Stage13 README／架構／回滾／已知問題／release checklist 等文件草稿仍在工作樹，未提交或發布。原有 .idea/ 七個 staged 檔案屬使用者變更。
+Stage 0–11 已提交，Stage10 16d0fd6、Stage11 ad753e0。Stage12 本機候選 a0495ba、Stage13 文件候選 f69402f 已提交；Windows/WSL Linux 本機回歸與發行包/文件檢核通過，但正式 GitHub Actions、macOS 及真人操作走查未執行，Stage12/13 DoD 及發布均未完成。工作樹僅有使用者 .idea/ 七個 staged 變更。
 
 ### 下一步
 
-等待使用者對推送 codex/ 分支與消耗 GitHub Actions 額度執行 Ubuntu/Windows/macOS CI 的答覆；若授權，先使候選與手動矩陣能在目標分支觸發，再追蹤完整結果並修缺陷。其後完成 Stage12 DoD，驗證 Stage13 最終文件/冷啟動/回滾與版本 Gate，再依授權處理發行；未授權前不推送或執行付費 CI。
+等待使用者對推送 codex/ 分支及耗用 GitHub Actions 額度執行 Ubuntu/Windows/macOS CI 的答覆。若授權，先讓 PR workflow 能在候選分支執行跨平台矩陣，推送並追蹤至完成，修正任何失敗，再完成 Stage12/13 Gate。若不授權，保留本機候選並如實回報外部驗收缺口。
 
 ### DECISIONS
 
 - MCP stdio 只驗證/入列/用 execution_id 查詢與取消；獨立 queue-worker 執行，v004 佇列已提交。
-- Stage12 本機候選含 100 次混合 Run/Action、Action/Demo Step Attempt 前後事件、20 交付故障點、四類秘密遮罩、v004 缺表/輸入漂移、平台 sh skip 與手動矩陣。
-- Stage13 文件在 source.zip；根 README 面向非技術使用者，發行前要保留未驗限制，不把草稿當正式發行。
+- Stage12 本機候選 a0495ba；Stage13 文件候選 f69402f，均不宣稱全 Gate 完成。
+- GitHub macOS runner 在私有 repo 可能消耗付費 CI 額度；尚未推送或觸發。
+- 原有 .idea staged 屬使用者，所有提交明確排除。
 
 ### LANDMINES
 
-- GitHub CLI token invalid；GitHub 連接器可讀私有 RoutineKeel 並有 push 權限，但目前無 workflow_dispatch 工具；外部 CI 需要使用者授權與可行觸發路徑。
-- 平台矩陣為 workflow_dispatch-only，GitHub 可能要求 workflow 已在 default branch 才可手動觸發；若要 PR 前驗收需調整既有 PR workflow，需注意 CI 額度。
-- macOS Finder、Tk、程序控制和實際舊 wheel 回滾未驗；非技術使用者真人走查未做。
-- .idea staged 屬使用者，不得納入後續提交。
+- 本機 gh auth token invalid，但 GitHub 連接器可讀 RoutineKeel 且具 push 權限；git ls-remote main refs/heads/main 在非 sandbox 可讀，推送/CI 仍待授權。
+- 手動 platform-checks workflow 可能要求 workflow 已在預設 main 才能 dispatch；PR 前需將矩陣加至既有 PR workflow 或用其他受控方法。
+- macOS Finder/Tk/程序控制與實際舊 wheel 回退、非技術真人走查未驗。
+- M2 全域 100% 仍只有已測基座路徑證據；報告未宣稱未知邊界通過。
 
 ### 證據索引
 
-- git log -1 a0495ba 與 Stage10/11 commits
-- routinekeel/flow_base/docs/test-report.md、本機測試輸出與 bench_run_status.py
-- routinekeel/flow_base/docs/release-checklist.md 草稿
-- dist/release/flow_base-0.2.12.zip 的 SHA256SUMS/入口/文件檢查
-- git status 顯示 Stage13 草稿與 .idea staged
+- git log -3：f69402f、a0495ba、16d0fd6
+- git status --short 僅 .idea/ 七個 staged 使用者檔案
+- routinekeel/flow_base/docs/test-report.md 與 release-checklist.md
+- dist/release/flow_base-0.2.12.zip 本機 SHA、內容與 Worker 冷啟動
+- GitHub 連接器可讀 private RoutineKeel，gh auth status invalid，git ls-remote main 讀到 4f7ecf25
 
 ### VALIDATION
 
-- Stage12 Windows 完整回歸 — PASS：382 passed、21 skipped、0 failed，212.82 秒；Stage12 候選提交 a0495ba。
-- Stage12 WSL Linux 完整回歸 — PASS：OpenClawGateway /tmp 隔離副本建置 Valid YES、390 passed、13 skipped，94.33 秒。
-- Stage13 發行包校驗 — PASS：0.2.12 三 ZIP 的 SHA256SUMS 全數正確；source.zip 包含架構/已知問題/回滾/檢核草稿；乾淨 0.2.12 queue_worker.bat --once 無 MCP 選配 exit0。
-- Stage12 正式 CI/macOS — NOT_RUN：尚未推送或觸發；GitHub CLI 認證失效，使用者 CI 授權待答。
-- Stage13 最終 Gate — NOT_RUN：文件 link check 0 缺失、合成 example JSON 有效；真人走查、舊版 wheel rollback 與最終 CI/發布未執行。
+- Windows 完整回歸 — PASS：382 passed、21 skipped、0 failed，212.82 秒，包含 Stage10 佇列與 Stage12 新故障案例。
+- WSL Linux 完整回歸 — PASS：OpenClawGateway /tmp 隔離副本 Valid YES、390 passed、13 skipped，94.33 秒。
+- M7 SSD 延遲 — PASS：C: NVMe 5,000 Run／200 查詢 p95 9.78ms <200ms；E: USB 外接磁碟不當作 SSD 證據。
+- Stage13 本機封裝與文件 — PASS：release.py Valid YES；三 ZIP SHA256SUMS 正確；source.zip 含五份文件；相對連結 0 缺失；合成診斷 JSON 有效；乾淨 queue_worker.bat --once 無 MCP 選配 exit0。
+- 正式 CI/macOS/真人走查 — NOT_RUN：未推送或觸發，CI 額度授權待使用者答覆。
 
 # HISTORY
 
@@ -130,3 +131,10 @@ Stage12 新增 Action/Demo 失敗事件、佇列輸入漂移、v004 缺表與 10
 <!-- devnote-review:a3cbda4e73ba5a53da111448 -->
 
 Stage12 本機候選 a0495ba 已提交但正式 CI/macOS 仍待；Windows 382 passed/21 skipped，WSL Linux 390 passed/13 skipped。Stage13 文件 link 0 缺失，三 ZIP SHA 正確；乾淨 queue_worker.bat --once 在未裝 MCP 時啟動成功。GitHub 外部 CI 授權待使用者答覆。
+
+
+## [2026-11-17T08:06+08:00] Stage13 文件候選與外部驗收待授權
+
+<!-- devnote-review:4aaf8eeedfe4317ddd7163d4 -->
+
+Stage13 文件候選 f69402f 已提交；本機三 ZIP SHA、source 文件、連結與 Worker 冷啟動通過。Windows 382 passed/21 skipped、WSL Linux 390 passed/13 skipped。正式 Ubuntu/Windows/macOS CI 與真人走查未完成，等待使用者對可能付費的 CI 推送/執行授權。
