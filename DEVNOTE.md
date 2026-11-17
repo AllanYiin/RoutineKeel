@@ -2,50 +2,49 @@
 
 ## SNAPSHOT — 當前狀態
 
-最後更新：2026-11-17T08:06+08:00
+最後更新：2026-11-17T08:35+08:00
 交接狀態：verified
 
 ### 目標與授權範圍
 
-依 RoutineKeel 底座階段規劃及使用者核定的 MCP 持久化佇列修訂，完成 Stage 0–13、逐階段驗收並交付。
+依 RoutineKeel 底座階段規劃及使用者核定的 MCP 佇列修訂完成 Stage 0–13、逐階段驗收並交付。
 
 ### 目前進度
 
-Stage 0–11 已提交，Stage10 16d0fd6、Stage11 ad753e0。Stage12 本機候選 a0495ba、Stage13 文件候選 f69402f 已提交；Windows/WSL Linux 本機回歸與發行包/文件檢核通過，但正式 GitHub Actions、macOS 及真人操作走查未執行，Stage12/13 DoD 及發布均未完成。工作樹僅有使用者 .idea/ 七個 staged 變更。
+Stage 0–12 的程式與整合 Gate 已提交並在 GitHub draft PR #3 的 Ubuntu/Windows/macOS CI 通過；Stage10 16d0fd6，Stage11 ad753e0，Stage12 候選 a0495ba，後續跨平台修正 d08c5c4/24354da。Stage13 文件候選 f69402f；最後 CI 結果與真人走查清單正在更新，PR 保持 draft、未合併未發布。原有 .idea/ 七個 staged 檔案屬使用者變更。
 
 ### 下一步
 
-等待使用者對推送 codex/ 分支及耗用 GitHub Actions 額度執行 Ubuntu/Windows/macOS CI 的答覆。若授權，先讓 PR workflow 能在候選分支執行跨平台矩陣，推送並追蹤至完成，修正任何失敗，再完成 Stage12/13 Gate。若不授權，保留本機候選並如實回報外部驗收缺口。
+將 CI run #9 的三平台結果與未覆蓋 Mac Finder/Tk 真人走查寫入報告/手冊，提交並推送 doc-only 更新，再追蹤最後文件變更的 CI 終態。等待使用者對未接觸程式碼的操作走查回覆；未取得人工證據與明確合併/發布授權前不宣稱 Stage13 發行完成。
 
 ### DECISIONS
 
-- MCP stdio 只驗證/入列/用 execution_id 查詢與取消；獨立 queue-worker 執行，v004 佇列已提交。
-- Stage12 本機候選 a0495ba；Stage13 文件候選 f69402f，均不宣稱全 Gate 完成。
-- GitHub macOS runner 在私有 repo 可能消耗付費 CI 額度；尚未推送或觸發。
-- 原有 .idea staged 屬使用者，所有提交明確排除。
+- Stage10 MCP 以 execution_id/SQLite v004/獨立 queue-worker 執行，MCP Client 無狀態查詢且不派生 Worker。
+- PR #3 使用 Ubuntu build 加 Windows2025/macOS15 Gate；publish 需三平台成功，draft PR 不合併/不發布。
+- Windows cp1252 與 macOS 缺 process_started_at 已依第一次/第二次 CI 日誌修正；發行啟動器和 CI 明確用 UTF-8。
+- Stage12 指標依三平台自動測試與 C: NVMe p95 9.78ms 驗收；Mac GUI/Finder headless 未覆蓋須列明。
 
 ### LANDMINES
 
-- 本機 gh auth token invalid，但 GitHub 連接器可讀 RoutineKeel 且具 push 權限；git ls-remote main refs/heads/main 在非 sandbox 可讀，推送/CI 仍待授權。
-- 手動 platform-checks workflow 可能要求 workflow 已在預設 main 才能 dispatch；PR 前需將矩陣加至既有 PR workflow 或用其他受控方法。
-- macOS Finder/Tk/程序控制與實際舊 wheel 回退、非技術真人走查未驗。
-- M2 全域 100% 仍只有已測基座路徑證據；報告未宣稱未知邊界通過。
+- Stage13 手冊規定未接觸程式碼的人走一次安裝/範例/診斷/恢復，尚待使用者安排；macOS Finder/Tk 互動桌面不由 CI 證明。
+- 實際舊版 wheel 回退未演練，只有 SQLite 備份 checksum/restore 測試；發布前需決策。
+- 最後文件更新尚未跑其對應 head commit 的完整 CI；PR 仍 draft。
+- .idea staged 屬使用者，所有提交與推送均排除。
 
 ### 證據索引
 
-- git log -3：f69402f、a0495ba、16d0fd6
-- git status --short 僅 .idea/ 七個 staged 使用者檔案
+- draft PR https://github.com/AllanYiin/RoutineKeel/pull/3
+- GitHub Actions run 43987170358 各 job logs
 - routinekeel/flow_base/docs/test-report.md 與 release-checklist.md
-- dist/release/flow_base-0.2.12.zip 本機 SHA、內容與 Worker 冷啟動
-- GitHub 連接器可讀 private RoutineKeel，gh auth status invalid，git ls-remote main 讀到 4f7ecf25
+- routinekeel/flow_base/docs/user-guide.md 新增走查清單
+- git status：.idea 七個 staged 使用者檔案與待提交 docs
 
 ### VALIDATION
 
-- Windows 完整回歸 — PASS：382 passed、21 skipped、0 failed，212.82 秒，包含 Stage10 佇列與 Stage12 新故障案例。
-- WSL Linux 完整回歸 — PASS：OpenClawGateway /tmp 隔離副本 Valid YES、390 passed、13 skipped，94.33 秒。
-- M7 SSD 延遲 — PASS：C: NVMe 5,000 Run／200 查詢 p95 9.78ms <200ms；E: USB 外接磁碟不當作 SSD 證據。
-- Stage13 本機封裝與文件 — PASS：release.py Valid YES；三 ZIP SHA256SUMS 正確；source.zip 含五份文件；相對連結 0 缺失；合成診斷 JSON 有效；乾淨 queue_worker.bat --once 無 MCP 選配 exit0。
-- 正式 CI/macOS/真人走查 — NOT_RUN：未推送或觸發，CI 額度授權待使用者答覆。
+- GitHub PR CI run #9 — PASS：https://github.com/AllanYiin/RoutineKeel/actions/runs/43987170358 commit 24354dac：Ubuntu 401 passed/3 skipped、macOS15 402 passed/2 skipped、Windows2025 383 passed/21 skipped；三 job success、publish skipped；Ubuntu三 ZIP SHA256SUMS OK。
+- 本機 Windows/WSL — PASS：Windows 382 passed/21 skipped，WSL Linux 390 passed/13 skipped；M7 C:NVMe 5,000 Run p95 9.78ms。
+- Stage13 文件候選 — PASS：source.zip 含架構/known issues/release checklist/upgrade/合成診斷，三 ZIP SHA正確，文件連結0缺失；user-guide 新增真人走查步驟，後續需重建驗證。
+- Mac Finder/Tk 真人走查與舊 wheel rollback — NOT_RUN：headless CI不具互動視窗；使用者走查回覆待處理；舊 wheel回退未演練。
 
 # HISTORY
 
@@ -138,3 +137,10 @@ Stage12 本機候選 a0495ba 已提交但正式 CI/macOS 仍待；Windows 382 pa
 <!-- devnote-review:4aaf8eeedfe4317ddd7163d4 -->
 
 Stage13 文件候選 f69402f 已提交；本機三 ZIP SHA、source 文件、連結與 Worker 冷啟動通過。Windows 382 passed/21 skipped、WSL Linux 390 passed/13 skipped。正式 Ubuntu/Windows/macOS CI 與真人走查未完成，等待使用者對可能付費的 CI 推送/執行授權。
+
+
+## [2026-11-17T08:35+08:00] 三平台 PR CI 通過，Stage13 人工 Gate 待驗
+
+<!-- devnote-review:c76f4a3b22a97acd2afdc5ce -->
+
+PR #3 第三輪 CI Ubuntu401/3skip、macOS402/2skip、Windows383/21skip 均成功；前兩輪揭露並修復 Windows cp1252 和 macOS 程序出生時間。Stage12 整合 Gate 已具三平台證據。Stage13 更新測試報告與真人走查步驟，仍待最後 doc-only CI、Mac GUI真人走查及發布授權。

@@ -1,6 +1,6 @@
-# RoutineKeel 整合驗收紀錄（Stage 12，進行中）
+# RoutineKeel 整合驗收紀錄（Stage 12 三平台 CI 通過）
 
-本報告依 `RoutineKeel_flow_base_spec_v1.2.2.zip` 的 AC-01～08、M1～M8，以及使用者後續核定的 `specs/mcp-queue-v1.md` 修訂，記錄實際證據。Stage 10 已改為持久化 `execution_id` 與另行啟動的 queue-worker；MCP Client 不直接派生執行程序。Stage 12 的 macOS／正式 CI 與部分全域指標尚未驗收；下表不是全系統交付聲明。
+本報告依 `RoutineKeel_flow_base_spec_v1.2.2.zip` 的 AC-01～08、M1～M8，以及使用者後續核定的 `specs/mcp-queue-v1.md` 修訂，記錄實際證據。Stage 10 已改為持久化 `execution_id` 與另行啟動的 queue-worker；MCP Client 不直接派生執行程序。三平台 PR CI 已通過；macOS Finder／Tk 真人操作與舊版 wheel 的實際回退仍未驗證。
 
 ## 測試環境與重現命令
 
@@ -12,18 +12,19 @@
 - MCP SDK Client：`python -m pytest tests/test_mcp_stdio.py -q` → **5 passed**，涵蓋新版／legacy 協商、Client 關閉重連、Worker 未啟動先排隊、取消、路徑遮罩及 Windows process netstat 無 TCP listening port。`tests/test_execution_queue.py tests/test_mcp_stdio.py tests/test_integration_mcp_cli.py` 合計 **11 passed**（加入 netstat 測試後）。
 - M7：在 v004 上執行 `routinekeel/flow_base/.venv/Scripts/python.exe tests/bench_run_status.py --root <C: 已授權暫存根>` → C: NVMe 上 5,000 Run、200 次查詢，p50 **8.82 ms**、p95 **9.78 ms**、max **15.07 ms**，低於 200 ms；不含 Worker 啟動。E: USB 外接磁碟同法 p95 **21.91 ms**，只供比較，不作 SSD 門檻證據。
 - Windows 發行 ZIP 冷啟動：在工作區一次性乾淨目錄解壓 `flow_base-0.2.11.zip`＋`flow_copy-0.2.2.zip`，執行 `run_app.bat list` → exit 0、可見 `ai_flow02`；執行 `run_app.bat run --task ai_flow02 --input <檔案> --output <成果>` → exit 0、成果內容正確；`run_app.bat doctor --format=json` → exit 1（資源狀態 unknown 的預期診斷碼，JSON 含 checks）。首次 sandbox 內 uv 解壓 Python 被 ACL 拒絕；在受控非 sandbox 的同機重測通過。冷啟動揭露 wheel/`__version__` 原本不一致，已修為 0.2.11 並在 release.py 加入建置前比對。
-- 乾淨 0.2.12 發行包另完成 Windows 端到端測試：`start.ps1 --install-mcp` exit 0、已安裝 wheel 回報 0.2.12；由另一個程序啟動 queue-worker，官方 SDK Client 提交後關閉再重連，查得 `succeeded`、同一 `execution_id` 關聯的 `run_id` 與正確成果，Worker exit 0。發布前仍須在正式 CI／macOS 平台取得獨立證據。
+- 乾淨 0.2.12 發行包另完成 Windows 端到端測試：`start.ps1 --install-mcp` exit 0、已安裝 wheel 回報 0.2.12；由另一個程序啟動 queue-worker，官方 SDK Client 提交後關閉再重連，查得 `succeeded`、同一 `execution_id` 關聯的 `run_id` 與正確成果，Worker exit 0。
+- GitHub draft PR [#3](https://github.com/AllanYiin/RoutineKeel/pull/3) 的 [Actions run #9](https://github.com/AllanYiin/RoutineKeel/actions/runs/43987170358)，commit `24354dac`：Ubuntu build **401 passed、3 skipped**，三個 ZIP SHA256SUMS 正確；macOS 15 **402 passed、2 skipped**；Windows 2025 **383 passed、21 skipped**。三個測試 job 與整體 run 都為 `success`；draft PR 的 publish job 為 `skipped`。前兩輪 CI 揭露 Windows cp1252 輸出／測試環境與 macOS 程序出生時間缺口，修正後第三輪全通過。
 
 ## AC 驗收
 
 | 項目 | 現況 | 證據與缺口 |
 |---|---|---|
-| AC-01 Run 隔離 | 通過（Windows） | `test_integration_recovery.py` 以 4 個 caller 完成 100 次混合操作（90 Action、10 個不同輸入 Run），逐項核對唯一 run_id、Run 事件、Action marker 與成果檔，誤歸屬 0 件；另有 100 次 claim/CAS 與多程序 event writer 測試。 |
+| AC-01 Run 隔離 | 三平台 CI 通過 | `test_integration_recovery.py` 以 4 個 caller 完成 100 次混合操作（90 Action、10 個不同輸入 Run），逐項核對唯一 run_id、Run 事件、Action marker 與成果檔，誤歸屬 0 件；另有 100 次 claim/CAS 與多程序 event writer 測試。 |
 | AC-02 中斷恢復 | Windows／Linux 具恢復證據 | Stage 3 的 kill/reopen、Stage 7 journal 恢復與新版 `test_worker_reconnects_run_reserved_before_queue_link_is_saved` 通過；Client 關閉不再是 Worker 父程序，重連查詢可取得原 `execution_id` 的結果。 |
 | AC-03 診斷次故障 | 通過 | `test_diagnostics_fallback.py`、`test_event_trace.py` 的磁碟／DB／Reporter 故障測試保留主例外。 |
 | AC-04 多產物快取 | 通過 | `test_artifact_sets.py` 遺失 sidecar 與 hash 錯誤時拒絕 cache hit。 |
-| AC-05 MCP stdio | Windows／Linux 本機通過 | `test_mcp_stdio.py` 新版／legacy SDK 協商、七工具、路徑限制、Client 關閉重連、Worker 晚啟動與取消通過；`test_integration_mcp_cli.py` 證明 CLI/MCP 的 execution_id、run_id、狀態與成果一致；Windows `netstat` 對 MCP Server PID 無 TCP listening port。正式 CI／macOS 尚未執行。 |
-| AC-06 專案續編與預覽 | 通過（Windows） | `test_ui_contract.py` 以 Tk 按鈕完成範例、重開與複製專案後查舊成果；PNG/GIF、UTF-8 預覽與等比縮放；不支援格式明示原因。macOS／Linux GUI 尚未實機驗收。 |
+| AC-05 MCP stdio | 三平台 CI 通過 | `test_mcp_stdio.py` 新版／legacy SDK 協商、七工具、路徑限制、Client 關閉重連、Worker 晚啟動與取消通過；`test_integration_mcp_cli.py` 證明 CLI/MCP 的 execution_id、run_id、狀態與成果一致；Windows `netstat` 對 MCP Server PID 無 TCP listening port。 |
+| AC-06 專案續編與預覽 | Windows UI 測試通過，macOS GUI 未覆蓋 | `test_ui_contract.py` 以 Tk 按鈕完成範例、重開與複製專案後查舊成果；PNG/GIF、UTF-8 預覽與等比縮放；不支援格式明示原因。macOS headless runner 的 Finder／Tk 視窗操作未覆蓋。 |
 | AC-07 敏感資訊 | 通過（本機匯出） | `test_security_diagnostics.py` 同時注入 API key、Authorization、prompt、文件內容四類標記，分享包零洩漏，保留 `error_id`／錯誤碼；外部目標未授權時拒絕。 |
 | AC-08 LLM Streaming | 未啟用 | 本機診斷與 UI 不提供可選 LLM 說明；普通工作流不依賴 LLM。未宣稱已實作 Streaming 說明。 |
 
@@ -32,16 +33,16 @@
 | 指標 | 現況 | 證據與缺口 |
 |---|---|---|
 | M1 已知錯誤解釋 | 通過既有 Catalog 測試 | `test_diagnostic_cli.py` 覆蓋底座錯誤碼與繁中提示；整合介面仍需抽查。 |
-| M2 Run/Step 追蹤 | Windows／WSL 已測路徑通過，未宣稱全域 100% | 正式 Workflow、Action、Demo 的 Step Attempt 成功／失敗都有同 ID 的 `step.started` 與 `step.finished`／`step.failed` 測試；100 次 Run／Action 混合案例逐項核對前後事件與 run_id，缺漏 0 件。macOS／未測故障邊界仍保留限制。 |
+| M2 Run/Step 追蹤 | 三平台 CI 已測路徑 100%，未知故障邊界不外推 | 正式 Workflow、Action、Demo 的 Step Attempt 成功／失敗都有同 ID 的 `step.started` 與 `step.finished`／`step.failed` 測試；100 次 Run／Action 混合案例逐項核對前後事件與 run_id，缺漏 0 件。原始碼中三處 `step.started` 均先建立 Attempt；完全無法落盤等硬體故障由 M2 原規格排除。 |
 | M3 100 次互不污染 | 通過（Windows） | `test_integration_recovery.py` 100 次實際 Run／Action 混合交錯，執行約 68 秒；Run ID、事件與 10 個不同成果標記誤歸屬 0 件。 |
 | M4 交易式交付 | 通過 20 故障點 | `test_atomic_delivery.py::test_failure_during_promotion_restores_previous_result` 的 20 個 `fault` 參數，加上 DB／磁碟／取消與 crash journal 測試；`test_integration_atomic_publish.py` 證明失敗的第二次交付不改變 Service 可見的舊成果。 |
 | M5 強制終止後恢復 | Windows／Linux 具恢復證據 | Stage 3 supervisor 身分／lease 測試、Stage 10 Worker 在 `run_id` 寫回佇列前崩潰後以 idempotency 領回測試均通過；MCP Client 關閉後由獨立 Worker 繼續完成。Worker／OS 同時強制終止的全組合未額外實測。 |
 | M6 分享診斷無洩漏 | 通過（本機匯出） | `test_security_diagnostics.py` 四類標記於分享 JSON 中 0 次出現，且保留安全錯誤碼與 ID。 |
 | M7 5,000 Run 查詢 | Windows NVMe 本機達標 | v004 的 `tests/bench_run_status.py` 在 C: NVMe 5,000 Run／200 次查詢 p95 **9.78 ms** < 200 ms；E: USB 外接磁碟結果不當作 SSD 證據。 |
-| M8 原流程回歸 | Windows／Linux 本機通過，CI／macOS 未驗 | Windows 382 passed／21 skipped、WSL Linux 390 passed／13 skipped，兩邊發行建置通過；Windows 11 個 POSIX shell 案例條件 skip。GitHub Actions 原 CI 與 macOS 尚未實際執行。 |
+| M8 原流程回歸 | 三平台 PR CI 通過 | Ubuntu 401 passed／3 skipped、macOS 402 passed／2 skipped、Windows 383 passed／21 skipped，三平台 build/test success；Ubuntu SHA256SUMS 三檔正確。Windows 11 個 POSIX shell 案例條件 skip；macOS Finder／Tk 真人操作另列未覆蓋。 |
 
 ## 平台與 CI
 
-原 CI `.github/workflows/packages.yml` 現在保留 Ubuntu 24.04 建置／測試，並在 PR 與發行前加上 `windows-2025`、`macos-15` 的完整套件 Gate；`publish` 必須等待三平台 job。YAML 已在本機解析檢查；使用者已授權推送與可能耗用額度的 CI，但候選分支尚未推送／執行，所以不能宣稱矩陣通過。另有只手動觸發的 `.github/workflows/platform-checks.yml`。本機 WSL Linux 完整回歸 390 passed／13 skipped；macOS Finder 啟動及官方 MCP Inspector 尚未執行。
+原 CI `.github/workflows/packages.yml` 保留 Ubuntu 24.04 建置／測試，並在 PR 與發行前加上 `windows-2025`、`macos-15` 完整套件 Gate；`publish` 必須等待三平台 job。[Actions run #9](https://github.com/AllanYiin/RoutineKeel/actions/runs/43987170358) 已在 draft PR 上完成且全部測試 job success，publish skipped。另有只手動觸發的 `.github/workflows/platform-checks.yml`；它尚未單獨執行。macOS Finder／Tk GUI 與官方 MCP Inspector 尚未執行。
 
-下一步：在可用的 macOS／正式 CI 環境跑跨平台矩陣，核對 M2 的全域追蹤覆蓋及發行版手冊走查。保持未驗項標記，直到對應證據具備。
+下一步：核對最後文件修訂在 CI 仍通過，完成發行包使用手冊走查與舊版 wheel 回滾的未覆蓋項；未授權合併／發布前，PR 保持 draft，發布 Gate 不視為完成。
