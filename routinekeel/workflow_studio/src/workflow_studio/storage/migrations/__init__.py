@@ -1,7 +1,7 @@
 """Ordered, transactional Studio schema migrations."""
 
 APPLICATION_ID = 0x53545544  # STUD; rejects accidentally selected Runtime databases.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 V001 = (
     """CREATE TABLE studio_projects (
@@ -54,4 +54,18 @@ V002 = (
     "CREATE INDEX studio_sources_project ON studio_sources(project_id)",
 )
 
-MIGRATIONS = {1: V001, 2: V002}
+V003 = (
+    """CREATE TABLE studio_tools (
+        tool_id TEXT NOT NULL, version TEXT NOT NULL, contract_json TEXT NOT NULL,
+        contract_hash TEXT NOT NULL, trust_status TEXT NOT NULL CHECK(trust_status IN ('builtin','untrusted','approved')),
+        status TEXT NOT NULL CHECK(status IN ('active','disabled','archived')),
+        record_version INTEGER NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(tool_id,version))""",
+    """CREATE TABLE studio_tool_approvals (
+        id INTEGER PRIMARY KEY, tool_id TEXT NOT NULL, version TEXT NOT NULL,
+        contract_hash TEXT NOT NULL, actor TEXT NOT NULL, reason TEXT NOT NULL, created_at TEXT NOT NULL,
+        FOREIGN KEY(tool_id,version) REFERENCES studio_tools(tool_id,version))""",
+    """CREATE TRIGGER immutable_tool_contract BEFORE UPDATE OF tool_id,version,contract_json,contract_hash ON studio_tools
+        BEGIN SELECT RAISE(ABORT, 'immutable tool contract'); END""",
+)
+
+MIGRATIONS = {1: V001, 2: V002, 3: V003}

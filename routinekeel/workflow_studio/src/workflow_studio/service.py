@@ -30,6 +30,20 @@ class StudioService:
             raise TypeError("Source operations require persistent Studio storage")
         return SourceService(self.repository)
 
+    @property
+    def tools(self):
+        from .registry.catalog import Catalog
+
+        return Catalog(self.repository)
+
+    def save_ir(self, project_id, expected_version, payload, policy):
+        return self.projects.save_ir(
+            project_id,
+            expected_version,
+            payload,
+            {key: tool.signature() for key, tool in self.tools.allowed(policy).items()},
+        )
+
     def status(self) -> dict:
         return {"version": __version__, "schema_version": self.repository.schema_version}
 

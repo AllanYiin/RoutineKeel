@@ -68,3 +68,11 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
   JSON Schema 同步、版本衝突與不可變儲存 roundtrip。詳見 workflow-ir.md。
 - Stage 2 commit：`6cb66ec`。本階段無 DB schema 變更；回滾前備份 Studio DB，
   舊版只可保留未知 IR 草稿，不能將其當成已驗證可發布版本。
+
+## Stage 4
+
+- Studio 環境 `python -m pytest tests/studio -q`：89 passed，2.34 秒。
+- Ruff check 通過；測試包含四個實際確定性轉換、Registry CRUD／重開、重複版本、
+  停用後 seed、契約匹配、平台、核准 hash、無測試證據拒絕，以及已核准工具仍受權限政策限制。
+- Stage 3 commit：`30cfbd9`。新增 SQLite v003 工具與核准表；舊有 migration／backup／restore 回歸通過。
+- 內建平台宣告表示純 Python 實作的預期相容性，目前僅 Windows 實測；三平台整合 Gate 仍未執行。
