@@ -56,6 +56,9 @@ jobs:
         os: [windows-2025, macos-15]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:

@@ -5,7 +5,7 @@ RoutineKeel 的 MCP 入口只處理短時間的提交、查詢和取消。任務
 ## 啟動順序
 
 1. 在發行工作區另開啟 `flow_base/queue_worker.bat`（Windows）、`queue_worker.command`（macOS），或執行 `queue_worker.sh`（Linux）。它委派既有 `run_app` bootstrap，不開 Port。視窗須保持開啟才能領取後續工作；可用 Ctrl+C 停止，佇列資料仍留 SQLite。
-2. MCP 是選配套件。發行包先在終端執行一次選配安裝：Windows PowerShell 用 `& .\flow_base\start.ps1 --install-mcp`；macOS／Linux 用 `sh ./flow_base/start.sh --install-mcp`。一般 CLI／Worker 不需要 MCP 依賴。**宿主的 MCP command 不可指向會顯示 bootstrap 文字的 `run_app`／`start.ps1`**；Windows 指向工作區 `.venv\Scripts\python.exe`，macOS／Linux 指向 `.venv/bin/python`，參數依序為 `-I -m flow_base --workspace <工作區根目錄> mcp-stdio`。如此 `stdout` 只供 MCP 訊息，日誌走 stderr 或本機檔案。
+2. MCP 是選配套件。發行包先在終端執行一次選配安裝：Windows PowerShell 用 `& .\flow_base\start.ps1 --install-mcp`；macOS／Linux 用 `sh ./flow_base/start.sh --install-mcp`。一般 CLI／Worker 不需要 MCP 依賴。**宿主的 MCP command 不可指向會顯示 bootstrap 文字的 `run_app`／`start.ps1`**；Windows 指向工作區 `.venv\Scripts\python.exe`，macOS／Linux 指向 `.venv/bin/python`，參數依序為 `-X utf8 -I -m flow_base --workspace <工作區根目錄> mcp-stdio`。如此 `stdout` 只供 MCP 訊息，日誌走 stderr 或本機檔案。
 
    在開發環境執行：
 

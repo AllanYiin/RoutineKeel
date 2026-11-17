@@ -101,4 +101,4 @@ if [ "${1:-}" = '--install-mcp' ]; then
   "$UV" pip install --no-config --python "$python" --no-build 'mcp==2.3.0'
   exit $?
 fi
-exec "$python" -I -m flow_base --workspace "$FLOW_BASE_WORKSPACE" "$@"
+exec "$python" -X utf8 -I -m flow_base --workspace "$FLOW_BASE_WORKSPACE" "$@"

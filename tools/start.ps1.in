@@ -41,6 +41,8 @@ $env:UV_NO_PROGRESS = '1'
 $env:UV_NO_ENV_FILE = '1'
 $env:UV_LINK_MODE = 'copy'
 $env:PYTHONDONTWRITEBYTECODE = '1'
+$env:PYTHONUTF8 = '1'
+$env:PYTHONIOENCODING = 'utf-8'
 $Arch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
 $Bootstrap = Join-Path $env:FLOW_BASE_HOME ('bootstrap\Windows-' + $Arch)
 function Get-FlowSha256 {
@@ -195,10 +197,10 @@ try {
     $PSNativeCommandUseErrorActionPreference = $false
     $global:LASTEXITCODE = 1
     if ($Interactive) {
-        & $Python -I -m flow_base --workspace $env:FLOW_BASE_WORKSPACE @LauncherArgs
+        & $Python -X utf8 -I -m flow_base --workspace $env:FLOW_BASE_WORKSPACE @LauncherArgs
     } else {
         # Force rendering before Stop-Transcript; include stderr on Windows PS 5.1.
-        & $Python -I -m flow_base --workspace $env:FLOW_BASE_WORKSPACE @LauncherArgs 2>&1 |
+        & $Python -X utf8 -I -m flow_base --workspace $env:FLOW_BASE_WORKSPACE @LauncherArgs 2>&1 |
             ForEach-Object { Write-Host ([string]$_) }
     }
     $CommandExitCode = $LASTEXITCODE
