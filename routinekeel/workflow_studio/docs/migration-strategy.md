@@ -37,3 +37,9 @@ v000 備份代表首次安裝前無 Studio 資料，不能拿來復原後來建�
 新增工具版本與 hash 綁定核准表，不修改來源或 Runtime DB。
 升級前按現有來源版本建立備份；回退 Stage 2 使用 before-v002 備份並另留最新 v003。
 內建工具 seed 以 ID@version 去重，不覆蓋既有停用／封存狀態。
+
+## v004 串流與用量
+
+新增事件 sequence／project 索引、設計／執行期模型 reservation 與 usage。
+完成事件、Revision 及帳本結算同交易；內層服務使用 SQLite savepoint，外層失敗整體回復。
+回退 Stage 4 使用升級前 before-v003 備份；另存最新 DB 以保存串流與用量歷史。

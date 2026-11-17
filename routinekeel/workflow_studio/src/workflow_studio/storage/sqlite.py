@@ -60,6 +60,8 @@ class SQLiteRepository:
                 required |= {"studio_sources", "studio_source_versions", "studio_source_blobs"}
             if SCHEMA_VERSION >= 3:
                 required |= {"studio_tools", "studio_tool_approvals"}
+            if SCHEMA_VERSION >= 4:
+                required |= {"studio_events", "studio_llm_calls"}
             actual = {
                 row[0]
                 for row in self.connection.execute(
@@ -71,6 +73,17 @@ class SQLiteRepository:
 
     @contextmanager
     def transaction(self):
+        if self.connection.in_transaction:
+            savepoint = "nested_" + uuid4().hex
+            self.connection.execute(f"SAVEPOINT {savepoint}")
+            try:
+                yield self.connection
+                self.connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+            except BaseException:
+                self.connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                self.connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+                raise
+            return
         self.connection.execute("BEGIN IMMEDIATE")
         try:
             yield self.connection

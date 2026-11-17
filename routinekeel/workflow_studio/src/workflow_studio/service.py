@@ -36,6 +36,11 @@ class StudioService:
 
         return Catalog(self.repository)
 
+    def discovery(self, provider, budget, tool_policy):
+        from .discovery.planner import DiscoveryPlanner
+
+        return DiscoveryPlanner(self, provider, budget, tool_policy)
+
     def save_ir(self, project_id, expected_version, payload, policy):
         return self.projects.save_ir(
             project_id,

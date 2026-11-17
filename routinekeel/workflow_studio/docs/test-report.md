@@ -76,3 +76,13 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
   停用後 seed、契約匹配、平台、核准 hash、無測試證據拒絕，以及已核准工具仍受權限政策限制。
 - Stage 3 commit：`30cfbd9`。新增 SQLite v003 工具與核准表；舊有 migration／backup／restore 回歸通過。
 - 內建平台宣告表示純 Python 實作的預期相容性，目前僅 Windows 實測；三平台整合 Gate 仍未執行。
+
+## Stage 5
+
+- Studio 環境 `python -m pytest tests/studio -q`：108 passed，3.33 秒；Ruff check 通過。
+- 固定 Provider 驗證文字／Mermaid 候選 IR、逐段事件、重開、Prompt Injection、缺工具、
+  模糊分支、非法 JSON 契約、來源／目標篡改、中斷、取消、關閉迭代器、預算與明確外傳範圍。
+- SSE 模擬傳輸驗證 Unicode、usage、完成標記、截斷／工具呼叫拒絕、缺金鑰與重新導向拒絕。
+- 完成事件與 Revision／usage 同交易提交；帳本未取得 usage 時保留成本估計。
+- Stage 4 commit：`ecf3e9a`。新增 SQLite v004 事件／用量資料表。
+- 真實付費模型及真實業務推導品質未驗證；沒有傳送本機私人來源。這不是最終產品品質 Gate。
