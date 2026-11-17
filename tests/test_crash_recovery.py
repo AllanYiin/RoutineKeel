@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 import shutil
+from types import SimpleNamespace
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,22 @@ from flow_base.execution.supervisor import Supervisor, identity_matches, process
 from flow_base.runtime import FlowError, Runtime, run_process
 from flow_base.workspace import Workspace
 from flow_base.execution.supervisor import start_detached
+
+
+def test_macos_process_birth_parses_c_locale_and_rejects_zombie(monkeypatch):
+    monkeypatch.setattr('flow_base.execution.supervisor.sys.platform', 'darwin')
+    calls = []
+    def fake_ps(argv, **kwargs):
+        calls.append((argv, kwargs['env']['LC_ALL']))
+        return SimpleNamespace(returncode=0, stdout='S Mon Nov 17 00:10:25 2026\n')
+    monkeypatch.setattr('flow_base.execution.supervisor.subprocess.run', fake_ps)
+    expected = time.mktime((2026, 11, 17, 0, 10, 25, 0, 0, -1))
+    assert process_started_at(123) == expected
+    assert calls == [(['ps', '-p', '123', '-o', 'stat=', '-o', 'lstart='], 'C')]
+    monkeypatch.setattr('flow_base.execution.supervisor.subprocess.run',
+                        lambda *_args, **_kwargs: SimpleNamespace(returncode=0,
+                                                                   stdout='Z Mon Nov 17 00:10:25 2026\n'))
+    assert process_started_at(123) is None
 
 
 def test_reconcile_marks_lost_run_interrupted(tmp_path):

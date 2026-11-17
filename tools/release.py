@@ -211,7 +211,9 @@ def main():
             if target.exists():
                 shutil.rmtree(target)
             (staging / name).rename(target)
-    print(json.dumps(reports, ensure_ascii=False, indent=2))
+    # GitHub Windows runners may use cp1252 stdout; keep the console report ASCII.
+    # The published versions.json remains UTF-8 with the original folder names.
+    print(json.dumps(reports, ensure_ascii=True, indent=2))
 
 
 if __name__ == '__main__':

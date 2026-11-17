@@ -58,6 +58,29 @@ def process_started_at(pid: int) -> float | None:
             return boot + start_ticks / os.sysconf('SC_CLK_TCK')
         except (OSError, ValueError, StopIteration):
             return None
+    if sys.platform == 'darwin':
+        try:
+            environment = dict(os.environ, LC_ALL='C')
+            result = subprocess.run(['ps', '-p', str(pid), '-o', 'stat=', '-o', 'lstart='],
+                                    capture_output=True, text=True, timeout=3,
+                                    env=environment, check=False)
+            if result.returncode != 0:
+                return None
+            state, _, started = result.stdout.strip().partition(' ')
+            if not state or state.startswith('Z'):
+                return None
+            parts = started.split()
+            if len(parts) != 5:
+                return None
+            _, month, day, clock, year = parts
+            months = {name: index for index, name in enumerate(
+                ('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'), 1)}
+            hours, minutes, seconds = (int(value) for value in clock.split(':'))
+            return time.mktime((int(year), months[month], int(day),
+                                hours, minutes, seconds, 0, 0, -1))
+        except (OSError, ValueError, KeyError, subprocess.TimeoutExpired):
+            return None
     return None
 
 
