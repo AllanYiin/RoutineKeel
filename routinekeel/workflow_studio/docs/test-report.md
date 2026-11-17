@@ -127,3 +127,11 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
 - 確定性流程的原有 Runtime／Verifier 零 API 測試均繼續通過。
 - Stage 8 commit：`3f0d77d`。Stage 9 無 DB migration；新條件使用受控 parameters schema，不變更既有 IR v1 欄位。
 - 真實付費模型、外部業務正確性與平台 Gate 未驗；預設 Verifier 不持有 API 金鑰。
+
+## Stage 10（P2 保持停用）
+
+- `python -m pytest tests/studio/test_video_ingestion.py tests/studio/test_video_discovery.py -q`：8 passed，2.49 秒。
+- 本機 FFmpeg／ffprobe 實際產生與解碼五秒測試影片，五個影格時間為 0–4 秒，比例維持 16:9。
+- 測試預設停用、損毀拒收、影格位置驗證、未知操作、禁止 verified、串流中斷、多來源衝突、明確選取額外來源。
+- Stage 9 commit：`0db50de`。模型分析使用 fixture，不宣稱真實影片理解品質通過；維持預設停用。
+- 無 DB migration；影片／影格沿用來源版本，分析結果沿用草稿 Revision 與事件帳本。

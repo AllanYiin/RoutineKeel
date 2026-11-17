@@ -41,7 +41,19 @@ class SourceService:
             metadata = {path.name: path.lstat().st_mtime_ns}
         return self._save(project_id, expected_version, files, path.name, source_id, metadata)
 
-    def _save(self, project_id, expected_version, files, name, source_id, metadata=None):
+    def _save(
+        self,
+        project_id,
+        expected_version,
+        files,
+        name,
+        source_id,
+        metadata=None,
+        *,
+        previews=None,
+        extra_metadata=None,
+        source_kind=None,
+    ):
         name = validate_name(name)
         records, blobs = [], {}
         total = 0
@@ -50,7 +62,7 @@ class SourceService:
             total += len(payload)
             if len(payload) > self.limits.max_file_bytes or total > self.limits.max_total_bytes:
                 raise StudioError("INPUT_INVALID", "來源大小超過限制。")
-            preview = preview_file(relative, payload, self.limits)
+            preview = (previews or {}).get(relative) or preview_file(relative, payload, self.limits)
             digest = hashlib.sha256(payload).hexdigest()
             blobs[digest] = payload
             records.append(
@@ -64,8 +76,8 @@ class SourceService:
             )
         if not records or len(records) > self.limits.max_files:
             raise StudioError("INPUT_INVALID", "來源檔案數量不符合限制。")
-        kind = records[0]["preview"]["kind"] if len(records) == 1 else "folder"
-        manifest = canonical_json({"files": records, "description": ""})
+        kind = source_kind or (records[0]["preview"]["kind"] if len(records) == 1 else "folder")
+        manifest = canonical_json({"files": records, "description": "", **(extra_metadata or {})})
         content_hash = hashlib.sha256(
             canonical_json(
                 {"files": [{"path": r["path"], "sha256": r["sha256"]} for r in records]}
