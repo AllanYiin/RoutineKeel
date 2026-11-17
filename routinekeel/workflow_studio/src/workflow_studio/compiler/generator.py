@@ -28,6 +28,12 @@ class Compiler:
         tools = self.studio.tools.allowed(policy)
         ir = validate_ir(revision.ir, {k: t.signature() for k, t in tools.items()})
         check_supported(ir, tools)
+        has_llm = any(n.kind == "llm" for n in ir.nodes)
+        if (
+            sum(n.llm_policy.budget_micro_usd for n in ir.nodes if n.llm_policy)
+            > policy.max_cost_micro_usd
+        ):
+            raise StudioError("BUDGET_EXCEEDED", "執行期模型預算超過本次核准上限。")
         compiled = lower(ir, tools)
         ir_hash = ir_fingerprint(ir)
         module = "studio_" + ir.workflow_id.replace("-", "_") + "_" + ir_hash[:12]
@@ -55,6 +61,10 @@ class Compiler:
             f"{module}/adapter.py": template,
             f"{module}/compiled.json": compiled_bytes,
         }
+        if has_llm:
+            files[f"{module}/llm_runtime.py"] = (
+                Path(__file__).with_name("runtime_llm.py").read_bytes()
+            )
         wheel = package / f"{module}-{version}-py3-none-any.whl"
         write_wheel(wheel, module, version, files)
         manifest = {
@@ -69,7 +79,7 @@ class Compiler:
             "package": wheel.name,
             "sha256": digest(wheel.read_bytes()),
             "keywords": [ir.workflow_id],
-            "llm_policy": "forbidden",
+            "llm_policy": "optional" if has_llm else "forbidden",
             "outputs": compiled["runtime_workflow"]["outputs"],
             "defaults": {},
         }
@@ -79,7 +89,12 @@ class Compiler:
         (package / "README.md").write_text(
             f"# {ir.goal.description}\n\n候選工作流 {version}。尚未獨立驗證或正式發布。\n"
             "放入隔離的 RoutineKeel 測試工作區，透過底座 plan／prepare／verify／run 執行。\n"
-            "單檔上限 10 MiB；不呼叫模型，不允許就地覆寫參數。輸出見 report.json 的 named_outputs。\n",
+            + (
+                "本版本含有模型節點，需明確授權、憑證與費率。\n"
+                if has_llm
+                else "本版本不呼叫模型。\n"
+            )
+            + "單檔上限 10 MiB；不允許就地覆寫參數。輸出見 report.json 的 named_outputs。\n",
             encoding="utf-8",
         )
         (package / "workflow.ir.json").write_text(canonical_json(ir.model_dump()), encoding="utf-8")

@@ -1,4 +1,5 @@
 from ..ir.references import parse_reference
+from ..ir.versioning import ir_fingerprint
 
 
 def lower(ir, tools):
@@ -53,7 +54,13 @@ def lower(ir, tools):
             **node.model_dump(),
             "implementation": tools[f"{node.tool}@{node.tool_version}"].implementation,
         }
+        if node.kind == "composite_branch":
+            from .branch_lowering import lower_branch
+
+            operations[node.id]["branch"] = lower_branch(node, tools)
+            steps[-1]["output_artifacts"].append("branch.json")
     return {
+        "ir_hash": ir_fingerprint(ir),
         "runtime_workflow": {
             "schema_version": 1,
             "runtime": "0.2",

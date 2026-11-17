@@ -23,7 +23,7 @@ def test_catalog_crud_versions_and_reopen(tmp_path):
     repo = SQLiteRepository(tmp_path)
     catalog = Catalog(repo)
     catalog.seed()
-    assert len(catalog.list()) == 4
+    assert len(catalog.list()) == 6
     tool = builtin_tools()[0].model_copy(
         update={"tool_id": "custom.copy", "implementation": "untrusted.proposal"}
     )
@@ -35,8 +35,8 @@ def test_catalog_crud_versions_and_reopen(tmp_path):
     catalog.register(new)
     old = catalog.set_status(tool.tool_id, tool.version, 1, "archived")
     assert old["status"] == "archived"
-    assert len(catalog.list()) == 5
-    assert len(catalog.list(include_archived=True)) == 6
+    assert len(catalog.list()) == 7
+    assert len(catalog.list(include_archived=True)) == 8
     with pytest.raises(StudioError):
         catalog.set_status(tool.tool_id, tool.version, 1, "active")
     repo.close()

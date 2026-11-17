@@ -67,7 +67,7 @@ def builtin_tools() -> list[ToolDescription]:
         ("json.format", "整理 JSON", "json.format", "builtin.json", "json", "json"),
         ("file.report", "產生檔案指紋報告", "file.report", "builtin.report", None, "json"),
     ]
-    return [
+    result = [
         ToolDescription(
             tool_id=identity,
             version="1.0.0",
@@ -86,3 +86,33 @@ def builtin_tools() -> list[ToolDescription]:
         )
         for identity, title, capability, implementation, input_format, output_format in definitions
     ]
+    result.append(
+        result[0].model_copy(
+            update={
+                "tool_id": "control.branch",
+                "title": "受控條件分支",
+                "capabilities": ["control.branch"],
+                "kind": "composite_branch",
+                "implementation": "builtin.branch",
+                "test_evidence": ["tests/studio/test_branches.py"],
+            }
+        )
+    )
+    result.append(
+        result[0].model_copy(
+            update={
+                "tool_id": "llm.structured",
+                "title": "受控模型結構化處理",
+                "capabilities": ["llm.structured"],
+                "kind": "llm",
+                "implementation": "builtin.llm",
+                "side_effects": "external",
+                "outputs": {"result": Port(type="file", format="json")},
+                "resources": Resources(memory_mb=64, disk_mb=10, network=True),
+                "permissions": ["workspace.write", "model.call", "secret.read"],
+                "cost_micro_usd": 1,
+                "test_evidence": ["tests/studio/test_llm_runtime.py"],
+            }
+        )
+    )
+    return result

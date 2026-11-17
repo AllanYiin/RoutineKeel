@@ -116,3 +116,14 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
   報告保存、兩輪修復仍失敗停止、成功修復建立新版本，以及修改成功標準遭拒絕。
 - Stage 7 commit：`66427a1`；新增 SQLite v007 不可變驗證報告表。
 - 真實模型 proposer 未呼叫，非 Windows 平台／真人 UI 仍待；詳見 verifier.md 的能力邊界。
+
+## Stage 9
+
+- Studio 環境 `python -m pytest tests/studio -q`：143 passed，29.26 秒；Ruff check 通過。
+- 實際 Runtime 執行條件為真／假兩路，驗證結果與 branch.json；錯誤 operator、巢狀、不同輸出、非法參數拒絕。
+- Runtime LLM 使用 fake HTTPS opener（無外部呼叫），驗證逐段可見文字、最後結構、
+  input／cached／output usage、未授權 preflight 與預算不足時 network calls=0。
+- 缺授權的外層錯誤依底座既有契約為 PREFLIGHT_BLOCKED，內層模型 Gate 原因為 APPROVAL_REQUIRED。
+- 確定性流程的原有 Runtime／Verifier 零 API 測試均繼續通過。
+- Stage 8 commit：`3f0d77d`。Stage 9 無 DB migration；新條件使用受控 parameters schema，不變更既有 IR v1 欄位。
+- 真實付費模型、外部業務正確性與平台 Gate 未驗；預設 Verifier 不持有 API 金鑰。

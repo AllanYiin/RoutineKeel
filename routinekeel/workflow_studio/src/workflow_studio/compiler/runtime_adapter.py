@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import time
 from pathlib import Path
 
@@ -88,6 +89,32 @@ def transform_handler(ctx, step, dependencies, target):
         check(condition)
     content = resolve(node["inputs"]["source"]["source"])
     implementation, parameters = node["implementation"], node["parameters"]
+    if implementation == "builtin.branch":
+        branch = node["branch"]
+        condition = branch["condition"]
+        operator, value = condition["operator"], condition["value"]
+        if operator == "file_size_gt":
+            selected = len(content) > value
+        elif operator == "file_size_gte":
+            selected = len(content) >= value
+        elif operator == "text_contains":
+            selected = value in content.decode("utf-8")
+        else:
+            selected = content.decode("utf-8") == value
+        choice = "when_true" if selected else "when_false"
+        arm = branch[choice]
+        implementation, parameters = arm["implementation"], arm["parameters"]
+        atomic_json(
+            target.parent / "branch.json",
+            {
+                "step_id": step.id,
+                "selected": choice,
+                "condition": condition,
+                "input_sha256": hashlib.sha256(content).hexdigest(),
+                "tool": arm["tool"],
+                "version": arm["version"],
+            },
+        )
     if implementation == "builtin.copy":
         own_output = content
     elif implementation == "builtin.normalize":
@@ -116,6 +143,10 @@ def transform_handler(ctx, step, dependencies, target):
             )
             + "\n"
         ).encode()
+    elif implementation == "builtin.llm":
+        from .llm_runtime import run_llm
+
+        own_output = run_llm(ctx, step, node, content, PLAN["ir_hash"])
     else:
         raise FlowError("IR_UNSUPPORTED_FEATURE", "未支援的 Handler")
     for condition in node["postconditions"]:
@@ -135,6 +166,13 @@ class Adapter(BaseAdapter):
 
     def plan(self, runtime, workflow, source=None, output=None):
         result = super().plan(runtime, workflow, source, output)
+        if (
+            any(n["kind"] == "llm" for n in PLAN["operations"].values())
+            and os.environ.get("WORKFLOW_STUDIO_LLM_AUTHORIZATION") != PLAN["ir_hash"]
+        ):
+            result["blocked"].append(
+                {"code": "APPROVAL_REQUIRED", "message": "模型節點需要此 IR 版本的執行授權"}
+            )
         if source is not None and source.is_file() and source.stat().st_size > MAX_FILE_BYTES:
             result["blocked"].append({"code": "INPUT_TOO_LARGE"})
         result["ready_to_prepare"] = not result["blocked"]

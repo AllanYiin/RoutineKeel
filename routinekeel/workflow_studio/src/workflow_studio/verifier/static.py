@@ -42,9 +42,15 @@ def verify_static(studio, build, policy):
     if ir_fingerprint(ir) != build["mapping"]["ir_hash"]:
         raise StudioError("TEST_FAILED", "建置 IR 指紋不符。")
     expected_plan = lower(ir, tools)
+    has_llm = any(n.kind == "llm" for n in ir.nodes)
     trusted_template = Path(__file__).parents[1] / "compiler/runtime_adapter.py"
     with zipfile.ZipFile(io.BytesIO(verified_files[manifest["package"]])) as wheel:
         allowed = {prefix + name for name in ("__init__.py", "adapter.py", "compiled.json")}
+        if has_llm:
+            allowed.add(prefix + "llm_runtime.py")
+            trusted_llm = Path(__file__).parents[1] / "compiler/runtime_llm.py"
+            if wheel.read(prefix + "llm_runtime.py") != trusted_llm.read_bytes():
+                raise StudioError("TEST_FAILED", "LLM Handler 不是已驗證模板。")
         allowed |= {
             f"{manifest['module']}-{manifest['version']}.dist-info/{name}"
             for name in ("METADATA", "WHEEL", "RECORD")
@@ -61,7 +67,7 @@ def verify_static(studio, build, policy):
     if (
         manifest.get("outputs") != expected_plan["runtime_workflow"]["outputs"]
         or manifest.get("defaults") != {}
-        or manifest.get("llm_policy") != "forbidden"
+        or manifest.get("llm_policy") != ("optional" if has_llm else "forbidden")
         or manifest.get("runtime_api") != "0.2"
         or manifest.get("schema_version") != 1
     ):

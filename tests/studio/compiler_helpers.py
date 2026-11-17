@@ -12,7 +12,7 @@ from workflow_studio.service import StudioService
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def build_ir(tmp_path, payload=None):
+def build_ir(tmp_path, payload=None, policy=None):
     studio = StudioService.open_workspace(tmp_path / "studio")
     p = studio.projects.create(
         "編譯", {"description": "複製檔案", "success_criteria": ["內容相同"]}
@@ -22,7 +22,7 @@ def build_ir(tmp_path, payload=None):
     payload = payload or valid_ir()
     for evidence in payload["evidence"]:
         evidence["source_id"] = source.source_id
-    policy = ToolPolicy("windows" if os.name == "nt" else "linux")
+    policy = policy or ToolPolicy("windows" if os.name == "nt" else "linux")
     revision = studio.save_ir(p.project_id, 2, payload, policy)
     return studio, p, revision, policy
 

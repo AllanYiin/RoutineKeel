@@ -4,7 +4,7 @@ from ..registry.builtin import builtin_tools
 
 def check_supported(ir, tools):
     signatures = {t.implementation: t for t in builtin_tools()}
-    if len(ir.inputs) != 1 or next(iter(ir.inputs.values())).type != "file" or ir.secrets:
+    if len(ir.inputs) != 1 or next(iter(ir.inputs.values())).type != "file":
         raise StudioError(
             "IR_UNSUPPORTED_FEATURE", "此編譯器版本接受單一檔案輸入與無 secret 的流程。"
         )
@@ -15,7 +15,7 @@ def check_supported(ir, tools):
     for node in ir.nodes:
         tool = tools[f"{node.tool}@{node.tool_version}"]
         builtin = signatures.get(tool.implementation)
-        if node.kind != "deterministic" or builtin is None:
+        if node.kind not in {"deterministic", "composite_branch", "llm"} or builtin is None:
             raise StudioError(
                 "IR_UNSUPPORTED_FEATURE", "此階段只編譯受控且已驗證的確定性 Handler。"
             )
@@ -34,7 +34,19 @@ def check_supported(ir, tools):
             raise StudioError("CONTRACT_MISMATCH", "產物路徑與 Runtime 索引保留名稱衝突。")
         if node.retry_policy.max_attempts != 1:
             raise StudioError("IR_UNSUPPORTED_FEATURE", "尚未支援自動多次重試。")
-        if tool.implementation == "builtin.normalize":
+        if tool.implementation == "builtin.llm":
+            from .llm_handler import validate_llm
+
+            validate_llm(node)
+            valid = True
+        elif tool.implementation == "builtin.branch":
+            from .branch_lowering import validate_branch
+
+            validate_branch(node, tools)
+            if node.outputs["result"].path == "branch.json":
+                raise StudioError("CONTRACT_MISMATCH", "分支紀錄名稱保留給 Runtime。")
+            valid = True
+        elif tool.implementation == "builtin.normalize":
             valid = not (set(node.parameters) - {"strip", "final_newline"}) and all(
                 type(v) is bool for v in node.parameters.values()
             )
