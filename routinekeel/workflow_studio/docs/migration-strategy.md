@@ -1,0 +1,13 @@
+# Studio 儲存與遷移策略
+
+- 使用獨立 `share_states/workflow_studio/studio.sqlite3`，不寫 flow_base DB。
+- Stage 0 僅定義 Repository 生命週期（schema_version、close），尚無磁碟資料。
+- Stage 1 採 SQLite 交易與 `PRAGMA user_version`；未知較新版本拒絕寫入。
+- 遷移須先使用 SQLite backup API 取得一致性副本，保存 hash 與來源版本；
+  備份失敗即停止遷移。每次 migration 在交易中更新資料與版本，可重複開啟。
+- 內建工具的 seed 在 Registry 階段加入，具版本及唯一鍵，重跑不覆寫使用者設定。
+- 已提交 Revision 內容不可變；新編輯建立新 Revision，CAS 防止過期更新。
+- 外部檔案先在受控暫存區準備，再提交資料參照；未完成資料不能顯示為成功。
+- 回滾前關閉 Studio 並備份目前 DB／受管檔案，還原相容版本整組資料；
+  不把舊程式直接指向較新 DB，不刪除原始來源及 Runtime 成果。
+- migration 與還原測試在隔離目錄進行；未實作或未執行的流程不宣稱驗收通過。
