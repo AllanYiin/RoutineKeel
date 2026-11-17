@@ -73,7 +73,7 @@ class DiscoveryPlanner:
                     }
                 )
             refs.append((identity, source.version, source.content_hash))
-        tools = self.studio.tools.allowed(self.policy)
+        tools = self.studio.tools.available(self.policy)
         if not tools:
             raise StudioError("TOOL_NOT_ALLOWED", "目前沒有符合政策的工具。")
         accepted = [
@@ -90,7 +90,17 @@ class DiscoveryPlanner:
             if accepted
             else "workflow-" + project.project_id[-12:],
             "sources": sources,
-            "tools": [t.signature().model_dump() for t in tools.values()],
+            "tools": [
+                {
+                    **t.signature().model_dump(),
+                    "title": t.title,
+                    "capabilities": t.capabilities,
+                    "resources": t.resources.model_dump(),
+                    "permissions": t.permissions,
+                    "cost_micro_usd": t.cost_micro_usd,
+                }
+                for t in tools.values()
+            ],
             "ir_schema": WorkflowIR.model_json_schema(),
         }
         generation = generation_contract()
@@ -263,7 +273,7 @@ class DiscoveryPlanner:
                 from ..compiler.handlers import verify_examples
                 from ..ir.validator import validate_ir
 
-                tools = self.studio.tools.allowed(self.policy)
+                tools = self.studio.tools.available(self.policy)
                 validated = validate_ir(
                     result.ir.model_dump(),
                     {key: tool.signature() for key, tool in tools.items()},

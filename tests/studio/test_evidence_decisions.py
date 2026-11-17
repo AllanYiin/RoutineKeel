@@ -6,7 +6,7 @@ from compiler_helpers import build_ir
 from test_verifier import verification_case
 from workflow_studio.contracts import StudioError
 from workflow_studio.governance.evidence import EvidenceRecords
-from workflow_studio.storage.migrations import APPLICATION_ID, MIGRATIONS
+from workflow_studio.storage.migrations import APPLICATION_ID, MIGRATIONS, SCHEMA_VERSION
 from workflow_studio.storage.sqlite import SQLiteRepository
 from workflow_studio.verifier.static import verify_static
 
@@ -166,7 +166,7 @@ def test_migrate_v009_and_restore_verified_backup(tmp_path):
     db.commit()
     db.close()
     repo = SQLiteRepository(root)
-    assert repo.schema_version == 10
+    assert repo.schema_version == SCHEMA_VERSION
     assert repo.connection.execute("SELECT name FROM studio_projects").fetchone()[0] == "kept"
     backup = next((root / "backups").glob("before-v009-*.sqlite3"))
     repo.close()

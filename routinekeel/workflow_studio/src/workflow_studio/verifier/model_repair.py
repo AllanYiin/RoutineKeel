@@ -140,7 +140,7 @@ class ModelRepair:
         original = self.studio.projects.get_revision(project_id, build["revision_id"]).ir
         if original["goal"] != project.goal:
             raise StudioError("REVISION_CONFLICT", "工作目標已變動，請重新分析。")
-        allowed = self.studio.tools.allowed(self.policy)
+        allowed = self.studio.tools.available(self.policy)
         generation = generation_contract()
         generation["tools"] = {k: v for k, v in generation["tools"].items() if k in allowed}
         runtime = disclosure(self.studio, project_id, build["build_id"], cases)
@@ -190,7 +190,7 @@ class ModelRepair:
             or vars(self.budget) != scope["budget"]
             or {**vars(self.policy), "permissions": sorted(self.policy.permissions)}
             != scope["policy"]
-            or {k: t.model_dump() for k, t in self.studio.tools.allowed(self.policy).items()}
+            or {k: t.model_dump() for k, t in self.studio.tools.available(self.policy).items()}
             != scope["tools"]
         ):
             raise StudioError("REVISION_CONFLICT", "模型、預算或工具政策已變動。")
@@ -210,7 +210,7 @@ class ModelRepair:
             raise StudioError(
                 "APPROVAL_REQUIRED", "修復提案變更了固定目標、證據、輸入或模型範圍，未採用。"
             )
-        tools = self.studio.tools.allowed(self.policy)
+        tools = self.studio.tools.available(self.policy)
         proposal["revision"] = current["revision"] + 1
         validated = validate_ir(
             proposal,
@@ -254,7 +254,26 @@ class ModelRepair:
                     "current_ir": current,
                     "cases": scope["cases"],
                     "failure": diagnostic,
-                    "tools": scope["tools"],
+                    "tools": {
+                        key: {
+                            field: tool[field]
+                            for field in (
+                                "tool_id",
+                                "version",
+                                "title",
+                                "capabilities",
+                                "kind",
+                                "inputs",
+                                "outputs",
+                                "platforms",
+                                "side_effects",
+                                "resources",
+                                "permissions",
+                                "cost_micro_usd",
+                            )
+                        }
+                        for key, tool in scope["tools"].items()
+                    },
                     "handler_generation": scope["handler_generation"],
                     "ir_schema": WorkflowIR.model_json_schema(),
                     "repair_round": attempt,

@@ -74,6 +74,7 @@ def build_workbench(app):
         side="left", padx=s(16)
     )
     app.button(header, "模型設定", app.configure_model, side="right")
+    app.button(header, "工具管理", app.manage_tools, side="right", padx=s(6))
     app.button(header, "切換工作區", app.choose_workspace, side="right", padx=s(6))
     app.status = tk.StringVar(value="先建立工作專案，再提供工作說明或成功案例。資料預設留在本機。")
     app.status_label = ttk.Label(

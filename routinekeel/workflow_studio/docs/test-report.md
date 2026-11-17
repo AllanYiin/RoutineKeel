@@ -248,3 +248,17 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
   模型政策變更令舊授權失效、預算總額與外部快取限制，以及非有限數值與微美元上限取整。
 - Ruff check／format check（131 files）與 git diff --check 通過。後續表單預設值、條件選取及提示微調未操作桌面，
   新表單的實際互動與渲染仍須實機驗收；未呼叫付費模型或對外發布。
+
+## 工具治理與 v011
+
+- 新增工具描述／版本管理 UI、雜湊＋record_version 審閱、核准撤回及不可變工具事件。
+  註冊預設 untrusted；available 與 allowed 分離，缺少受控適配或低報必要權限者不提供模型使用。
+- `test_tool_management.py test_registry.py test_matching.py test_tool_policy.py`：22 passed，4.21 秒。
+  自訂已核准複製工具真正完成重播與發布，停用及撤回阻擋後續操作而保留舊 manifest。
+  另驗證版本不變、過期審閱、JSON 自授權拒絕、事件失敗交易回復及 v010 備份／v011 升級／獨立還原。
+- 完整非桌面回歸（同前節命令）：319 passed、3 deselected，110.51 秒。
+- 之後為 Discovery 補上能力、資源、權限與成本宣告，同時排除本機測試路徑；
+  `test_tool_management.py test_discovery.py test_handler_discovery.py`：30 passed，10.13 秒。
+  修復 Provider 亦不收到 test_evidence／implementation 路徑，不將內部稽核資料當模型輸入。
+- Ruff check／format check（133 files）與 git diff --check 通過。新工具視窗未做實機驗收，
+  生成 Handler 的跨專案重用、第三方適配、真實模型與最終平台／使用者 Gate 仍待完成。

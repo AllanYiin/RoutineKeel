@@ -460,8 +460,7 @@ class StudioApp:
         def done(result):
             candidates, unknowns = result
             self.candidate_choice["values"] = [
-                f"候選 {i + 1} · "
-                + " → ".join(self.tool_titles.get(n["tool"], "自訂處理") for n in c["ir"]["nodes"])
+                f"候選 {i + 1} · " + " → ".join(self.tool_title(n) for n in c["ir"]["nodes"])
                 for i, c in enumerate(candidates)
             ]
             if candidates:
@@ -561,7 +560,7 @@ class StudioApp:
             self.canvas.create_text(
                 x,
                 y,
-                text=self.tool_titles.get(node["tool"], "自訂處理"),
+                text=self.tool_title(node),
                 fill=COLORS["text"],
                 font=(self.display["font_family"], 11),
                 width=box_width - 16 * scale,
@@ -579,7 +578,7 @@ class StudioApp:
             return
         self.selected_node = node["id"]
         self.node_info.set(
-            f"{self.tool_titles.get(node['tool'], '自訂處理')}｜{len(node['inputs'])} 項輸入 → {len(node['outputs'])} 項輸出\n每次執行都會檢查完成條件，修改後須重新試做。"
+            f"{self.tool_title(node)}｜{len(node['inputs'])} 項輸入 → {len(node['outputs'])} 項輸出\n每次執行都會檢查完成條件，修改後須重新試做。"
         )
         if node["tool"].startswith("data.transform_"):
             self.node_info.set(
@@ -617,6 +616,16 @@ class StudioApp:
         from .evidence_dialog import open_evidence
 
         open_evidence(self)
+
+    def manage_tools(self):
+        from .tools_dialog import open_tools
+
+        open_tools(self)
+
+    def tool_title(self, node):
+        return self.tool_titles.get(
+            f"{node['tool']}@{node['tool_version']}", self.tool_titles.get(node["tool"], "自訂處理")
+        )
 
     def add_case(self):
         source = filedialog.askopenfilename(title="選擇試做輸入", parent=self.root)

@@ -2,6 +2,24 @@ from ..contracts import StudioError
 from ..registry.builtin import builtin_tools
 
 
+def tool_support(tool):
+    candidates = [item for item in builtin_tools() if item.implementation == tool.implementation]
+    if not candidates:
+        return False, "目前沒有對應的受控編譯實作。"
+    for builtin in candidates:
+        if (
+            tool.inputs == builtin.inputs
+            and tool.outputs == builtin.outputs
+            and tool.kind == builtin.kind
+            and tool.side_effects == builtin.side_effects
+            and set(builtin.permissions) <= set(tool.permissions)
+            and (not builtin.resources.network or tool.resources.network)
+            and tool.cost_micro_usd >= builtin.cost_micro_usd
+        ):
+            return True, "受控實作可支援此契約；個別節點參數仍須驗證。"
+    return False, "輸入、輸出、副作用或最低權限宣告與受控實作不一致。"
+
+
 def check_supported(ir, tools):
     signatures = builtin_tools()
     if len(ir.inputs) != 1 or next(iter(ir.inputs.values())).type != "file":
@@ -17,13 +35,7 @@ def check_supported(ir, tools):
             raise StudioError(
                 "IR_UNSUPPORTED_FEATURE", "此步驟種類或工具尚無可安全編譯的受控實作。"
             )
-        if not any(
-            tool.inputs == builtin.inputs
-            and tool.outputs == builtin.outputs
-            and tool.kind == builtin.kind
-            and tool.side_effects == builtin.side_effects
-            for builtin in candidates
-        ):
+        if not tool_support(tool)[0] or node.resources.network != tool.resources.network:
             raise StudioError("CONTRACT_MISMATCH", "工具宣告與受控實作不一致。")
         if set(node.inputs) != {"source"} or set(node.outputs) != {"result"}:
             raise StudioError(

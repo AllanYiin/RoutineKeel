@@ -61,3 +61,7 @@ uv run --project routinekeel/workflow_studio --group dev python -m workflow_stud
 此工作台是新增的 Studio 介面，沿用 Tk 模式並使用 flow_base 的 WorkflowService。
 它不取代底座原本的本機工作台。開發版尚未完成完整規格、真實模型、三平台及真人案例驗收；
 影片推導維持 P2 實驗功能、預設停用。可用性與已知範圍見 test-report.md 及 ui-review.md。
+
+技術管理者可從上方「工具管理」查看契約、建立新版本、匯入描述並核准／撤回／停用工具。
+這是工作區共用設定，會影響所有專案的後續編譯及發布，不會自動卸載已安裝流程。
+註冊、核准及可編譯是三種不同狀態，詳見 [工具治理](tool-registry.md)。

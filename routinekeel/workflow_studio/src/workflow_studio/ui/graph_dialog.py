@@ -167,7 +167,7 @@ def open_graph(app):
         else:
             node = next((n for n in draft.ir["nodes"] if n["id"] == ref.owner), None)
             label = (
-                f"{ref.owner} · {app.tool_titles.get(node['tool'], node['tool'])} → {ref.port}"
+                f"{ref.owner} · {app.tool_title(node)} → {ref.port}"
                 if node
                 else f"已移除的步驟 · {ref.owner} → {ref.port}"
             )
@@ -193,9 +193,7 @@ def open_graph(app):
         state["loading"] = True
         listing.delete(0, "end")
         for node in draft.ir["nodes"]:
-            listing.insert(
-                "end", f"{node['id']} · {app.tool_titles.get(node['tool'], node['tool'])}"
-            )
+            listing.insert("end", f"{node['id']} · {app.tool_title(node)}")
         deliverables.delete(*deliverables.get_children())
         for name, ref in draft.ir["outputs"].items():
             deliverables.insert("", "end", iid=name, values=(name, reference_label(ref)))
@@ -210,7 +208,7 @@ def open_graph(app):
             listing.selection_set(
                 next(i for i, n in enumerate(draft.ir["nodes"]) if n["id"] == selected)
             )
-            title.set(f"{selected} · {app.tool_titles.get(node['tool'], node['tool'])}")
+            title.set(f"{selected} · {app.tool_title(node)}")
             source_choice.configure(
                 values=[reference_label(ref) for ref in draft.references(exclude=selected)]
             )

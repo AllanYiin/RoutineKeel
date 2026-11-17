@@ -1,7 +1,7 @@
 """Ordered, transactional Studio schema migrations."""
 
 APPLICATION_ID = 0x53545544  # STUD; rejects accidentally selected Runtime databases.
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 V001 = (
     """CREATE TABLE studio_projects (
@@ -145,6 +145,23 @@ V010 = (
         BEGIN SELECT RAISE(ABORT, 'retain evidence decision'); END""",
 )
 
+V011 = (
+    """CREATE TABLE studio_tool_events (
+        sequence INTEGER PRIMARY KEY AUTOINCREMENT, tool_id TEXT NOT NULL, version TEXT NOT NULL,
+        action TEXT NOT NULL, contract_hash TEXT NOT NULL, record_version INTEGER NOT NULL,
+        payload_json TEXT NOT NULL, actor TEXT, reason TEXT, created_at TEXT NOT NULL,
+        FOREIGN KEY(tool_id,version) REFERENCES studio_tools(tool_id,version))""",
+    "CREATE INDEX studio_tool_events_identity ON studio_tool_events(tool_id,version,sequence)",
+    """INSERT INTO studio_tool_events(tool_id,version,action,contract_hash,record_version,payload_json,actor,reason,created_at)
+        SELECT tool_id,version,'snapshot',contract_hash,record_version,
+        '{"status":"' || status || '","trust_status":"' || trust_status || '"}',
+        NULL,'Upgrade snapshot; original decisions remain in approval history',CURRENT_TIMESTAMP FROM studio_tools""",
+    """CREATE TRIGGER immutable_tool_event BEFORE UPDATE ON studio_tool_events
+        BEGIN SELECT RAISE(ABORT, 'immutable tool event'); END""",
+    """CREATE TRIGGER retain_tool_event BEFORE DELETE ON studio_tool_events
+        BEGIN SELECT RAISE(ABORT, 'retain tool event'); END""",
+)
+
 MIGRATIONS = {
     1: V001,
     2: V002,
@@ -156,4 +173,5 @@ MIGRATIONS = {
     8: V008,
     9: V009,
     10: V010,
+    11: V011,
 }

@@ -12,7 +12,7 @@
 | FR-02 來源 CRUD／預覽 | ingestion/service.py、preview 與 folder 模組；來源相關測試 | UI 說明修改；所有已接受格式的最終視覺矩陣 |
 | FR-03 草稿版本與差異 | project/history.py、版本與差異 UI、test_history_editing.py | 續編新版本／明確還原目標／捨棄保護已驗；新視窗實機走查待驗 |
 | FR-04 業務規則 CRUD | governance/evidence.py、v010、規則與步驟設定表單；test_evidence_decisions.py、test_manual_and_settings.py | 規則／確認／分支與模型設定已接線；資料夾關係圖決策 UI、機器 verified 證據整合與實機走查仍待 |
-| FR-05 工具註冊及政策 | registry/catalog.py、policy.py；test_registry.py | 管理者操作入口、生成工具可重用流程與第三方相容邊界的端到端證據 |
+| FR-05 工具註冊及政策 | registry/catalog.py、policy.py、available、v011、工具管理 UI；test_tool_management.py | 描述與版本管理、核准／撤回／停用已驗；生成 Handler 跨專案重用、第三方適配覆蓋及新視窗實機驗收仍待 |
 | FR-06 節點 CRUD | ir/editor.py 原子編輯；GraphDraft／手動起案／步驟設定表單；test_graph_editing.py、test_manual_and_settings.py | 手動起案、基本動作／分支／模型新增、來源／依賴／交付物／條件／模型政策已補；新增表單實機與完整工具型別覆蓋仍待驗 |
 | FR-07 案例 CRUD／預期實際 | GoldenCases.save/get/archive/history；案例編輯、文字與圖片歷史預覽；test_case_editing.py | 版本化修改、替換、封存後重開及核准失效已驗；新圖片預覽與視窗走查待驗 |
 | FR-08 生成版本 CRUD | Compiler.compile/get；獨立 build/report | 尚缺完整版本封存與 UI 程式／報告瀏覽 |
@@ -29,7 +29,7 @@
 | 原需求 | 現有證據 | 未完成驗收 |
 |---|---|---|
 | §8 IR、邏輯參照、節點強制契約、有限分支 | ir 模組、compiler/compatibility.py、branch_lowering.py；IR／branch 測試 | 逐欄位核對 Runtime 語意與拒絕路徑；不能把 IR 接受但 Compiler 不支援當成已實作 |
-| §9 狀態／migration／不可變／交易 | SQLite v010、v009 升級備份還原、CAS、版本與決策紀錄；複合交易 | 長操作中斷狀態、100 次 CRUD 重開與正式指標故障矩陣 |
+| §9 狀態／migration／不可變／交易 | SQLite v011、v009／v010 升級備份還原、CAS、版本／證據／工具決策紀錄 | 長操作中斷狀態、100 次 CRUD 重開與正式指標故障矩陣 |
 | §10 共用 Service／事件／串流 | service.py、discovery events 與 usage | generation、verification、approval 事件與所有狀態持久化須逐項核對；CLI 目前只有部分入口 |
 | §11 UI／預覽／停止／顏色＋文字 | 原生 Windows 檢視與使用者回饋；ui-review.md | 不操作目前使用者桌面；其他平台實機及所有新增表單待走查 |
 | §12 非功能與基準 | 安全路徑、來源 snapshots、隔離重播、無網路默認 | 100 來源零模型、20 節點 p95 <500ms、100 次 CRUD、100 次不同輸入隔離、20 故障；均需固定硬體與資料證據 |

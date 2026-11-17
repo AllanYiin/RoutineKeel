@@ -12,7 +12,7 @@ def match_tools(
     policy: ToolPolicy,
 ) -> list:
     matches = []
-    for key, tool in catalog.allowed(policy).items():
+    for key, tool in catalog.available(policy).items():
         if (
             capability not in tool.capabilities
             or inputs.keys() != tool.inputs.keys()

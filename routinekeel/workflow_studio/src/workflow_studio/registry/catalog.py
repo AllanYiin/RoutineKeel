@@ -12,6 +12,54 @@ class Catalog:
     def __init__(self, repository):
         self.repository = repository
 
+    @staticmethod
+    def _reviewer(actor, reason, *, required=False):
+        if not required and actor is None and reason is None:
+            return
+        if (
+            not isinstance(actor, str)
+            or not 1 <= len(actor.strip()) <= 200
+            or not isinstance(reason, str)
+            or not 1 <= len(reason.strip()) <= 4000
+        ):
+            raise StudioError("INPUT_INVALID", "請填寫 1–200 字決策者及 1–4,000 字具體理由。")
+
+    def _event(self, tool_id, version, action, actor=None, reason=None):
+        item = self.get(tool_id, version)
+        self.repository.connection.execute(
+            "INSERT INTO studio_tool_events(tool_id,version,action,contract_hash,record_version,payload_json,actor,reason,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            (
+                tool_id,
+                version,
+                action,
+                item["contract_hash"],
+                item["record_version"],
+                canonical_json({"status": item["status"], "trust_status": item["trust_status"]}),
+                actor.strip() if actor else None,
+                reason.strip() if reason else None,
+                now(),
+            ),
+        )
+
+    def history(self, tool_id, version):
+        self.get(tool_id, version)
+        return {
+            "events": [
+                dict(row)
+                for row in self.repository.connection.execute(
+                    "SELECT * FROM studio_tool_events WHERE tool_id=? AND version=? ORDER BY sequence",
+                    (tool_id, version),
+                )
+            ],
+            "approvals": [
+                dict(row)
+                for row in self.repository.connection.execute(
+                    "SELECT * FROM studio_tool_approvals WHERE tool_id=? AND version=? ORDER BY id",
+                    (tool_id, version),
+                )
+            ],
+        }
+
     def seed(self):
         with self.repository.transaction() as db:
             for tool in builtin_tools():
@@ -34,8 +82,10 @@ class Catalog:
                         now(),
                     ),
                 )
+                self._event(tool.tool_id, tool.version, "seed")
 
-    def register(self, tool: ToolDescription):
+    def register(self, tool: ToolDescription, *, actor=None, reason=None):
+        self._reviewer(actor, reason)
         tool = ToolDescription.model_validate(tool.model_dump())
         with self.repository.transaction() as db:
             if db.execute(
@@ -53,6 +103,7 @@ class Catalog:
                     now(),
                 ),
             )
+            self._event(tool.tool_id, tool.version, "register", actor, reason)
         return self.get(tool.tool_id, tool.version)
 
     def get(self, tool_id: str, version: str) -> dict:
@@ -76,7 +127,8 @@ class Catalog:
             )
         ]
 
-    def set_status(self, tool_id, version, expected_revision, status):
+    def set_status(self, tool_id, version, expected_revision, status, *, actor=None, reason=None):
+        self._reviewer(actor, reason)
         if status not in {"active", "disabled", "archived"}:
             raise StudioError("INPUT_INVALID", "工具狀態無效。")
         with self.repository.transaction() as db:
@@ -86,14 +138,20 @@ class Catalog:
             )
             if updated.rowcount != 1:
                 raise StudioError("REVISION_CONFLICT", "工具紀錄已更新，請重新讀取。")
+            self._event(tool_id, version, status, actor, reason)
         return self.get(tool_id, version)
 
-    def approve(self, tool_id, version, expected_hash, *, actor: str, reason: str):
-        if not actor.strip() or not reason.strip():
-            raise StudioError("INPUT_INVALID", "核准須記錄決策者及理由。")
+    def approve(
+        self, tool_id, version, expected_hash, *, actor: str, reason: str, expected_revision=None
+    ):
+        self._reviewer(actor, reason, required=True)
         with self.repository.transaction() as db:
             item = self.get(tool_id, version)
-            if item["contract_hash"] != expected_hash or item["status"] != "active":
+            if (
+                item["contract_hash"] != expected_hash
+                or item["status"] != "active"
+                or (expected_revision is not None and item["record_version"] != expected_revision)
+            ):
                 raise StudioError("REVISION_CONFLICT", "工具內容或狀態已變動，核准未套用。")
             if not item["tool"].test_evidence:
                 raise StudioError("TEST_FAILED", "未提供工具測試證據。")
@@ -102,10 +160,33 @@ class Catalog:
                 (tool_id, version, expected_hash, actor, reason, now()),
             )
             db.execute(
-                "UPDATE studio_tools SET trust_status='approved',record_version=record_version+1 WHERE tool_id=? AND version=?",
+                "UPDATE studio_tools SET trust_status=?,record_version=record_version+1 WHERE tool_id=? AND version=?",
+                ("builtin" if item["trust_status"] == "builtin" else "approved", tool_id, version),
+            )
+            self._event(tool_id, version, "approve", actor, reason)
+        return self.get(tool_id, version)
+
+    def revoke(self, tool_id, version, expected_revision, *, actor, reason):
+        self._reviewer(actor, reason, required=True)
+        with self.repository.transaction() as db:
+            item = self.get(tool_id, version)
+            if item["record_version"] != expected_revision:
+                raise StudioError("REVISION_CONFLICT", "工具紀錄已改變，撤回未套用。")
+            if item["trust_status"] != "approved":
+                raise StudioError(
+                    "INPUT_INVALID", "此版本沒有可撤回的人工核准；內建工具請使用停用。"
+                )
+            db.execute(
+                "UPDATE studio_tools SET trust_status='untrusted',record_version=record_version+1 WHERE tool_id=? AND version=?",
                 (tool_id, version),
             )
+            self._event(tool_id, version, "revoke", actor, reason)
         return self.get(tool_id, version)
+
+    def available(self, policy):
+        from ..compiler.compatibility import tool_support
+
+        return {key: tool for key, tool in self.allowed(policy).items() if tool_support(tool)[0]}
 
     def allowed(self, policy: ToolPolicy) -> dict[str, ToolDescription]:
         result = {}

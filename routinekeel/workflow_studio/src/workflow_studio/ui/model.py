@@ -49,7 +49,101 @@ class StudioUIModel:
 
     def tool_titles(self):
         with self.service() as studio:
-            return {row["tool_id"]: row["tool"].title for row in studio.tools.list()}
+            result = {}
+            for row in studio.tools.list(include_archived=True):
+                result[row["tool_id"]] = row["tool"].title
+                result[f"{row['tool_id']}@{row['version']}"] = row["tool"].title
+            return result
+
+    def tool_records(self):
+        from ..compiler.compatibility import tool_support
+
+        with self.service() as studio:
+            records = studio.tools.list(include_archived=True)
+        for item in records:
+            item["compiler_supported"], item["support_reason"] = tool_support(item["tool"])
+            try:
+                self.policy.check(item["tool"], trust=item["trust_status"], status=item["status"])
+                item["policy_reason"] = "符合目前專案政策。"
+                item["available"] = item["compiler_supported"]
+            except StudioError as exc:
+                item["policy_reason"], item["available"] = str(exc), False
+        return records
+
+    def tool_history(self, tool_id, version):
+        with self.service() as studio:
+            return studio.tools.history(tool_id, version)
+
+    def register_tool(self, payload, *, actor=None, reason=None):
+        from pydantic import ValidationError
+
+        from ..registry.models import ToolDescription
+
+        try:
+            tool = ToolDescription.model_validate(payload)
+        except ValidationError as exc:
+            raise StudioError(
+                "INPUT_INVALID", "工具描述不符合契約，請檢查版本、平台、權限與輸入輸出型別。"
+            ) from exc
+        with self.service() as studio:
+            return studio.tools.register(tool, actor=actor, reason=reason)
+
+    def read_tool_file(self, path):
+        path = Path(path)
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > 128_000:
+            raise StudioError("INPUT_INVALID", "工具描述須為不超過 128 KB 的一般 UTF-8 JSON 檔案。")
+        try:
+            raw = path.read_bytes()
+            if len(raw) > 128_000:
+                raise ValueError()
+
+            def unique_pairs(pairs):
+                result = {}
+                for key, value in pairs:
+                    if key in result:
+                        raise ValueError()
+                    result[key] = value
+                return result
+
+            result = json.loads(raw.decode("utf-8-sig"), object_pairs_hook=unique_pairs)
+            if not isinstance(result, dict):
+                raise ValueError()
+            return result
+        except (ValueError, UnicodeError) as exc:
+            raise StudioError("INPUT_INVALID", "工具描述不是有效的 UTF-8 JSON。") from exc
+
+    def decide_tool(self, item, action, actor, reason):
+        with self.service() as studio:
+            studio.tools._reviewer(actor, reason, required=True)
+            if action == "approve":
+                result = studio.tools.approve(
+                    item["tool_id"],
+                    item["version"],
+                    item["contract_hash"],
+                    actor=actor,
+                    reason=reason,
+                    expected_revision=item["record_version"],
+                )
+            elif action == "revoke":
+                result = studio.tools.revoke(
+                    item["tool_id"],
+                    item["version"],
+                    item["record_version"],
+                    actor=actor,
+                    reason=reason,
+                )
+            else:
+                result = studio.tools.set_status(
+                    item["tool_id"],
+                    item["version"],
+                    item["record_version"],
+                    action,
+                    actor=actor,
+                    reason=reason,
+                )
+        self.build_id = self.approval_id = None
+        self.candidates = []
+        return result
 
     def select_project(self, project_id):
         self.project_id, self.build_id, self.approval_id = project_id, None, None
@@ -248,7 +342,7 @@ class StudioUIModel:
 
     def editor_tools(self):
         with self.service() as studio:
-            return {k: tool.model_dump() for k, tool in studio.tools.allowed(self.policy).items()}
+            return {k: tool.model_dump() for k, tool in studio.tools.available(self.policy).items()}
 
     def initialize_flow(
         self, expected_version, source_id, source_version, source_path, tool_key, **settings

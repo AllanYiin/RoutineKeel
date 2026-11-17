@@ -70,7 +70,7 @@ def open_evidence(app):
     binding = tk.Listbox(fields, height=4, selectmode="multiple", exportselection=False)
     binding.grid(row=9, column=0, sticky="ew", pady=6)
     for node in nodes:
-        binding.insert("end", node["id"] + " · " + app.tool_titles.get(node["tool"], node["tool"]))
+        binding.insert("end", node["id"] + " · " + app.tool_title(node))
     actor, reason = tk.StringVar(value=app.actor_var.get()), tk.StringVar()
     ttk.Label(fields, text="確認／撤回者").grid(row=10, column=0, sticky="w")
     ttk.Entry(fields, textvariable=actor).grid(row=11, column=0, sticky="ew", pady=3)
