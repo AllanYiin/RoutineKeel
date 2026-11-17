@@ -1,6 +1,7 @@
 """Native offline-first workbench; model work streams on a separate service connection."""
 
 import io
+import json
 import os
 import queue
 import threading
@@ -92,6 +93,15 @@ class StudioApp:
             "node": workflow and self.selected_node is not None,
             "cases": active and self.case_count > 0,
             "verify": workflow and self.case_count > 0,
+            "repair": active
+            and self.model.provider is not None
+            and bool(
+                self.last_report
+                and self.last_report.get("status") == "failed"
+                and self.last_report.get("static") == "passed"
+                and self.last_report.get("error_code") == "TEST_FAILED"
+                and self.last_report.get("build_id") == self.model.build_id
+            ),
             "publish": active
             and verified
             and self.reviewed.get()
@@ -394,14 +404,29 @@ class StudioApp:
             while True:
                 kind, callback, value = self.messages.get_nowait()
                 if kind == "event":
-                    if value["event"] == "analysis.started":
+                    if value["event"] in {"analysis.started", "repair.started"}:
                         self.raw_analysis = ""
                         self._set_text(self.analysis, "正在整理候選流程……")
+                        if value["event"] == "repair.started":
+                            self.status.set(
+                                f"第 {value['repair_round']} 輪修復；固定驗收條件保持不變。"
+                            )
                     elif value["event"] == "analysis.repairing":
                         self.status.set(
                             f"候選流程未通過檢查，正在進行第 {value['repair_round']} 次修正。"
                         )
-                    elif value["event"] == "analysis.delta":
+                    elif value["event"] == "repair.verified":
+                        self.status.set(f"第 {value['repair_round']} 輪重測：{value['status']}。")
+                    elif value["event"] == "repair.round_failed":
+                        self.status.set("修復提案未通過契約檢查，仍受兩輪總上限限制。")
+                    elif value["event"] == "repair.needs_clarification":
+                        self._set_text(
+                            self.analysis,
+                            analysis_text(self.raw_analysis)
+                            + "\n\n待確認：\n"
+                            + "\n".join(value["questions"]),
+                        )
+                    elif value["event"] in {"analysis.delta", "repair.delta"}:
                         self.raw_analysis += value["content"]
                         self._set_text(self.analysis, analysis_text(self.raw_analysis))
                     continue
@@ -715,28 +740,29 @@ class StudioApp:
         self.status.set("正在隔離工作區試做，核對實際成果與成功案例……")
         self.tabs.select(2)
 
-        def done(report):
-            self.last_report = report
-            passed = report["status"] == "passed"
-            lines = [
-                "試做通過" if passed else "試做未通過",
-                f"已檢查 {len(report['cases'])} 個固定案例。",
-            ]
-            for item in report["cases"]:
-                lines.append("✓ 成果相符" if item["status"] == "passed" else "× 成果不符或執行失敗")
-                if "difference" in item:
-                    lines.append(
-                        f"預期 {item['difference']['expected_bytes']} bytes；實際 {item['difference']['actual_bytes']} bytes。"
-                    )
-                    lines.append(item["difference"].get("text_diff", ""))
-            if report.get("message"):
-                lines.append(report["message"])
-            self._set_text(self.report_text, "\n\n".join(lines))
-            self.status.set(
-                "試做通過，請核對成果後確認發布。" if passed else "未通過驗收的候選包不能發布。"
-            )
+        self._background(lambda: self.model.verify(authorization=authorization), self.show_report)
 
-        self._background(lambda: self.model.verify(authorization=authorization), done)
+    def show_report(self, report):
+        self.last_report = report
+        passed = report["status"] == "passed"
+        lines = [
+            "試做通過" if passed else "試做未通過",
+            f"已檢查 {len(report['cases'])} 個固定案例。",
+        ]
+        for item in report["cases"]:
+            lines.append("✓ 成果相符" if item["status"] == "passed" else "× 成果不符或執行失敗")
+            if "difference" in item:
+                lines.append(
+                    f"預期 {item['difference']['expected_bytes']} bytes；實際 {item['difference']['actual_bytes']} bytes。"
+                )
+                lines.append(item["difference"].get("reason", ""))
+                lines.append(item["difference"].get("text_diff", ""))
+        if report.get("message"):
+            lines.append(report["message"])
+        self._set_text(self.report_text, "\n\n".join(lines))
+        self.status.set(
+            "試做通過，請核對成果後確認發布。" if passed else "未通過驗收的候選包不能發布。"
+        )
 
     def publish(self):
         if not self.reviewed.get() or not self.actor_var.get().strip():
@@ -750,6 +776,76 @@ class StudioApp:
                 lambda: self.model.approve_publish(target, actor, "已核對試做成果與工作目標"),
                 lambda result: self.status.set("已發布到本機工作區；舊版本與原工作成果保留。"),
             )
+
+    def repair(self):
+        if not self.last_report:
+            raise StudioError("TEST_FAILED", "請先完成試做。")
+        report_id = self.last_report["report_id"]
+        self.status.set("正在準備修復資料範圍……")
+        self._background(lambda: self.model.prepare_repair(report_id), self._repair_prepared)
+
+    def _repair_prepared(self, prepared):
+        scope = json.loads(prepared.scope_json)
+        cases = "\n".join(
+            f"• {s['specification']['name']}（{s['specification']['comparison']}）"
+            for s in scope["cases"]
+        )
+        runtime = scope["runtime"]
+        runtime_text = ""
+        if runtime["models"]:
+            runtime_text = (
+                "\n\n試做也會將案例及修復流程衍生資料送至：\n"
+                + "\n".join(f"{m['model']} → {m['endpoint']}" for m in runtime["models"])
+                + f"\n兩輪試做預算上限 USD {scope['maximum_runtime_budget_micro_usd'] / 1_000_000:.2f}。"
+            )
+        if not messagebox.askyesno(
+            "確認修復資料與預算",
+            f"修復模型：{scope['model']}\n目的端：{scope['destination']}\n\n"
+            "會傳送目前流程（含程式與證據）、以下案例的完整輸入與正確成果，以及試做差異。"
+            "最多兩輪；後續也會傳送修復提案及重測差異。\n\n"
+            + cases
+            + f"\n\n設計期累計預算上限 USD {scope['budget']['budget_micro_usd'] / 1_000_000:.2f}。"
+            + runtime_text
+            + "\n\n案例與規則保持固定；不會自動發布。是否開始？",
+            parent=self.root,
+        ):
+            self.status.set("尚未授權修復，未傳送資料。")
+            return
+        secrets = self.model.authorize_verification(runtime).secrets if runtime["models"] else None
+        self.last_report = None
+        self.reviewed.set(False)
+        self.tabs.select(1)
+        self.status.set("正在修復；可停止後續模型呼叫，已開始的試做會先完成。")
+
+        def work():
+            try:
+                return self.model.repair_model(
+                    prepared,
+                    lambda event: self.messages.put(("event", None, event)),
+                    self.cancelled.is_set,
+                    authorized_hash=prepared.request_hash,
+                    runtime_secrets=secrets,
+                ), None
+            except StudioError as exc:
+                return None, exc
+
+        def done(result):
+            report, error = result
+            self.refresh_project()
+            if error:
+                self.error(error)
+                return
+            self.last_report = report
+            self.tabs.select(2)
+            self.show_report(report)
+            self.status.set(
+                "修復後試做通過，仍需人工核對與核准。"
+                if report["status"] == "passed"
+                else "兩輪修復已結束，仍未通過；請查看分析與失敗報告。"
+            )
+
+        self._background(work, done)
+        self.stop_button.configure(state="normal")
 
     def release_history(self):
         rows = [r for r in self.model.release_history() if r["status"] == "published"]

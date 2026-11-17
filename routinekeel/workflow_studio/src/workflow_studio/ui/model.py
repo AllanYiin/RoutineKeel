@@ -347,6 +347,38 @@ class StudioUIModel:
             self.approval_id = approval["approval_id"]
             return result
 
+    def prepare_repair(self, report_id):
+        if self.provider is None or self.budget is None:
+            raise StudioError("PROVIDER_UNAVAILABLE", "請先設定修復模型、費率與預算。")
+        bindings = self.verification_bindings()
+        with self.service() as studio:
+            return studio.model_repair(
+                self.provider, self.budget, self.policy, runtime_python=self.runtime_python
+            ).prepare(self.project_id, report_id, bindings)
+
+    def repair_model(self, prepared, callback, cancelled, *, authorized_hash, runtime_secrets=None):
+        self.approval_id = None
+        final = None
+        with self.service() as studio:
+            for event in studio.model_repair(
+                self.provider, self.budget, self.policy, runtime_python=self.runtime_python
+            ).run(
+                prepared,
+                authorized_hash=authorized_hash,
+                runtime_secrets=runtime_secrets,
+                cancelled=cancelled,
+            ):
+                if event["event"] == "repair.proposed":
+                    self.build_id = None
+                if event["event"] in {"repair.verified", "repair.completed"}:
+                    self.build_id = event["build_id"]
+                if event["event"] == "repair.completed":
+                    from ..verifier.report import Verifier
+
+                    final = Verifier(studio).get(self.project_id, event["report_id"])
+                callback(event)
+        return final
+
     def release_history(self):
         with self.service() as studio:
             return Releases(studio).history(self.project_id) if self.project_id else []

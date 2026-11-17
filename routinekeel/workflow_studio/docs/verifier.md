@@ -35,7 +35,9 @@ runner 使用 WorkflowService plan／prepare／verify／run，讀取真實 Run�
 最多兩輪，每輪建立新 Revision／build 並完整重測；原本的 case 版本固定不變。
 第二輪接續第一輪的 IR 修正，仍與最初工作目標、成功條件及工作流識別碼比對。
 目標／成功條件／workflow_id 不允許修改。兩輪後仍失敗就回傳證據並停止，
-不自行放寬條件、改動正式包或宣稱完成。目前測試使用固定 proposer，未呼叫付費模型修復。
+不自行放寬條件、改動正式包或宣稱完成。此低階介面可供受控程式提出提案。
+工作臺另透過 `StudioService.model_repair` 接到可替換 Provider，具有獨立外傳授權、串流、
+用量帳本及重播流程，詳見 [模型修復](model-repair.md)。目前未呼叫付費模型做品質驗收。
 
 runtime_python 必須是已安裝相容 flow_base 的 Python。未提供時使用目前 Python；
 沒有 Runtime 依賴會留下明確失敗報告，不自動安裝依賴或啟動服務。

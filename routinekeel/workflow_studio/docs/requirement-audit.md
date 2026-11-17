@@ -22,7 +22,7 @@
 | FR-12 多來源發現 | discovery/planner.py、folder.py、video.py；推論及證據測試 | 真實文字／Mermaid 各至少 5 件；手繪辨識路徑須核對；影片與融合仍為 P2 未驗且停用 |
 | FR-13 工具配置 | Registry policy/matching、受控內建及生成工具 | 對真實案例核對重用優先順序，不以僅固定工具通過代替新 Handler 能力 |
 | FR-14 程式／包生成 | compiler/handlers.py、runtime_program.py、generator.py；test_generated_handlers.py | 已有 CSV／JSON 新算法重播，真實模型未驗；單一檔案 source/result 及受限語法需對照完整案例覆蓋，不可默認為全範圍完成 |
-| FR-15 Runtime LLM 隔離 | compiler/runtime_llm.py、LLM ledger、authorization.py | 真實 Provider 串流／用量及成本 gate 未驗；業務 GoldenCase 失敗的模型修復尚未接到 UI |
+| FR-15 Runtime LLM 隔離 | compiler/runtime_llm.py、LLM ledger、authorization.py、ModelRepair／UI 接線 | 修復已具獨立授權與固定案例重播；真實 Provider 品質／用量及成本 gate 未驗 |
 
 ## 共通契約與驗收
 
@@ -46,8 +46,8 @@
 ## 最終交付 Gate
 
 - 固定 20 件低風險範例及獨立預期成果，至少 16 件由非技術使用者完成；目前未有此證據。
-- Stage 8 已有明確 JSON 比較及累積最多兩輪修復；尚須將真實模型接到業務驗收失敗修復，
-  外傳範圍／預算要獨立授權，不能沿用較窄的分析同意。
+- Stage 8 已有明確 JSON 比較、最多兩輪 ModelRepair Provider／UI 接線及獨立範圍／預算授權，
+  CSV 算法及參數修復已用真正 Runtime 重播；模型輸出目前仍為 fixture，真實品質及新按鈕視覺驗收待完成。
 - Stage 12：Studio 獨立依賴與三平台 CI 尚未接線。現有 packages.yml 使用底座環境收集 tests，
   不可假設它已完整驗證 Studio，也不可用整批跳過 Studio 測試替代依賴配置。
 - Stage 13：開發用 open_studio.bat 不等於乾淨安裝交付。尚需發行工具、使用者／開發者指南、

@@ -346,6 +346,9 @@ def build_workbench(app):
         pady=s(6),
     )
     app.report_text = text_area(result, height=5)
+    app.button(
+        result, "根據試做差異修復（最多兩輪）", app.repair, requires="repair", fill="x", pady=s(3)
+    )
     approval = ttk.Frame(result)
     approval.pack(fill="x", pady=(s(8), 0))
     app.actor_var = tk.StringVar()

@@ -71,6 +71,11 @@ class StudioService:
             {key: tool.signature() for key, tool in self.tools.allowed(policy).items()},
         )
 
+    def model_repair(self, provider, budget, tool_policy, *, runtime_python=None):
+        from .verifier.model_repair import ModelRepair
+
+        return ModelRepair(self, provider, budget, tool_policy, runtime_python=runtime_python)
+
     def status(self) -> dict:
         return {"version": __version__, "schema_version": self.repository.schema_version}
 

@@ -170,3 +170,18 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
 - Ruff check、format check（114 files）及 `git diff --check` 通過。
 - 新增比較規則選擇對話框的程式已接線，但遵守停止桌面操作，未做此對話框的視覺複驗。
 - 完整規格缺口見 requirement-audit.md；本輪未完成真實模型、三平台、20 件非技術案例及最終發行 Gate。
+
+## 業務試做模型修復接線
+
+- 新增 `StudioService.model_repair`、不可變 PreparedRepair、逐段事件、累計設計預算與獨立外傳確認。
+  原報告與完整案例清單／比較規則 hash 固定；目的端、預算、工具、案例或專案漂移均拒絕。
+- `python -m pytest tests/studio/test_model_repair.py -q`：15 passed，22.84 秒。
+  真正 Runtime 執行了修復後的新包，包含 CSV 篩選邊界及門檻的兩輪累積修復，案例 acceptance_hash 不變。
+  Runtime LLM 憑證重新綁定及端點／預算變更拒絕使用替身 replay，不是實際雲端模型呼叫。
+- 完整非桌面回歸（與前節相同排除三個桌面測試的命令）：246 passed、3 deselected，82.67 秒。
+- 隨後新增缺規則的結構化問題事件與 UI 顯示；
+  `python -m pytest tests/studio/test_model_repair.py -q -k missing_business`：1 passed、15 deselected，1.93 秒。
+  缺規則只呼叫一次、保存待確認問題，未建立虛構成功版本。
+- Ruff check／format check（116 files）及 `git diff --check` 通過。
+- 工作臺按鈕與確認／串流／報告接線已實作，UI model 完整流程已驗；未啟動視窗做視覺驗收。
+  全部模型輸出仍為 fixture，未呼叫付費 Provider，未發布到外部服務。
