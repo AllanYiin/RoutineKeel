@@ -95,10 +95,27 @@ def validate_ir(
                 binding.port, tool.inputs[name]
             ):
                 raise StudioError("CONTRACT_MISMATCH", f"{node.id}.{name} 輸入型別不符。")
-        if node.outputs.keys() != tool.outputs.keys():
+        output_signature = tool.outputs
+        if node.kind == "composite_branch":
+            from .conditions import BranchPlan
+
+            try:
+                branch = BranchPlan.model_validate(node.parameters)
+                arms = [
+                    tools.get(f"{arm.tool}@{arm.version}")
+                    for arm in (branch.when_true, branch.when_false)
+                ]
+                if (
+                    all(arm is not None and arm.kind == "deterministic" for arm in arms)
+                    and arms[0].outputs == arms[1].outputs
+                ):
+                    output_signature = arms[0].outputs
+            except ValidationError:
+                pass  # Detailed unsupported-branch errors belong to Compiler validation.
+        if node.outputs.keys() != output_signature.keys():
             raise StudioError("CONTRACT_MISMATCH", f"{node.id} 的輸出欄位不符。")
         for name, port in node.outputs.items():
-            if not compatible(tool.outputs[name], port):
+            if not compatible(output_signature[name], port):
                 raise StudioError("CONTRACT_MISMATCH", f"{node.id}.{name} 輸出型別不符。")
         for condition in node.preconditions:
             resolve(condition.reference, node)

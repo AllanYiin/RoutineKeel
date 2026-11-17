@@ -261,6 +261,14 @@ def build_workbench(app):
     )
     app.button(
         flow,
+        "手動建立第一個流程",
+        app.initialize_flow,
+        requires="initialize",
+        fill="x",
+        pady=(0, s(6)),
+    )
+    app.button(
+        flow,
         "新增步驟／連線／交付物",
         app.edit_graph,
         requires="workflow",

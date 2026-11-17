@@ -5,9 +5,7 @@ from ..registry.builtin import builtin_tools
 def check_supported(ir, tools):
     signatures = builtin_tools()
     if len(ir.inputs) != 1 or next(iter(ir.inputs.values())).type != "file":
-        raise StudioError(
-            "IR_UNSUPPORTED_FEATURE", "此編譯器版本接受單一檔案輸入與無 secret 的流程。"
-        )
+        raise StudioError("IR_UNSUPPORTED_FEATURE", "此編譯器版本接受單一檔案輸入。")
     nonterminal = {dependency for node in ir.nodes for dependency in node.depends_on}
     for ref in ir.outputs.values():
         if ref.split("//")[1].split("/")[0] in nonterminal:
@@ -17,7 +15,7 @@ def check_supported(ir, tools):
         candidates = [t for t in signatures if t.implementation == tool.implementation]
         if node.kind not in {"deterministic", "composite_branch", "llm"} or not candidates:
             raise StudioError(
-                "IR_UNSUPPORTED_FEATURE", "此階段只編譯受控且已驗證的確定性 Handler。"
+                "IR_UNSUPPORTED_FEATURE", "此步驟種類或工具尚無可安全編譯的受控實作。"
             )
         if not any(
             tool.inputs == builtin.inputs

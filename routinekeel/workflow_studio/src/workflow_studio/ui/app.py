@@ -6,7 +6,6 @@ import os
 import queue
 import threading
 import tkinter as tk
-from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from PIL import Image, ImageTk
@@ -93,6 +92,7 @@ class StudioApp:
             and self.candidate_choice.current() >= 0,
             "node": workflow and self.selected_node is not None,
             "workflow": workflow,
+            "initialize": active and bool(self.source_rows) and not workflow,
             "cases": active and self.case_count > 0,
             "case_history": active and self.case_history_count > 0,
             "verify": workflow and self.case_count > 0,
@@ -592,53 +592,14 @@ class StudioApp:
     def edit_node(self):
         if not self.selected_node:
             raise StudioError("INPUT_INVALID", "請點選要調整的步驟。")
-        expected_version = self.model.project().version
-        node = next(n for n in self.model.revision().ir["nodes"] if n["id"] == self.selected_node)
-        name = simpledialog.askstring(
-            "調整步驟",
-            "此步驟輸出檔案的名稱",
-            initialvalue=Path(node["outputs"]["result"]["path"]).name,
-            parent=self.root,
-        )
-        if name:
-            strip = (
-                messagebox.askyesno("整理空白", "是否移除每行前後空白？", parent=self.root)
-                if node["tool"] == "text.normalize"
-                else None
-            )
-            arguments = None
-            if node["tool"].startswith("data.transform_"):
-                arguments = dict(node["parameters"].get("arguments", {}))
-                for key, kind in node["parameters"].get("argument_types", {}).items():
-                    if kind == "null":
-                        continue
-                    prompt = f"{node['parameters']['purpose']}\n\n{key}"
-                    if kind == "boolean":
-                        value = messagebox.askyesnocancel(
-                            "調整資料規則", prompt + "：是否啟用？", parent=self.root
-                        )
-                    elif kind in {"integer", "number"}:
-                        ask = (
-                            simpledialog.askinteger if kind == "integer" else simpledialog.askfloat
-                        )
-                        value = ask(
-                            "調整資料規則", prompt, initialvalue=arguments[key], parent=self.root
-                        )
-                    else:
-                        value = simpledialog.askstring(
-                            "調整資料規則", prompt, initialvalue=arguments[key], parent=self.root
-                        )
-                    if value is None:
-                        return
-                    arguments[key] = value
-            self.model.edit_node(
-                self.selected_node,
-                output_name=name,
-                strip=strip,
-                arguments=arguments,
-                expected_version=expected_version,
-            )
-            self.refresh_project()
+        from .node_settings import open_settings
+
+        open_settings(self)
+
+    def initialize_flow(self):
+        from .manual_dialog import open_manual
+
+        open_manual(self)
 
     def delete_node(self):
         if self.selected_node and messagebox.askyesno(

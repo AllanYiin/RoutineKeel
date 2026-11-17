@@ -232,3 +232,19 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
   PNG 舊／新版本內容與尺寸資料測試通過；沒有操控使用者桌面，原生渲染／排版未驗。
 - 這些是本機功能與 fixture 證據，不代表真實模型品質、機器 verified 證據整合、三平台、
   20 件非技術案例或完整交付已完成。剩餘工作見 requirement-audit.md。
+
+## 手動起案、分支與步驟設定
+
+- 新增不經模型的第一個流程建立入口；來源、目標、工具、格式及輸出一次驗證後保存，失敗不留下半份 IR。
+  證據維持 inferred，沒有宣稱自動理解或已驗收。
+- 步驟表單接上檔名／時間／快取／前置及完成檢查、typed arguments、兩路分支、模型參數及結構化輸出欄位。
+  新模型步驟使用 symbolic secret；編輯時檢查整份流程的模型預算總額。
+- 分支驗證依兩路可信工具的共同輸出契約核對格式，保留原 generic file 宣告的相容性，
+  也允許已知共同文字格式接到下游文字工具，不偽造格式轉換。
+- `test_manual_and_settings.py test_branches.py test_graph_editing.py`：35 passed，11.53 秒。
+  後續增加新分支／模型模板與 secret 宣告測試，`test_manual_and_settings.py`：17 passed，5.60 秒。
+- 完整非桌面回歸（同前節命令）：305 passed、3 deselected，109.35 秒。
+  包含手動流程真實重播、分支兩路真實輸出與 branch.json、型別／來源／路徑／重複初始化拒絕、
+  模型政策變更令舊授權失效、預算總額與外部快取限制，以及非有限數值與微美元上限取整。
+- Ruff check／format check（131 files）與 git diff --check 通過。後續表單預設值、條件選取及提示微調未操作桌面，
+  新表單的實際互動與渲染仍須實機驗收；未呼叫付費模型或對外發布。

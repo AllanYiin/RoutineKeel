@@ -40,7 +40,7 @@ class FlowEditor:
         evidence_refs=None,
         llm_policy=None,
     ):
-        ir = self.current(project_id)
+        ir = self.current(project_id) if evidence_refs is None else None
         tool = self.studio.tools.allowed(self.policy).get(tool_key)
         if tool is None:
             raise StudioError("TOOL_NOT_ALLOWED", "工具不可用或尚未核准。")
@@ -80,7 +80,9 @@ class FlowEditor:
             "platform_requirements": list(tool.platforms),
             "resources": tool.resources.model_dump(),
             "timeout_seconds": 60,
-            "evidence_refs": list(evidence_refs or [e["id"] for e in ir["evidence"]]),
+            "evidence_refs": list(
+                evidence_refs if evidence_refs is not None else [e["id"] for e in ir["evidence"]]
+            ),
             "llm_policy": copy.deepcopy(llm_policy),
         }
 
@@ -93,6 +95,7 @@ class FlowEditor:
         delete_nodes=(),
         outputs=None,
         inputs=None,
+        secrets=None,
     ):
         with self.studio.repository.transaction() as db:
             project = self.studio.projects._editable(db, project_id, expected_version)
@@ -121,6 +124,8 @@ class FlowEditor:
                 payload["outputs"] = copy.deepcopy(outputs)
             if inputs is not None:
                 payload["inputs"] = copy.deepcopy(inputs)
+            if secrets is not None:
+                payload["secrets"] = copy.deepcopy(secrets)
             ordinals = [
                 r.ir["revision"]
                 for r in self.studio.projects.revisions(project_id, include_discarded=True)
@@ -134,6 +139,11 @@ class FlowEditor:
                 verified_records=self.studio.confirmed_evidence(project_id, payload),
             )
             check_supported(validated, tools)
+            if (
+                sum(n.llm_policy.budget_micro_usd for n in validated.nodes if n.llm_policy)
+                > self.policy.max_cost_micro_usd
+            ):
+                raise StudioError("BUDGET_EXCEEDED", "各模型步驟預算總和超過工作流允許的預算。")
             changed = self.studio.save_ir(
                 project_id, project.version, validated.model_dump(), self.policy
             )
@@ -150,3 +160,81 @@ class FlowEditor:
                 changed.revision_id,
             )
         return changed
+
+    def initialize(
+        self,
+        project_id,
+        expected_version,
+        source_id,
+        source_version,
+        source_path,
+        tool_key,
+        *,
+        output_path,
+        input_format=None,
+        parameters=None,
+        llm_policy=None,
+    ):
+        with self.studio.repository.transaction() as db:
+            project = self.studio.projects._editable(db, project_id, expected_version)
+            if any(
+                r.ir.get("ir_version") == "1.0" and r.status != "draft"
+                for r in self.studio.projects.revisions(project_id, include_discarded=True)
+            ):
+                raise StudioError("REVISION_CONFLICT", "已有流程版本，請使用新增步驟或版本續編。")
+            source = self.studio.sources.get(project_id, source_id)
+            if source.status != "active" or source.version != source_version:
+                raise StudioError("REVISION_CONFLICT", "設計來源已變更，請重新選取。")
+            if source_path not in {r["path"] for r in source.manifest["files"]}:
+                raise StudioError("SOURCE_NOT_FOUND", "設計來源中找不到選取檔案。")
+            self.studio.sources.content(project_id, source_id, source_path, version=source_version)
+            node = self.template(
+                project_id,
+                "step_1",
+                tool_key,
+                {"source": "input://source"},
+                {"result": output_path},
+                parameters=parameters,
+                evidence_refs=["manual_design"],
+                llm_policy=llm_policy,
+            )
+            node["inputs"]["source"]["port"]["format"] = input_format
+            payload = {
+                "ir_version": "1.0",
+                "workflow_id": "workflow-" + project_id[-12:],
+                "revision": 1,
+                "goal": project.goal,
+                "inputs": {"source": {"type": "file", "format": input_format}},
+                "secrets": [parse_reference(llm_policy["api_key"]).owner] if llm_policy else [],
+                "nodes": [node],
+                "outputs": {"result": "artifact://step_1/result"},
+                "evidence": [
+                    {
+                        "id": "manual_design",
+                        "source_id": source_id,
+                        "source_version": source_version,
+                        "evidence_locator": source_path,
+                        "claim": "依選取來源建立的手動候選，需用固定案例驗收。",
+                        "confidence_label": "inferred",
+                    }
+                ],
+            }
+            tools = self.studio.tools.allowed(self.policy)
+            ir = validate_ir(payload, {k: t.signature() for k, t in tools.items()})
+            check_supported(ir, tools)
+            if (
+                sum(n.llm_policy.budget_micro_usd for n in ir.nodes if n.llm_policy)
+                > self.policy.max_cost_micro_usd
+            ):
+                raise StudioError("BUDGET_EXCEEDED", "模型步驟預算超過工作流設定。")
+            revision = self.studio.save_ir(
+                project_id, project.version, ir.model_dump(), self.policy
+            )
+            EventStore(self.studio.repository).append(
+                project_id,
+                None,
+                "revision.created_manually",
+                {"tool": tool_key, "source_id": source_id, "source_version": source_version},
+                revision.revision_id,
+            )
+        return revision

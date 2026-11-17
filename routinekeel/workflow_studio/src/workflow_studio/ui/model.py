@@ -250,6 +250,122 @@ class StudioUIModel:
         with self.service() as studio:
             return {k: tool.model_dump() for k, tool in studio.tools.allowed(self.policy).items()}
 
+    def initialize_flow(
+        self, expected_version, source_id, source_version, source_path, tool_key, **settings
+    ):
+        with self.service() as studio:
+            result = studio.editor(self.policy).initialize(
+                self.project_id,
+                expected_version,
+                source_id,
+                source_version,
+                source_path,
+                tool_key,
+                **settings,
+            )
+        self.build_id = self.approval_id = None
+        self.candidates = []
+        return result
+
+    def node_defaults(self, tool_key, *, remaining_budget=None):
+        tool = self.editor_tools().get(tool_key)
+        if tool is None:
+            raise StudioError("TOOL_NOT_ALLOWED", "此動作目前不可用。")
+        if tool["implementation"] == "builtin.branch":
+            return {
+                "parameters": {
+                    "condition": {"operator": "file_size_gt", "value": 0},
+                    "when_true": {"tool": "file.copy", "version": "1.0.0", "parameters": {}},
+                    "when_false": {"tool": "file.copy", "version": "1.0.0", "parameters": {}},
+                }
+            }
+        if tool["implementation"] == "builtin.llm":
+            settings = self.session_config
+            amount = (
+                self.policy.max_cost_micro_usd if remaining_budget is None else remaining_budget
+            )
+            if not settings.get("runtime_enabled") or amount <= 0:
+                raise StudioError("BUDGET_EXCEEDED", "請先啟用執行期模型並配置可用預算。")
+            return {
+                "parameters": {
+                    "endpoint": settings["endpoint"],
+                    "prompt": "依照工作目標整理輸入，回傳 summary 文字欄位。",
+                    "output_fields": {"summary": "string"},
+                    "input_usd_per_million": settings["input_rate"],
+                    "output_usd_per_million": settings["output_rate"],
+                    "pricing_note": "使用者於模型設定確認的費率",
+                },
+                "llm_policy": {
+                    "model": settings["model"],
+                    "api_key": "secret://provider_key",
+                    "max_calls": 1,
+                    "max_output_tokens": 2000,
+                    "budget_micro_usd": amount,
+                    "timeout_seconds": 60,
+                },
+            }
+        return {"parameters": {}}
+
+    def update_node_settings(
+        self,
+        expected_version,
+        node_id,
+        *,
+        parameters=None,
+        llm_policy=None,
+        output_path=None,
+        timeout_seconds=None,
+        preconditions=None,
+        postconditions=None,
+        cacheable=None,
+    ):
+        ir = self.revision().ir
+        node = copy.deepcopy(next(n for n in ir["nodes"] if n["id"] == node_id))
+        for key, value in (
+            ("parameters", parameters),
+            ("llm_policy", llm_policy),
+            ("timeout_seconds", timeout_seconds),
+            ("preconditions", preconditions),
+            ("postconditions", postconditions),
+        ):
+            if value is not None:
+                node[key] = value
+        if (
+            node["kind"] == "composite_branch"
+            and isinstance(parameters, dict)
+            and all(isinstance(parameters.get(side), dict) for side in ("when_true", "when_false"))
+        ):
+            from ..ir.references import parse_reference
+
+            reference = parse_reference(node["inputs"]["source"]["source"])
+            actual_port = (
+                ir["inputs"][reference.owner]
+                if reference.scheme == "input"
+                else next(n for n in ir["nodes"] if n["id"] == reference.owner)["outputs"][
+                    reference.port
+                ]
+            )
+            node["inputs"]["source"]["port"] = {**actual_port, "path": None}
+            allowed = self.editor_tools()
+            arms = [
+                allowed.get(
+                    f"{parameters.get(side, {}).get('tool')}@{parameters.get(side, {}).get('version')}"
+                )
+                for side in ("when_true", "when_false")
+            ]
+            if all(arms) and arms[0]["outputs"] == arms[1]["outputs"]:
+                for key, port in arms[0]["outputs"].items():
+                    path = node["outputs"][key]["path"]
+                    node["outputs"][key] = {**port, "path": path}
+        if output_path is not None:
+            node["outputs"]["result"]["path"] = output_path
+        if cacheable is not None:
+            node["cache_policy"] = {
+                "mode": "content_addressed" if cacheable else "none",
+                "fingerprint_fields": ["inputs", "parameters", "tool_version"] if cacheable else [],
+            }
+        return self.edit_graph(expected_version, upsert_nodes=[node])
+
     def evidence_sources(self):
         revision = self.revision()
         with self.service() as studio:

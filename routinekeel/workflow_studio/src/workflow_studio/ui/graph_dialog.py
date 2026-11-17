@@ -66,6 +66,7 @@ class GraphDraft:
             ),
             "inputs": copy.deepcopy(self.ir["inputs"]),
             "outputs": copy.deepcopy(self.ir["outputs"]),
+            "secrets": copy.deepcopy(self.ir["secrets"]),
         }
 
 
@@ -78,7 +79,14 @@ def open_graph(app):
         k: t
         for k, t in tools.items()
         if t["implementation"]
-        in {"builtin.copy", "builtin.normalize", "builtin.json", "builtin.report"}
+        in {
+            "builtin.copy",
+            "builtin.normalize",
+            "builtin.json",
+            "builtin.report",
+            "builtin.branch",
+            "builtin.llm",
+        }
     }
     choices = {f"{t['title']} · {k}": k for k, t in simple.items()}
     window = tk.Toplevel(app.root)
@@ -246,9 +254,23 @@ def open_graph(app):
             key = choices[action.get()]
             identity = draft.next_id()
             extension = simple[key]["outputs"]["result"].get("format") or "bin"
-            node = model.node_template(
-                identity, key, f"input://{input_key}", f"artifacts/{identity}.{extension}"
+            remaining = model.policy.max_cost_micro_usd - sum(
+                n["llm_policy"]["budget_micro_usd"]
+                for n in draft.ir["nodes"]
+                if n.get("llm_policy")
             )
+            settings = model.node_defaults(key, remaining_budget=remaining)
+            node = model.node_template(
+                identity,
+                key,
+                f"input://{input_key}",
+                f"artifacts/{identity}.{extension}",
+                **settings,
+            )
+            if node.get("llm_policy"):
+                secret = parse_reference(node["llm_policy"]["api_key"]).owner
+                if secret not in draft.ir["secrets"]:
+                    draft.ir["secrets"].append(secret)
             draft.ir["nodes"].append(node)
         refresh(node["id"])
 
