@@ -22,6 +22,14 @@ class StudioService:
             raise TypeError("Project operations require persistent Studio storage")
         return ProjectService(self.repository)
 
+    @property
+    def sources(self):
+        from .ingestion.service import SourceService
+
+        if not isinstance(self.repository, SQLiteRepository):
+            raise TypeError("Source operations require persistent Studio storage")
+        return SourceService(self.repository)
+
     def status(self) -> dict:
         return {"version": __version__, "schema_version": self.repository.schema_version}
 

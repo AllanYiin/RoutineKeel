@@ -7,6 +7,7 @@ import sys
 import pytest
 from workflow_studio.contracts import StudioError
 from workflow_studio.service import StudioService
+from workflow_studio.storage.migrations import SCHEMA_VERSION
 from workflow_studio.storage.sqlite import SQLiteRepository
 
 
@@ -16,7 +17,7 @@ def test_migration_idempotent_backup_and_restore(tmp_path):
         snapshot = studio.repository.backup()
         metadata = json.loads(snapshot.with_suffix(".json").read_text())
         assert metadata["sha256"] == hashlib.sha256(snapshot.read_bytes()).hexdigest()
-        assert metadata["schema_version"] == 1
+        assert metadata["schema_version"] == SCHEMA_VERSION
         backup_count = len(list(snapshot.parent.glob("*.sqlite3")))
     with StudioService.open_workspace(tmp_path / "workspace") as studio:
         assert studio.projects.get(p.project_id) == p

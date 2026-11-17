@@ -1,7 +1,7 @@
 """Ordered, transactional Studio schema migrations."""
 
 APPLICATION_ID = 0x53545544  # STUD; rejects accidentally selected Runtime databases.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 V001 = (
     """CREATE TABLE studio_projects (
@@ -35,4 +35,23 @@ V001 = (
         BEGIN SELECT RAISE(ABORT, 'parent belongs to another project'); END""",
 )
 
-MIGRATIONS = {1: V001}
+V002 = (
+    """CREATE TABLE studio_sources (
+        source_id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES studio_projects(project_id),
+        current_version INTEGER NOT NULL, status TEXT NOT NULL CHECK(status IN ('active','removed')))""",
+    """CREATE TABLE studio_source_versions (
+        source_id TEXT NOT NULL REFERENCES studio_sources(source_id), version INTEGER NOT NULL,
+        name TEXT NOT NULL, kind TEXT NOT NULL, content_hash TEXT NOT NULL,
+        manifest_json TEXT NOT NULL, created_at TEXT NOT NULL,
+        PRIMARY KEY(source_id,version))""",
+    """CREATE TABLE studio_source_blobs (
+        sha256 TEXT PRIMARY KEY, content BLOB NOT NULL)""",
+    """CREATE TRIGGER immutable_source_version BEFORE UPDATE ON studio_source_versions
+        BEGIN SELECT RAISE(ABORT, 'immutable source version'); END""",
+    """CREATE TRIGGER retain_source_versions BEFORE DELETE ON studio_source_versions
+        BEGIN SELECT RAISE(ABORT, 'retain source history'); END""",
+    "CREATE INDEX studio_sources_project ON studio_sources(project_id)",
+)
+
+MIGRATIONS = {1: V001, 2: V002}

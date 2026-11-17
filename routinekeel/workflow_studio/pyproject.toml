@@ -9,7 +9,9 @@ description = "Local design-time workflow compiler for RoutineKeel"
 requires-python = ">=3.11,<3.14"
 readme = "README.md"
 license = "MIT"
-dependencies = []
+dependencies = [
+    "pillow>=13.0.0",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/workflow_studio"]

@@ -44,3 +44,17 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
 - Ruff check 通過；格式化範圍限 Studio 與其測試。
 - Stage 0 commit：`5543ebd`。本階段沒有修改 Runtime 契約或 Runtime DB。
 - 回滾／備份實測步驟見 migration-strategy.md；既有基線失敗保持單列。
+
+## Stage 2
+
+- Studio 專屬環境 `python -m pytest tests/studio -q`：54 passed，2.03 秒，0 skipped。
+- 包含實際 PNG／JPEG／WebP 解碼、等比尺寸、100 檔資料夾、ZIP 穿越／連結／膨脹／
+  重複路徑、空白／損壞來源、跨專案拒絕、原始檔保留、來源歷史、交易回復。
+- Windows ZIP 原始檔名正規化缺口已修復並回歸驗證。
+- v001→v002 實測保留專案，升級前備份還原後仍是 v001 並可讀取原專案。
+- Studio 增加 Pillow 13.0.0（lockfile 固定）；未增加 Runtime 依賴。
+  底座單獨環境未安裝 Pillow 時，Studio 子套件測試明確 skip，須另外使用 Studio 環境執行；
+  此處 54 項是實際執行結果，不以 skip 算作通過。
+- Stage 1 commit：`b525708`；Stage 2 來源副本／預覽與清單設計見 source-formats.md。
+- Stage 2 最後回歸：底座環境執行 Studio／baseline／decoupling 為 33 passed、3 skipped
+  （Pillow 不在底座環境，三個來源測試模組明示跳過）；Studio 獨立環境重跑為 54 passed、0 skipped。

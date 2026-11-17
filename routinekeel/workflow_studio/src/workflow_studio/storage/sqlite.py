@@ -56,6 +56,8 @@ class SQLiteRepository:
                     self.connection.execute(f"PRAGMA user_version={target}")
                 self.connection.execute(f"PRAGMA application_id={APPLICATION_ID}")
             required = {"studio_projects", "studio_revisions"}
+            if SCHEMA_VERSION >= 2:
+                required |= {"studio_sources", "studio_source_versions", "studio_source_blobs"}
             actual = {
                 row[0]
                 for row in self.connection.execute(
