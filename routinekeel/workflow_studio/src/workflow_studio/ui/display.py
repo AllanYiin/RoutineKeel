@@ -47,6 +47,7 @@ def configure_display(root):
         "PingFang TC",
         "Noto Sans CJK TC",
         "Noto Sans TC",
+        "WenQuanYi Micro Hei",
     )
     family = next(
         (available[name.casefold()] for name in choices if name.casefold() in available),

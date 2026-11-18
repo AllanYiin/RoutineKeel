@@ -764,6 +764,7 @@ class StudioApp:
     def review_folder_relations(self):
         from .folder_dialog import open_folder_review
 
+        self.selected_source = self.single_source().source_id
         open_folder_review(self)
 
     def accept_candidate(self):

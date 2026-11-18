@@ -55,3 +55,9 @@ Studio 是新增的設計工作台，沿用本機 Tk 模式並呼叫底座 Workf
 本機不重開或操作使用者已停止控制的 Windows 視窗，可能未保存的輸入保留。
 控制器／模型相關測試已有證據，新的 Tk 事件與小視窗版面交給 CI 的獨立 Xvfb 顯示器驗證，
 不把虛擬顯示器、程式測試或代理操作當成真人使用成功率。新畫面仍需使用者走查。
+
+首輪虛擬視窗 Gate（run 44267421257）在下載 61.2 MB 的 Noto CJK 套件時逾時，尚未進入 Tk 測試；
+該次 Ubuntu 非桌面測試已有 569 passed／7 skipped／3 deselected。
+環境準備與視窗測試已拆分，改用 Ubuntu 提供的
+[WenQuanYi Micro Hei 套件](https://packages.ubuntu.com/noble/fonts-wqy-microhei)（約 1.6 MB），
+並加入最後順位 CJK fallback；不改既有 Windows／macOS 優先字型，也未更動使用者系統字型設定。

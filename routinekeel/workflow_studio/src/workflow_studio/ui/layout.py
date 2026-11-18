@@ -251,7 +251,7 @@ def build_workbench(app):
         actions,
         "檢查案例關係與版本",
         app.review_folder_relations,
-        requires="active",
+        requires="folder",
         fill="x",
         pady=(0, s(5)),
         advanced=True,
