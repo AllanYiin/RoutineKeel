@@ -1,6 +1,6 @@
-# 課程影片產生字幕 0.3.4
+# 課程影片產生字幕 0.4.1
 
-本版讓人類確認頁成為主要交付；底座仍使用 flow_base 0.2.9，不需修改底座。
+本版搭配 flow_base 0.2.12。抽音訊階段依序去噪、用 Demucs 取出人聲、標準化音量。辨識與聽審共用原片時間軸，確認頁播放原音。
 
 完成後請先開啟工作資料夾的 `artifacts/review.html`，或下載、完整解壓「字幕與確認表.zip」。確認頁可離線播放原音、比較 ASR 原文與目前文字、搜尋、篩選未填答片段、填寫確認文字並下載 CSV。另附中文欄位確認表、含時間碼的校對稿 TXT、SRT、VTT。QA.json 留給程式使用。原音不超過 24 MiB 時內嵌頁面；超過時使用 ZIP 內的相對音訊路徑。
 
@@ -18,9 +18,13 @@
 既有工作已有 transcript、review_config、flow_context 與原音快取時，可用 `review-build` 重新產生確認頁與分享包，不用重新跑 ASR。只有 QA.json 無法重建原文或原音；它不能代替完整工作資料。
 
 
-本包與 **flow_base 0.2.8** 協作，但獨立發行。flow_base 負責通用安裝、環境、下載校驗、登錄、執行與快取；本包負責抽音訊、VAD、ASR、字幕格式、疑義、聽審與核准。底座沒有字幕程式或 ASR 依賴。本包的完整原始碼在 source.zip。
+本次提供 **flow_base 0.2.12** 與字幕流程的獨立安裝包，請將兩包解壓至同一個父資料夾。flow_base 負責通用安裝、環境、下載校驗、登錄、執行與快取；本包負責抽音訊、VAD、ASR、字幕格式、疑義、聽審與核准。底座沒有字幕程式或 ASR 依賴。本包的完整原始碼在 source.zip。
 
-## 一鍵開始
+## 使用前準備（Prerequisites / Requirements）
+
+請備妥本機影片或錄音、flow_base 0.2.12 與本流程包。首次使用需要網路下載執行環境與 large-v3 模型；空間與記憶體需求見下方「環境、下載與續跑」。不必預先安裝 Python 或 uv。請保留既有設定、快取、日誌與人工修訂，更新時只替換套件提供的檔案。
+
+## 一鍵開始（Quick Start）
 
 將本資料夾與 flow_base 放在同一層；資料夾可自由命名。Windows 雙擊 run_app.bat，macOS 開啟 run_app.command，Linux 執行 `sh run_app.sh`。三個薄入口都委派同一底座，不各自維護安裝邏輯。不必預先安裝 uv 或 Python；首次需要網路，模型與套件現場取得。
 
@@ -34,17 +38,21 @@ sh flow_base/start.sh run --task "課程影片產生字幕" --input "課程.mp4"
 
 Windows PowerShell 將 `sh flow_base/start.sh` 替換成 `& .\flow_base\start.ps1`。`--task` 接受顯示名稱、資料夾名稱、既有識別碼或自動登錄的 flow_id，不需記憶 ai_flow01。wheel 的 ai_flow01 是內部 Python namespace，與顯示名稱無關。
 
-Windows／macOS 雙擊及 CUDA 尚未真機驗收。macOS 可能需恢復執行權限或允許系統安全提示；Linux 雙擊行為依桌面設定。CPU profile 目前宣告 Windows x64、Linux x64、Apple Silicon macOS；底座支援的其他架構不代表本 ASR 流程已支援。
+0.4.0 已在 Windows x64 透過正式命令列入口以 Demucs CPU 和 Whisper CUDA 完成短音訊測試。macOS 可能需恢復執行權限或允許系統安全提示，Linux 雙擊行為依桌面設定。CPU profile 宣告 Windows x64、Linux x64、Apple Silicon macOS。
 
 ## 實際流程與限制
 
-1. 使用 PyAV 解碼為 16 kHz 單聲道 PCM WAV，不要求另裝 ffmpeg CLI。
-2. 使用 Silero ONNX VAD，先保存每段原音、起訖與雜湊；預設 threshold 0.4、最短語音 150 ms、最短靜音 550 ms、padding 250 ms、最長區段 28 秒。
+1. PyAV 保存 16 kHz 單聲道原音供聽審，另以 44.1 kHz 立體聲處理辨識音軌。先以頻譜去噪，再用 Hybrid Demucs 分離並取出 `vocals`，最後對整段人聲套用固定增益。有效樣本（高於 −50 dBFS）的 RMS 目標為 −20 dBFS，峰值上限 −1 dBFS，增益最多 +20 dB。模型採 10 秒分塊、1 秒交叉淡化。輸出與原音的 16 kHz 取樣點數相同。
+2. Silero ONNX VAD 的語音閾值為 0.3，最短語音 250 ms，連續靜音達 2,200 ms 即可分段。所有由 VAD 判定、長度嚴格超過 3 秒的靜音（含片頭、片尾）整段略過辨識。250 ms 邊界延伸僅用在其餘區間。區段上限維持 28 秒。每段人聲單獨送辨識，字幕使用原片取樣位置。可在 `artifacts/vad_regions.json` 查看實際設定、區段與略過區間。
 3. 使用 **faster-whisper + large-v3** 逐區段辨識，映回原片時間。每個完成區段保存 checkpoint；失敗後沿用已完成且指紋相符的區段。逐段 ASR 關閉第二次 VAD 與前文延續。
 4. 本機繁體轉換、排版與 QA，產生疑義、原音片段、SRT、VTT。預設每行 30 字元、最多兩行、最長 12 秒、最短 0.5 秒，閱讀速率門檻 15 字元／秒。
 5. **所有真實字幕預設 REVIEW_REQUIRED**，即使沒有疑義也需真人確認；有硬性 QA 問題則 FAIL。只有真人聽審後明確核准且內容指紋相符，才可 PASS。
 
-引擎為 CTranslate2，不依賴 PyTorch；VAD 使用 ONNX Runtime，ASR 本身不是 ONNX Whisper。預設由底座提供硬體快照，流程自動選擇 CUDA FLOAT16 或 CPU INT8；偵測不明確時顯示原因。選擇 CUDA 後仍需實際推論驗證，不會因記憶體不足或 CUDA 失敗自動改用 tiny。CPU 跑 large-v3 可能較慢；時間依機器與影片長度而定。
+字幕段落超過 `max_cue_seconds`（預設 12 秒）時，匯出會在該段音軌上用 Silero 尋找兩側都有語音、至少 0.20 秒的停頓，以最長停頓的中點分割。若子段仍超過時間或兩行容量，會在子段內以同一規則繼續。等長停頓優先選靠近該段中央者，再選較早者。片頭和片尾的空白不作內部切點。
+
+有可靠字詞時間時，左右字幕跟著對應詞界分開。缺乏字詞對齊時，切點仍取自音訊，文字依可用分界和兩側發聲時間估分，並列入聽審。連續說話而找不到明顯停頓，或文字無法分成兩邊，就保留該段原有起訖與全文，交由真人處理超限問題。`artifacts/pause_splits.json` 保存實測停頓、選定的原片時間、文字對應方式與保留原因。0.4.0 起優先使用經雜湊核對的 Demucs 人聲軌，舊工作可使用聽審原音。這項規則也適用於 review-build。
+
+Demucs 使用獨立的 CPU 環境與固定版本的 PyTorch／torchaudio 2.6.0。Whisper 使用 CTranslate2，VAD 使用 ONNX Runtime。底座依硬體快照為 Whisper 選擇 CUDA FLOAT16 或 CPU INT8，並以實際推論驗證裝置。
 
 本機 runner 強制 **0 次 LLM API 呼叫、0 API token**，沒有 provider 或 API key 欄位，也不允許切換本流程至外部 LLM 語意路由。`text.review` 是本機審閱資料準備，沒有自動 LLM 潤飾。品質修正由真人及明確要求的有限 AI 協助完成。
 
@@ -65,6 +73,10 @@ Windows／macOS 雙擊及 CUDA 尚未真機驗收。macOS 可能需恢復執行�
     "allow_cpu_fallback": false,
     "max_line_chars": 30,
     "max_cue_seconds": 12,
+    "vad_threshold": 0.3,
+    "vad_min_speech_ms": 250,
+    "vad_min_silence_ms": 2200,
+    "vad_skip_silence_seconds": 3.0,
     "initial_prompt": "繁體中文",
     "initial_prompt_enabled": true,
     "llm": {"enabled": false, "max_calls": 0}
@@ -87,7 +99,7 @@ CUDA 設定：
 
 ## 環境、下載與續跑
 
-模型固定 revision `edaa852ec7e145841d8ffdb056a99866b5f0a478`，來源 Systran/faster-whisper-large-v3，包含 config、model、preprocessor、tokenizer、vocabulary 的大小與 SHA-256。model.bin 約 3.09 GB；首次 CPU 準備規劃約 7.8 GB 空間餘裕，另加影片音訊、區段與輸出。此為預檢估算，不是峰值保證。CPU 模型主記憶體餘裕以 6 GiB 加音訊估算；不足即報錯，不降級。
+Whisper 固定使用 Systran/faster-whisper-large-v3 的 revision `edaa852ec7e145841d8ffdb056a99866b5f0a478`，model.bin 約 3.09 GB。Demucs 官方權重另需 334,697,255 bytes，兩者均由底座下載並驗證大小和 SHA-256。首次安裝的空間估算見 plan，還需預留原音、人聲、區段與輸出的空間。兩個模型完成準備後即可離線使用。
 
 本版本 CPU/CUDA lock 均明確鎖定 setuptools 80.9.0，處理舊 CTranslate2 匯入 pkg_resources 的相容性。先驗證依賴匯入，再下載大模型。新的依賴指紋建立新隔離環境，不刪除舊狀態。
 
@@ -206,7 +218,7 @@ Codex／宿主對話的 token 不在底座可觀測範圍，顯示無法取得�
 
 若舊工作已完成全部區段，但在組裝驗證失敗：
 
-1. 將底座更新至 0.2.8、流程更新至 0.3.4，保留原本 share_states、share_logs、outputs 與原影片，勿改名或搬動原始影片。
+1. 使用本次封裝的底座 0.2.12 與流程 0.3.4，保留原本 share_states、share_logs、outputs 與原影片，勿改名或搬動原始影片。
 2. 在流程資料夾開啟 recover_failed_run.bat（macOS 為 .command，Linux 為 .sh）。此入口不先載入模型、不重新執行 ASR、不下載模型。
 3. 若只有一個屬於此流程的失敗工作，直接核對並恢復。多個候選或找不到時會列出狀況並停止，不會猜測。可用能力參數 JSON 指定 output；raw_asr 僅在多份不同 ASR 結果時明確指定。
 4. 檢查新 report.json 的 recovery、來源 run_id、asr_calls=0、verified_regions、timing_issue_ids，再開啟 artifacts/review.html 聽審。有硬性 QA 問題維持 FAIL，其餘維持 REVIEW_REQUIRED；不會自動核准。

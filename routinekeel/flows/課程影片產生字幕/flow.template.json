@@ -2,9 +2,9 @@
   "schema_version": 1,
   "runtime_api": "0.2",
   "id": "ai_flow01",
-  "version": "0.3.4",
+  "version": "0.4.1",
   "title": "課程影片產生字幕",
-  "description": "本機 faster-whisper large-v3；保存 VAD 區段並逐區辨識與續跑；產生 SRT/VTT、QA 與疑義原音；LLM API 強制零呼叫，需真人核准。",
+  "description": "本機去噪、Demucs 人聲分離、音量標準化與 VAD。使用 faster-whisper large-v3 依原片時間辨識，輸出字幕與原音聽審。",
   "keywords": [
     "字幕",
     "逐字稿",
@@ -38,7 +38,11 @@
     "options.max_cue_seconds",
     "options.glossary",
     "options.initial_prompt",
-    "options.initial_prompt_enabled"
+    "options.initial_prompt_enabled",
+    "options.vad_threshold",
+    "options.vad_min_speech_ms",
+    "options.vad_min_silence_ms",
+    "options.vad_skip_silence_seconds"
   ],
   "rules": [
     {
@@ -136,7 +140,11 @@
         "max_calls": 0
       },
       "device": "auto",
-      "initial_prompt": "繁體中文"
+      "initial_prompt": "繁體中文",
+      "vad_threshold": 0.3,
+      "vad_min_speech_ms": 250,
+      "vad_min_silence_ms": 2200,
+      "vad_skip_silence_seconds": 3.0
     },
     "profile": "auto"
   },

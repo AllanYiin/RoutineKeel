@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .contracts import Segment
 from .review import review
-from .resources import catalogue, resource_path
+from .resources import SEPARATOR, SEPARATOR_PROFILE, catalogue, resource_path
 from flow_base.runtime import FlowError, atomic_json, read_json, sha256
 
 
@@ -24,22 +24,45 @@ def validate_segments(rows, duration=None):
 
 
 def extract(ctx, step, dependencies, target):
-    audio = target.with_suffix(".wav")
-    ctx.runtime.worker(ctx.workflow.profile, {"action": "extract", "input": str(ctx.source), "output": str(audio),
-                                               "max_audio_seconds": ctx.workflow.options.max_audio_seconds},
-                       timeout=ctx.workflow.options.worker_timeout_seconds, log=ctx.logdir / "extract.log")
-    return audio
+    original = target.parent / 'original.wav'
+    vocals = target.parent / 'vocals.wav'
+    options = ctx.workflow.options
+    request = {'input': str(ctx.source), 'max_audio_seconds': options.max_audio_seconds}
+    ctx.runtime.worker(ctx.workflow.profile, {**request, 'action': 'extract', 'output': str(original)},
+                       timeout=options.worker_timeout_seconds, log=ctx.logdir / 'extract.log')
+    model = catalogue()[SEPARATOR]
+    weights = resource_path(ctx.runtime, model) / model.files[0].path
+    preprocessing = ctx.runtime.worker(SEPARATOR_PROFILE, {**request, 'action': 'prepare_audio',
+        'weights': str(weights), 'original': str(original), 'output': str(vocals)},
+        timeout=options.worker_timeout_seconds, log=ctx.logdir / 'demucs.log')
+    preprocessing['model_sha256'] = model.files[0].sha256
+    atomic_json(target, {'schema_version': 2, 'source_audio_sha256': sha256(original),
+                         'analysis_audio_sha256': sha256(vocals), 'preprocessing': preprocessing})
+    return target
+
+
+def extracted_tracks(artifact):
+    """Resolve the human-review and ASR inputs, including historical mono WAV caches."""
+    if artifact.suffix == '.wav':
+        return artifact, artifact, None
+    record = read_json(artifact)
+    original, analysis = artifact.parent / 'original.wav', artifact.parent / 'vocals.wav'
+    for track, field in ((original, 'source_audio_sha256'), (analysis, 'analysis_audio_sha256')):
+        if track.is_symlink() or not track.is_file() or sha256(track) != record[field]:
+            raise FlowError('AUDIO_INTEGRITY', '抽取原音或處理後人聲遺失／已改變', file=track.name)
+    return original, analysis, record['preprocessing']
 
 
 def vad(ctx, step, dependencies, target):
-    audio = next(iter(dependencies.values()))
+    original, analysis, preprocessing = extracted_tracks(next(iter(dependencies.values())))
     options = ctx.workflow.options.model_dump()
-    req = {'action': 'vad', 'input': str(audio), 'output': str(target),
+    req = {'action': 'vad', 'input': str(analysis), 'output': str(target),
            **{k: v for k, v in options.items() if k.startswith('vad_')}}
     ctx.runtime.worker(ctx.workflow.profile, req, timeout=ctx.workflow.options.worker_timeout_seconds, log=ctx.logdir/'vad.log')
     data = read_json(target)
-    data['source_audio'] = audio.relative_to(ctx.runtime.home).as_posix()
-    data['source_audio_sha256'] = sha256(audio)
+    data['source_audio'] = original.relative_to(ctx.runtime.home).as_posix()
+    data['source_sha256'] = data['source_audio_sha256'] = sha256(original)
+    data['preprocessing'] = preprocessing
     atomic_json(target, data)
     return target
 
@@ -177,6 +200,10 @@ def export_step(ctx, step, dependencies, target):
               'execution_selection': ctx.prepared.get('execution_selection', ctx.workflow.execution_selection),
               'duration': data['duration'], 'llm_calls': 0, 'llm_tokens': 0,
               'qa': 'QA.json', 'listening_review': 'review.html', 'summary': summary}
+    if data.get('preprocessing'):
+        report.update(preprocessing=data['preprocessing'], vad_parameters=data['vad_parameters'],
+                      skipped_silence_count=len(data['skipped_silence']),
+                      skipped_silence_seconds=sum(r['end_sample'] - r['start_sample'] for r in data['skipped_silence']) / 16000)
     atomic_json(target, {'bundle': 'bundle', 'files': files, 'report': report})
     return target
 

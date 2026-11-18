@@ -15,6 +15,10 @@ EMBED_AUDIO_LIMIT = 24*1024*1024
 HEADERS = ['片段', '開始', '結束', 'ASR原文', '目前校訂', '疑義', '確認文字', '資料版本']
 REASONS = {
  'approximate_split_timing':'分句時間為估算，請核對字幕同步',
+ 'no_internal_speech_pause':'片段超限，音軌內找不到兩側都有語音的明顯停頓，已保留原段，請聽審',
+ 'pause_audio_unavailable':'缺少可核對停頓的音軌，已保留原段，請聽審',
+ 'pause_text_indivisible':'音軌有停頓，但文字沒有可分割的位置，請聽審',
+ 'pause_text_estimated':'已在實測停頓處分割，字詞時間不足，請核對兩側字幕文字',
  'low_asr_confidence':'辨識信心偏低，請聽原音',
  'possible_silence_hallucination':'可能把靜音誤辨成文字，請聽原音',
  'spot_check_unflagged':'抽樣聽審（未偵測到其他疑義）',
@@ -134,6 +138,7 @@ def package(out):
     if not (out/'review_delivery.json').exists():return
     data=json.loads((out/'review_delivery.json').read_text())
     members=['review.html',data['table'],data['transcript'],'subtitles.srt','subtitles.vtt','QA.json','README_請先閱讀.txt']
+    if (out/'pause_splits.json').is_file(): members.append('pause_splits.json')
     if not data['embedded_audio']:members += [p.relative_to(out).as_posix() for p in sorted((out/'review_clips').glob('*.wav'))]
     target=out/data['archive'];temp=target.with_suffix('.zip.tmp')
     with zipfile.ZipFile(temp,'w',zipfile.ZIP_DEFLATED) as z:
