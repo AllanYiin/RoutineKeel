@@ -7,7 +7,8 @@ Windows 可雙擊 [open_studio.bat](open_studio.bat)，操作見 [工作台指�
 
 第一次使用請看[建立第一個工作流](docs/user-guide.md)：使用隨附的複製案例，
 不需要模型金鑰即可完成本機案例比對與試做。開發環境須先由管理者準備；
-目前啟動器仍是原始碼入口，正式安裝包與真人走查尚未完成。
+此處的 open_studio.bat 是原始碼入口；另有[候選 ZIP 安裝方式](docs/distribution.md)，
+正式交付與真人走查尚未完成。
 
 - [開發、CLI 及 Handler 擴充](docs/developer-guide.md)
 - [模型用量與資料隱私](docs/privacy-and-model-usage.md)

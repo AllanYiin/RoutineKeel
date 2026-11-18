@@ -495,3 +495,27 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
   互相隔離的 Studio／Runtime；入門案例試做／發布及第二份輸入的底座獨立執行通過。
   117 個檔案的同版本工作區副本可重開並再次試做，原工作區不變。
   命令、wheel 指紋、初輪檢查程式錯誤及限制見 installation-preflight.md；正式安裝器仍待。
+
+## Studio 候選 ZIP 與啟動器
+
+- `tools/release.py --project studio` 新增明確選取的 Studio ZIP；未帶參數仍建立原有三個底座／流程包。
+  既有 manifest／Runtime／workflow 算法沒有改動。發行產物及私人環境仍不進 Git。
+- 新包重用底座 bootstrap 建立 Runtime `.venv`，再以具名鎖準備 `.studio-venv`；依賴由 uv.lock 匯出且驗 hash。
+  兩個環境會檢查 Python prefix／版本／import／互不依賴，第二次啟動重用既有環境。
+  更新失敗保存失敗目錄並還原舊 Studio 環境，不覆蓋專案資料。提供 Windows bat／PowerShell、POSIX sh／command 入口。
+- source.zip 只取 Git 清單並明確排除私密設定／狀態／成果／快取／specs 與連結；原測試機文件路徑替換。
+  測試先重現「被誤追蹤的 outputs/private.txt 仍會入包」，補排除後通過。
+  wheel 成員及 bytes 逐項對照追蹤來源，拒絕未追蹤、被改寫或含測試機路徑的內容。
+- installer／inventory 單元測試：**12 passed、1 POSIX symlink skipped，0.71 秒**。
+  第一輪 mock 擋到 platform 的內部 subprocess，修正測試的固定 OS／CPU 後再測，未改產品平台判斷。
+- 實際候選 ZIP 在 Windows、含空白／中文的新目錄完成 prepare-only、重複 status、bat status、
+  安裝環境的來源匯入／試做／工程核准／發布／重開，以及第二輸入由獨立 Runtime 執行，模型呼叫 0。
+  改動 wheel 後啟動器拒絕，原環境 marker 不變。機器證據：`dist/studio-install-evidence-final/distribution.json`。
+  本次驗證時 source_dirty=true（提交前候選），不得冒充已提交版本；CI 改用 --require-clean。
+- 第一個自動安裝試驗放在 sandbox 的超長 Temp 路徑，uv 無法保存 interpreter cache；
+  增加驗證工具的 --work-dir 並在工作樹 dist 建立較短的新目錄後通過。未繞過 sandbox 或宣稱任意路徑長度可用。
+- 初次底座相容測試只有 Studio 單元件的 dist/workspace，缺少底座流程 fixture，產生 16 個 setup error；
+  依既有程序重新執行預設建置後，output_layout／bootstrap／powershell_bootstrap
+  **20 passed、19 平台條件 skipped，26.20 秒**，原有三 ZIP 皆建立成功。
+- Ruff check／format **178 檔**、YAML 解析及 39 份文件連結／fence 檢查通過。
+  新三平台 CI 加入真正 ZIP 安裝／反覆啟動／損毀拒絕驗證；原生 UI、真人、真實模型與最終交付仍未完成。

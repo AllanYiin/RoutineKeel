@@ -52,7 +52,8 @@
 - Stage 12：Studio 三平台 CI 與獨立 Runtime／Studio 環境的 run44245189603、最新事件修正的
   run44247339245 均成功，artifact已核對。詳見 platform-acceptance.md；完整真人/模型Gate仍未完成。
 - Stage 13：入門／開發／隱私／限制／升級回滾文件與入門案例已備，案例由 UI model 與真正 Runtime 重播；
-  尚需發行工具、完整包清單、無私密內容檢查、乾淨安裝啟動及最終 commit 證據。
+  已新增候選 ZIP／啟動器、逐檔清單／hash、私密路徑與追蹤來源檢查，以及 Windows 非桌面整包安裝；
+  尚需收齊三平台安裝、原生視窗／真人與最終 commit 證據，詳見 distribution.md。
   開發用 open_studio.bat 不等於乾淨安裝交付，文件存在與工程重播不代替真人走查。
 - 目前工作樹底座／流程回歸 383 passed、21 skipped、1 桌面測試 deselected，沒有失敗；
   使用者既有變更保留，後續最終變更仍須對照有效範圍，不把工作樹結果冒充乾淨 release。

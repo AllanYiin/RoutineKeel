@@ -56,5 +56,5 @@ uv build --wheel --out-dir dist/studio-preflight/wheels routinekeel/flow_base
 獨立程序用 `-X utf8 -I` 固定中文 console 編碼，不依賴被 isolated mode 忽略的 PYTHONIOENCODING。
 
 尚缺完整發行 ZIP／啟動器、三平台乾淨安裝、原生 UI 啟動、使用者照指南操作及真正跨版本回退演練。
-目前 `tools/release.py` 仍只列底座及既有流程；Studio 的正式打包入口尚未接入。
-安裝包完成前，不能把這兩個 wheel 當成給非技術使用者的一鍵交付成品。
+這次 wheel 預檢時，`tools/release.py` 尚未接入 Studio。後續候選 ZIP／啟動器及新的驗收範圍
+見[安裝指南](distribution.md)；不能只用本頁的兩個 wheel 證據宣稱一鍵交付已完成。
