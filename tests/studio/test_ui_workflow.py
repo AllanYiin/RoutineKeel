@@ -150,21 +150,32 @@ def test_real_tk_buttons_complete_folder_to_verification(tmp_path, monkeypatch):
         )
         app.import_folder()
         assert app.selected_source
-        app.find_folder_candidates()
+        app.next_button.invoke()
         deadline = time.monotonic() + 20
         while app.busy and time.monotonic() < deadline:
             root.update()
             time.sleep(0.02)
         assert not app.busy and not errors, errors
-        app.accept_candidate()
+        assert app.wizard_step == 2
+        app.next_button.invoke()
+        root.update()
         assert app.canvas.find_all()
-        app.verify_button.invoke()
+        assert app.display_ir is not None
+        app.next_button.invoke()
+        root.update()
+        assert app.wizard_step == 3
+        app.next_button.invoke()
         deadline = time.monotonic() + 30
         while app.busy and time.monotonic() < deadline:
             root.update()
             time.sleep(0.02)
         assert not app.busy and not errors, errors
         assert "試做通過" in app.report_text.get("1.0", "end")
+        assert app.wizard_step == 3
+        app.next_button.invoke()
+        root.update()
+        assert app.wizard_step == 4 and app.actor_entry.winfo_ismapped()
+        assert not app.next_button.winfo_ismapped()
         target = tmp_path / "installed"
         target.mkdir()
         monkeypatch.setattr(
@@ -173,7 +184,7 @@ def test_real_tk_buttons_complete_folder_to_verification(tmp_path, monkeypatch):
         app.actor_var.set("UI 測試者")
         app.reviewed.set(True)
         app.refresh_actions()
-        publish = next(button for button, rule in app.button_rules.items() if rule == "publish")
+        publish = app.next_button
         assert not publish.instate(["disabled"])
         publish.invoke()
         deadline = time.monotonic() + 20
@@ -182,6 +193,9 @@ def test_real_tk_buttons_complete_folder_to_verification(tmp_path, monkeypatch):
             time.sleep(0.02)
         assert not app.busy and not errors, errors
         assert list(target.glob("*/flow.json"))
+        assert app.published_notice.winfo_ismapped()
+        assert not app.actor_entry.winfo_ismapped()
+        assert not app.review_checkbox.winfo_ismapped()
         if os.environ.get("STUDIO_GATE_REPORT_DIR"):
             from test_ui_guidance import capture_window
 
@@ -194,6 +208,8 @@ def test_real_tk_buttons_complete_folder_to_verification(tmp_path, monkeypatch):
         Image.new("RGB", (400, 200), "blue").save(image_path)
         image_source = model.import_path(image_path)
         app.refresh_project()
+        app.show_wizard_page(1)
+        root.update()
         app.source_tree.selection_set(image_source.source_id + ":0")
         app._source_selected()
         width, height = app.display_image.width(), app.display_image.height()
@@ -206,8 +222,15 @@ def test_real_tk_buttons_complete_folder_to_verification(tmp_path, monkeypatch):
         root.report_callback_exception = lambda kind, value, trace: errors.append(str(value))
         reopened = StudioUIModel(tmp_path / "studio", runtime_python=runtime_python())
         app = StudioApp(tmp_path / "studio", root=root, model=reopened)
+        if os.environ.get("STUDIO_HEADLESS_UI_TESTS") == "1":
+            root.deiconify()
         app.load_project(identity)
         root.update()
+        app.next_button.invoke()
+        root.update()
+        app.next_button.invoke()
+        root.update()
+        assert app.wizard_step == 2
         assert app.current_project.project_id == identity
         assert app.display_ir is not None and app.canvas.find_all()
         assert reopened.release_history() and not errors, errors
@@ -218,7 +241,8 @@ def test_real_tk_buttons_complete_folder_to_verification(tmp_path, monkeypatch):
             destroy_test_window(root)
 
 
-def test_tk_analysis_is_visible_before_final_revision(tmp_path, monkeypatch):
+@pytest.mark.parametrize("needs_clarification", [False, True])
+def test_tk_analysis_is_visible_before_final_revision(tmp_path, monkeypatch, needs_clarification):
     import threading
 
     from test_discovery import FixtureProvider
@@ -235,6 +259,13 @@ def test_tk_analysis_is_visible_before_final_revision(tmp_path, monkeypatch):
     release = threading.Event()
 
     class SlowFixture(FixtureProvider):
+        def __init__(self):
+            super().__init__(
+                (lambda payload: payload.update(ir=None, questions=["請補充成功條件"]))
+                if needs_clarification
+                else None
+            )
+
         def stream(self, messages, maximum):
             for i, chunk in enumerate(super().stream(messages, maximum)):
                 yield chunk
@@ -276,7 +307,17 @@ def test_tk_analysis_is_visible_before_final_revision(tmp_path, monkeypatch):
             root.update()
             time.sleep(0.02)
         assert not errors, errors
-        assert model.revision().status == "ir_ready"
+        root.update()
+        assert model.revision().status == (
+            "needs_clarification" if needs_clarification else "ir_ready"
+        )
+        if needs_clarification:
+            assert app.wizard_step == 1
+            assert app.source_tabs.index(app.source_tabs.select()) == 1
+            assert "請補充成功條件" in app.analysis.get("1.0", "end")
+            assert app.analysis.winfo_ismapped()
+        else:
+            assert app.wizard_step == 2
     finally:
         release.set()
         destroy_test_window(root)

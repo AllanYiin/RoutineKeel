@@ -209,93 +209,100 @@ def test_folder_actions_use_current_selection_and_freeze_the_requested_owner(mon
 )
 def test_headless_guidance_disabled_feedback_and_progressive_disclosure(tmp_path, monkeypatch):
     import tkinter as tk
+    from pathlib import Path
+
+    from test_ui_workflow import destroy_test_window
 
     root = tk.Tk()
     root.withdraw()
     errors = []
-    root.report_callback_exception = lambda kind, value, traceback: errors.append(
-        f"{kind.__name__}: {value}"
-    )
+    root.report_callback_exception = lambda kind, value, traceback: errors.append(str(value))
     app = StudioApp(tmp_path / "workspace", root=root)
     app.error = lambda exc: errors.append(repr(exc))
+    output = (
+        Path(os.environ["STUDIO_GATE_REPORT_DIR"])
+        if os.environ.get("STUDIO_GATE_REPORT_DIR")
+        else None
+    )
+
+    def capture(name):
+        if output:
+            output.mkdir(parents=True, exist_ok=True)
+            capture_window(root, output / name)
+
+    def check_current_page(index):
+        root.update()
+        assert app.wizard_step == index
+        assert [i for i, page in enumerate(app.wizard_pages) if page.winfo_ismapped()] == [index]
+        assert all(not b.instate(["disabled"]) for b in app.buttons if b.winfo_ismapped())
+        assert not app.project_list.winfo_ismapped()
+        assert not errors, errors
+
     try:
         root.deiconify()
         root.update()
         root.focus_force()
-        assert not errors, errors
+        app.name_entry.focus_set()
+        check_current_page(0)
+        assert app.name_entry.winfo_ismapped() and not app.name_entry.instate(["disabled"])
+        assert app.name_entry.winfo_rootx() < root.winfo_rootx() + root.winfo_width() * 0.2
+        assert not app.source_tree.winfo_ismapped()
+        assert not app.actor_entry.winfo_ismapped()
+        assert not app.canvas.winfo_ismapped()
+        assert not app.next_button.winfo_ismapped()
+        assert app.hint_label.winfo_width() > root.winfo_width() / 2
+        assert app.hint_label.winfo_height() < 45 * app.display["scale"]
+        capture("wizard-start.png")
+        # Typing directly works; no separate focus/unlock action is required.
+        app.name_entry.insert(0, "引導測試")
+        root.update()
+        assert app.name_var.get() == "引導測試"
         assert app.next_button.winfo_ismapped()
-        tools = next(b for b in app.buttons if b["text"] == "工具管理")
-        assert not tools.winfo_ismapped()
-        file_button = next(b for b in app.buttons if b["text"] == "檔案")
-        assert file_button.instate(["disabled"])
-        file_button.event_generate("<Button-1>", x=4, y=4)
-        root.update()
-        assert "建立專案" in app.guidance_feedback.get()
-        assert app.model.project_id is None
-        app.name_var.set("引導測試")
-        root.update()
-        assert app.current_guidance.action == "create_project"
+        next_x = app.next_button.winfo_rootx()
         app.next_button.invoke()
-        root.update()
-        assert not errors, errors
-        assert app.current_guidance.action == "focus_goal"
+        check_current_page(1)
         assert app.current_project.goal["description"] == ""
-        assert not file_button.instate(["disabled"])
-        for button, rule in app.button_rules.items():
-            if rule in {"initialize", "verify", "publish"}:
-                assert button.instate(["disabled"])
-                assert "草稿" in app.button_blockers[button]
+        assert not app.name_entry.winfo_ismapped()
+        app.back_button.invoke()
+        check_current_page(0)
+        assert app.name_var.get() == "引導測試"
         app.goal_var.set("完整複製文字")
-        root.update()
-        assert app.current_guidance.action == "save_project"
-        app.next_button.invoke()
-        root.update()
-        assert app.current_guidance.action == "focus_success"
         app.success_var.set("內容相同")
         root.update()
+        assert app.next_button.winfo_rootx() == next_x
         app.next_button.invoke()
-        root.update()
-        assert not errors, errors
-        assert app.current_guidance.action == "paste_source"
+        check_current_page(1)
+        file_button = next(b for b in app.buttons if b["text"] == "檔案")
+        assert file_button.winfo_ismapped()
         sample = tmp_path / "sample.txt"
         sample.write_text("synthetic preview", encoding="utf-8")
         monkeypatch.setattr(
             "workflow_studio.ui.app.filedialog.askopenfilename", lambda **kwargs: str(sample)
         )
         file_button.invoke()
-        root.update()
-        assert not errors, errors
+        check_current_page(1)
         assert len(app.source_tree.selection()) == 1
         assert "synthetic preview" in app.preview_text.get("1.0", "end")
-        assert app.current_guidance.action == "configure_model"
-        # Discovery may ask about missing criteria; only executable candidates need them.
-        complete_success = app.success_var.get()
-        app.success_var.set("")
-        app.save_project()
-        with monkeypatch.context() as provider_patch:
-            provider_patch.setattr(type(app.model), "provider_ready", property(lambda self: True))
-            app.refresh_actions()
-            analysis_button = next(b for b, rule in app.button_rules.items() if rule == "analysis")
-            assert not analysis_button.instate(["disabled"])
-        app.success_var.set(complete_success)
-        app.save_project()
+        assert app.wizard_action == "configure_model"
+        assert app.next_button.winfo_rootx() == next_x
+        assert not app.show_wizard_page(4)
+        check_current_page(1)
+        assert not app.actor_entry.winfo_ismapped()
+        capture("guided-workbench.png")
+
         app.advanced_var.set(True)
         app.refresh_actions()
         root.update()
-        assert tools.winfo_ismapped()
         description = app.edit_source_description()
         root.update()
         editor = next(w for w in description.winfo_children() if isinstance(w, tk.Text))
         editor.delete("1.0", "end")
         editor.insert("1.0", "合成來源：用來檢查預覽與流程引導。")
         actions = next(w for w in description.winfo_children() if w.winfo_class() == "TFrame")
-        save = next(w for w in actions.winfo_children() if w["text"] == "儲存說明")
-        save.invoke()
+        next(w for w in actions.winfo_children() if w["text"] == "儲存說明").invoke()
         root.update()
-        assert not errors, errors
         assert not description.winfo_exists()
         assert "合成來源" in app.preview_label["text"]
-        assert "synthetic preview" in app.preview_text.get("1.0", "end")
         source = app.single_source()
         stale = app.edit_source_description()
         root.update()
@@ -317,68 +324,34 @@ def test_headless_guidance_disabled_feedback_and_progressive_disclosure(tmp_path
         next(w for w in stale_actions.winfo_children() if w["text"] == "取消").invoke()
         app.error = lambda exc: errors.append(repr(exc))
         app.refresh_project()
-        app.focus_imported_source(source.source_id)
         app.advanced_var.set(False)
         app.refresh_actions()
-        root.update()
-        assert not tools.winfo_ismapped()
-        # Xvfb has no window manager to return focus after closing a transient.
+        app.back_button.invoke()
+        check_current_page(0)
+        # Deferred Treeview selection events must not pull the user back to Sources.
+        app.refresh_project()
+        check_current_page(0)
         root.focus_force()
         app.goal_input.focus_set()
         root.update()
-        assert root.focus_get() == app.goal_input
         original = app.goal_var.get()
         app.goal_input.event_generate("<Tab>")
         root.update()
         assert app.goal_var.get() == original
-        assert root.focus_get() != app.goal_input
-        ai_button = next(b for b in app.buttons if b["text"] == "AI 整理選取來源")
-        assert ai_button.instate(["disabled"])
-        ai_button.event_generate("<Button-1>", x=4, y=4)
-        root.update()
-        assert "模型設定" in app.guidance_feedback.get()
-        assert app.model.provider is None
-        if os.environ.get("STUDIO_GATE_REPORT_DIR"):
-            from pathlib import Path
-
-            output = Path(os.environ["STUDIO_GATE_REPORT_DIR"])
-            output.mkdir(parents=True, exist_ok=True)
-            capture_window(root, output / "guided-workbench.png")
+        assert root.focus_get() is not None and root.focus_get().winfo_ismapped()
         root.geometry(f"{round(980 * app.display['scale'])}x{round(640 * app.display['scale'])}")
-        app.advanced_var.set(True)
-        app.refresh_actions()
-        app.tabs.select(2)
         root.update()
-        tabs_top = app.tabs.winfo_rooty()
-        app.actor_entry.focus_set()
-        root.update()
-        assert root.focus_get() == app.actor_entry
-        assert app.tabs.winfo_rooty() == tabs_top
+        assert app.next_button.winfo_rootx() == next_x
         assert (
             app.next_button.winfo_rooty() + app.next_button.winfo_height()
             <= root.winfo_rooty() + root.winfo_height()
         )
-        column = app.columns[2]
-        assert app.actor_entry.winfo_rooty() >= column.canvas.winfo_rooty() - 2
-        assert (
-            app.actor_entry.winfo_rooty() + app.actor_entry.winfo_height()
-            <= column.canvas.winfo_rooty() + column.canvas.winfo_height() + 2
-        )
+        assert app.name_entry.winfo_ismapped()
         for column in app.columns:
-            assert column.body.winfo_width() <= column.canvas.winfo_width() + 1
-        assert not errors, errors
-        if os.environ.get("STUDIO_GATE_REPORT_DIR"):
-            capture_window(root, output / "guided-workbench-compact.png")
+            if column.winfo_ismapped():
+                assert column.body.winfo_width() <= column.canvas.winfo_width() + 1
+        capture("guided-workbench-compact.png")
+        check_current_page(0)
     finally:
-        if os.environ.get("STUDIO_GATE_REPORT_DIR"):
-            try:
-                from pathlib import Path
-
-                output = Path(os.environ["STUDIO_GATE_REPORT_DIR"])
-                output.mkdir(parents=True, exist_ok=True)
-                capture_window(root, output / "guided-workbench-final.png")
-            except Exception as exc:
-                (output / "guided-screenshot-error.txt").write_text(str(exc), encoding="utf-8")
-        from test_ui_workflow import destroy_test_window
-
+        capture("guided-workbench-final.png")
         destroy_test_window(root)

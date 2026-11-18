@@ -29,7 +29,8 @@ def test_ui_state_multiline_and_bounds(tmp_path, monkeypatch):
             font.nametofont("TkDefaultFont", root=root).actual("family")
             == app.display["font_family"]
         )
-        assert str(app.verify_button["state"]) == "disabled"
+        assert str(app.next_button["state"]) == "disabled"
+        assert not app.project_list.winfo_ismapped()
         assert all(
             str(button["state"]) == "disabled"
             for button, rule in app.button_rules.items()
@@ -68,22 +69,21 @@ def test_ui_state_multiline_and_bounds(tmp_path, monkeypatch):
             assert studio.projects.get(current).goal["description"] == "尚未儲存的內容"
         assert app.name_var.get() == ""
         root.geometry(f"{round(980 * app.display['scale'])}x{round(640 * app.display['scale'])}")
-        app.tabs.select(2)
         root.deiconify()
         root.update()
         root.focus_force()
-        app.actor_entry.focus_set()
+        app.name_entry.focus_set()
         root.update()
+        assert app.wizard_step == 0 and app.name_entry.winfo_ismapped()
+        assert not app.actor_entry.winfo_ismapped()
+        assert not app.source_tree.winfo_ismapped()
         limit = root.winfo_rooty() + root.winfo_height()
-        assert app.stop_button.winfo_rooty() + app.stop_button.winfo_height() <= limit
-        publish = next(button for button, rule in app.button_rules.items() if rule == "publish")
-        assert publish.winfo_rooty() + publish.winfo_height() <= limit
-        empty_message = app.canvas.find_all()
-        assert len(empty_message) == 1
-        left, _, right, _ = app.canvas.bbox(empty_message[0])
-        assert left >= 0 and right <= app.canvas.winfo_width()
+        app.name_var.set("下一份草稿")
+        root.update()
+        assert app.next_button.winfo_rooty() + app.next_button.winfo_height() <= limit
         for button in app.buttons:
             if button.winfo_ismapped():
+                assert not button.instate(["disabled"])
                 assert button.winfo_width() >= button.winfo_reqwidth() - 2, button["text"]
         assert not errors
     finally:

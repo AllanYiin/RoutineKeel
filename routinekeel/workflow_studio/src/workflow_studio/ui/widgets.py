@@ -5,8 +5,9 @@ from tkinter import ttk
 class ScrollColumn(ttk.Frame):
     """Keep controls reachable when a small window or advanced options overflow."""
 
-    def __init__(self, parent, *, padding=0):
+    def __init__(self, parent, *, padding=0, max_width=None):
         super().__init__(parent)
+        self.max_width = max_width
         self.canvas = tk.Canvas(self, highlightthickness=0, background="#FFFFFF", width=1)
         self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
@@ -28,7 +29,8 @@ class ScrollColumn(ttk.Frame):
     def _layout(self):
         self.pending = None
         height = max(self.body.winfo_reqheight(), self.canvas.winfo_height())
-        self.canvas.itemconfigure(self.body_window, width=self.canvas.winfo_width(), height=height)
+        width = min(self.canvas.winfo_width(), self.max_width or self.canvas.winfo_width())
+        self.canvas.itemconfigure(self.body_window, width=width, height=height)
         self.canvas.configure(scrollregion=(0, 0, self.canvas.winfo_width(), height))
         if height > self.canvas.winfo_height() + 1:
             if not self.scrollbar.winfo_manager():
