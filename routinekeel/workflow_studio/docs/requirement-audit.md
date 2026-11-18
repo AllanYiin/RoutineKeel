@@ -31,7 +31,7 @@
 | §8 IR、邏輯參照、節點強制契約、有限分支 | ir 模組、compiler/compatibility.py、branch_lowering.py；IR／branch 測試 | 逐欄位核對 Runtime 語意與拒絕路徑；不能把 IR 接受但 Compiler 不支援當成已實作 |
 | §9 狀態／migration／不可變／交易 | SQLite v014、v009–v013 升級備份還原、CAS、版本／證據／工具／模板／審核／發布核對紀錄 | 長操作中斷狀態、100 次 CRUD 重開與完整正式指標故障矩陣 |
 | §10 共用 Service／事件／串流 | service.py、discovery events 與 usage | generation、verification、approval 事件與所有狀態持久化須逐項核對；CLI 目前只有部分入口 |
-| §11 UI／預覽／停止／顏色＋文字 | 原生 Windows 檢視與使用者回饋；ui-review.md | 不操作目前使用者桌面；其他平台實機及新增表單待走查。程式檢查另發現背景工作只禁用按鈕，refresh_project 會重設目標欄位，須保護期間輸入的未儲存文字 |
+| §11 UI／預覽／停止／顏色＋文字 | 原生 Windows 檢視與使用者回饋；ui-review.md、project-drafts.md、test_project_edits.py | 背景重讀保留草稿、版本衝突與比較更新已補控制器測試；不操作目前使用者桌面，其他平台及新增表單仍待實機走查 |
 | §12 非功能與基準 | 安全路徑、來源 snapshots、隔離重播、無網路默認 | 100 來源零模型、20 節點 p95 <500ms、100 次 CRUD、100 次不同輸入隔離、20 故障；均需固定硬體與資料證據 |
 | §13 Error／Abuse cases | 各模組拒絕測試及 error codes | 逐情境對照報告，確認取消／斷線／外部結果不明不重試；禁止刪掉失敗測試 |
 | AC-01 文字三步生成 | fixture discovery、真實 Runtime replay | 真實模型完整文字三步；至少五件文字及五件 Mermaid |
@@ -55,3 +55,6 @@
 - 底座與兩個現有流程回歸仍須在最終變更上重測。既有工作樹的 recovery JSON 輸出失敗單列，
   不擅自修改使用者既有底座變更以讓 Studio 看似通過。
 - 最終審核須再展開每階段的命名產物與測試要求；本表只提供主索引，不能直接拿來宣告完成。
+- Stage 7 原文明列「不支援 IR 正確阻擋」及不支援功能／原因輸出，不能另把所有任意型別與工具適配都推定為必要 Gate。
+  同時也不能用拒絕路徑替代明定的 P0/P1 功能；須以原始案例與契約逐項驗證。兩個固定 Golden Case
+  的直接 Runtime 測試已位於 test_runtime_compatibility.py，完整核心 DoD 仍需連同其他命名產物核對。

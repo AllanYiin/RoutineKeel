@@ -14,6 +14,7 @@ from ..contracts import StudioError
 from ..ingestion.preview import fit_size
 from .display import configure_display, enable_high_dpi
 from .model import StudioUIModel, analysis_text
+from .project_edits import ProjectEdits, entered_values
 
 COLORS = {
     "bg": "#F8FAFC",
@@ -38,6 +39,7 @@ class StudioApp:
         self.busy = self.close_requested = False
         self.project_rows, self.source_rows = [], {}
         self.current_project = self.selected_source = self.selected_node = None
+        self.project_edits = ProjectEdits()
         self.display_image = None
         self.raw_analysis = ""
         self.buttons = []
@@ -71,7 +73,7 @@ class StudioApp:
         project = self.current_project
         editable = project is not None and project.status == "active"
         dirty = self.has_unsaved_changes()
-        active = editable and not dirty
+        active = editable and not dirty and not self.project_edits.conflict
         source = active and self.selected_source in self.source_rows
         workflow = active and self.display_ir is not None
         verified = bool(
@@ -126,20 +128,23 @@ class StudioApp:
             state="readonly" if not self.busy and active and self.model.candidates else "disabled"
         )
         if hasattr(self, "save_state"):
-            self.save_state.set("尚未儲存" if dirty else ("已儲存" if project else ""))
+            self.save_state.set(
+                "外部更新待核對；草稿保留"
+                if self.project_edits.conflict
+                else "尚未儲存"
+                if dirty
+                else ("已儲存" if project else "")
+            )
+
+    def entered_project_values(self):
+        return entered_values(self.name_var.get(), self.goal_var.get(), self.success_var.get())
 
     def has_unsaved_changes(self):
         if not hasattr(self, "name_var"):
             return False
-        values = (
-            self.name_var.get().strip(),
-            self.goal_var.get(),
-            [s.strip() for s in self.success_var.get().splitlines() if s.strip()],
+        return (
+            self.project_edits.dirty(self.entered_project_values()) or self.project_edits.conflict
         )
-        p = self.current_project
-        if p is None:
-            return any(values)
-        return values != (p.name, p.goal.get("description", ""), p.goal.get("success_criteria", []))
 
     def confirm_leave(self):
         if not self.has_unsaved_changes():
@@ -161,6 +166,7 @@ class StudioApp:
         self.model.project_id = self.model.build_id = self.model.approval_id = None
         self.model.candidates = []
         self.current_project = self.selected_source = self.selected_node = None
+        self.project_edits.accept(None)
         self.display_ir = self.last_report = self.display_image = None
         self.case_count = 0
         self.case_history_count = 0
@@ -234,18 +240,27 @@ class StudioApp:
         )
 
     def load_project(self, identity):
-        if self.current_project and identity != self.model.project_id and not self.confirm_leave():
+        if identity != self.model.project_id and not self.confirm_leave():
+            self.project_list.selection_clear(0, "end")
+            for index, project in enumerate(self.project_rows):
+                if project.project_id == self.model.project_id:
+                    self.project_list.selection_set(index)
+                    break
             return
         if identity != self.model.project_id or self.current_project is None:
             self.model.select_project(identity)
         self.refresh_project()
 
-    def refresh_project(self):
-        self.current_project = self.model.project()
-        p = self.current_project
-        self.name_var.set(p.name)
-        self.goal_var.set(p.goal.get("description", ""))
-        self.success_var.set("\n".join(p.goal.get("success_criteria", [])))
+    def refresh_project(self, *, discard_edits=False):
+        p = self.model.project()
+        reload_fields = self.project_edits.observe(p, self.entered_project_values())
+        if discard_edits:
+            self.project_edits.accept(p)
+        self.current_project = p
+        if reload_fields or discard_edits:
+            self.name_var.set(p.name)
+            self.goal_var.set(p.goal.get("description", ""))
+            self.success_var.set("\n".join(p.goal.get("success_criteria", [])))
         self.source_tree.delete(*self.source_tree.get_children())
         self.source_rows = {}
         for source in self.model.sources():
@@ -281,15 +296,37 @@ class StudioApp:
         self.status.set(f"已建立「{p.name}」。接著提供工作說明或成功案例。")
 
     def save_project(self):
-        self.model.update_project(
-            self.name_var.get(),
-            self.goal_var.get(),
-            self.success_var.get(),
-            self.current_project.version,
+        if self.project_edits.conflict:
+            raise StudioError(
+                "REVISION_CONFLICT", "專案內容或狀態已有更新，草稿仍保留；請先按「比較更新」核對。"
+            )
+        self.save_project_values(
+            (self.name_var.get(), self.goal_var.get(), self.success_var.get()),
+            self.project_edits.base,
         )
+
+    def save_project_values(self, values, expected_project):
+        if expected_project is None or self.model.project_id != expected_project.project_id:
+            raise StudioError("REVISION_CONFLICT", "專案已切換，未把草稿寫入另一個專案。")
+        try:
+            saved = self.model.update_project(*values, expected_project.version)
+        except StudioError as exc:
+            if exc.code == "REVISION_CONFLICT":
+                self.refresh_project()
+                raise StudioError(
+                    "REVISION_CONFLICT",
+                    "保存內容有更新，草稿已保留；請使用「比較更新」，或核對後再次儲存。",
+                ) from exc
+            raise
+        self.project_edits.accept(saved)
         self.refresh_projects()
         self.refresh_project()
         self.status.set("目標已保存；修改後需重新核對流程與試做結果。")
+
+    def compare_project_updates(self):
+        from .project_conflict import open_comparison
+
+        open_comparison(self)
 
     def _archive(self, restore):
         self.model.archive(restore)
@@ -1011,6 +1048,15 @@ class StudioApp:
     def offer_analysis(self, prepared):
         if self.close_requested:
             return
+        if self.has_unsaved_changes() or self.model.project_id != prepared.project_id:
+            self.status.set(
+                "準備期間目標有未儲存修改或專案已切換；本次沒有傳送。請保存目標後重新分析。"
+            )
+            return
+        self.refresh_project()
+        if self.current_project.version != prepared.project_version:
+            self.status.set("準備後專案已有更新，本次沒有傳送；已重新讀取，請核對目標後再分析。")
+            return
         if self.model.provider.external:
             from .analysis_disclosure import open_disclosure
 
@@ -1019,6 +1065,8 @@ class StudioApp:
         self.start_analysis(prepared)
 
     def start_analysis(self, prepared):
+        if self.has_unsaved_changes() or self.model.project_id != prepared.project_id:
+            raise StudioError("REVISION_CONFLICT", "目標尚未儲存或專案已切換，本次分析未送出。")
         self.raw_analysis = ""
         self._set_text(self.analysis, "")
         self.tabs.select(1)

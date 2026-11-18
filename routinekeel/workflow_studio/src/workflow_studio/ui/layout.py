@@ -255,11 +255,21 @@ def build_workbench(app):
         row, "建立專案", app.create_project, requires="new", style="Primary.TButton", side="left"
     )
     app.button(row, "儲存目標", app.save_project, requires="editable", side="left", padx=s(6))
-    app.button(row, "版本與差異", app.version_history, requires="project", side="left")
-    app.save_state = tk.StringVar()
-    ttk.Label(row, textvariable=app.save_state, foreground="#B45309", font=(family, 10)).pack(
-        side="right"
+    history_row = ttk.Frame(goal)
+    history_row.pack(fill="x", pady=(s(6), 0))
+    app.button(history_row, "版本與差異", app.version_history, requires="project", side="left")
+    app.button(
+        history_row,
+        "比較更新",
+        app.compare_project_updates,
+        requires="project",
+        side="left",
+        padx=s(6),
     )
+    app.save_state = tk.StringVar()
+    ttk.Label(
+        row, textvariable=app.save_state, foreground="#B45309", font=(family, 10), wraplength=s(120)
+    ).pack(side="right")
     flow = ttk.LabelFrame(center, text="2  查看與調整流程", padding=s(12))
     flow.pack(fill="both", expand=True, pady=(s(12), 0))
     app.candidate_choice = ttk.Combobox(flow, state="readonly", width=1)

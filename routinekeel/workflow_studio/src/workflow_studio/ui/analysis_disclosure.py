@@ -56,7 +56,7 @@ def open_disclosure(app, prepared):
 
     def send():
         window.destroy()
-        app.start_analysis(prepared)
+        app.guard(lambda: app.start_analysis(prepared))
 
     controls = ttk.Frame(window, padding=12)
     controls.pack(fill="x")

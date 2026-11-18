@@ -214,14 +214,22 @@ class StudioUIModel:
         return self.select_project(p.project_id)
 
     def update_project(self, name, goal, success, expected_version):
-        with self.service() as studio:
+        with self.service() as studio, studio.repository.transaction():
+            current = studio.projects._editable(
+                studio.repository.connection, self.project_id, expected_version
+            )
+            criteria = [s.strip() for s in success.splitlines() if s.strip()]
+            displayed = "\n".join(current.goal.get("success_criteria", []))
+            if criteria == [s.strip() for s in displayed.splitlines() if s.strip()]:
+                criteria = current.goal.get("success_criteria", [])
             p = studio.projects.update(
                 self.project_id,
                 expected_version,
                 name=name,
                 goal={
+                    **current.goal,
                     "description": goal,
-                    "success_criteria": [s.strip() for s in success.splitlines() if s.strip()],
+                    "success_criteria": criteria,
                 },
             )
         self.build_id = self.approval_id = None
