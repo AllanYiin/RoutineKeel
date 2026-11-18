@@ -555,3 +555,12 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
   後續保留 AI 釐清入口的修正仍須最新 CI。Windows 完整測試尚在執行。
 - 941f5df 獨立 Windows 整包安裝通過，證據 dist/draft-install-evidence/distribution.json；
   source_dirty=false、重用、案例重播、獨立 Runtime 與損毀包拒絕皆通過。使用者原視窗未動。
+
+## 包內文件連結
+
+- 檢查實際 ZIP 時發現，測試機路徑遮罩將 `https://` 的 `s:/` 誤認為磁碟路徑。
+  兩個回歸案例先重現失敗；修正為只辨識獨立磁碟代號，保留 HTTP(S) 網址並繼續遮罩本機路徑。
+  實際套件與內嵌 source.zip 皆核對網址保留、測試機路徑移除。
+- 移除只在儲存庫成立、在安裝包中無目標的故障矩陣連結，改明列儲存庫檔案位置。
+- distribution_package／distribution_bootstrap：**13 passed、1 POSIX symlink skip，0.51 秒**，
+  `dist/distribution-link-regression.xml`。GitHub Actions 帳戶限制尚未排除，此修正先留本機驗證，未觸發新 CI。

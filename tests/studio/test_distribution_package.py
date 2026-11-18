@@ -28,6 +28,16 @@ def test_studio_is_not_added_to_default_runtime_flow_releases(monkeypatch):
     assert all((p / "flow.template.json").is_file() for p in projects if p != release.BASE)
 
 
+def test_public_documents_preserve_urls_but_remove_machine_paths(monkeypatch):
+    builder = load_builder(monkeypatch)
+    urls = "https://example.invalid/docs http://example.invalid/help"
+    document = urls + "\nWindows E:/private-machine/run.log and `C:\\Users\\fixture\\data.txt`"
+    public = builder.public_document(document, set())
+    assert urls in public
+    assert "private-machine" not in public and "fixture" not in public
+    assert public.count("{local-path}") == 2
+
+
 @pytest.mark.parametrize("fault", ["untracked", "changed", "machine-path"])
 def test_wheel_cannot_add_untracked_or_private_material(tmp_path, monkeypatch, fault):
     builder = load_builder(monkeypatch)
@@ -61,7 +71,10 @@ def test_archive_inventory_excludes_even_tracked_private_state(tmp_path, monkeyp
         "routinekeel/flow_base/src/flow_base/__init__.py": "# runtime source",
         "routinekeel/workflow_studio/pyproject.toml": '[project]\nversion="0.1.0"\n',
         "routinekeel/workflow_studio/scripts/studio_bootstrap.py": "# trusted fixture",
-        "routinekeel/workflow_studio/docs/example.md": "Evidence at E:/private-machine/run/file.log",
+        "routinekeel/workflow_studio/docs/example.md": (
+            "Evidence at E:/private-machine/run/file.log\n"
+            "[documentation](https://example.invalid/guide)"
+        ),
         "routinekeel/workflow_studio/examples/first-copy/input/a.txt": "sample",
         "routinekeel/workflow_studio/src/workflow_studio/__init__.py": "# source",
         "routinekeel/workflow_studio/.env": "PRIVATE_SENTINEL",
@@ -118,6 +131,7 @@ def test_archive_inventory_excludes_even_tracked_private_state(tmp_path, monkeyp
         for name in archive.namelist():
             assert b"PRIVATE_SENTINEL" not in archive.read(name)
             assert b"E:/private-machine" not in archive.read(name)
+        assert b"https://example.invalid/guide" in archive.read("workflow_studio/docs/example.md")
         with zipfile.ZipFile(io.BytesIO(archive.read("workflow_studio/source.zip"))) as source:
             assert (
                 "routinekeel/workflow_studio/src/workflow_studio/__init__.py" in source.namelist()
@@ -125,3 +139,6 @@ def test_archive_inventory_excludes_even_tracked_private_state(tmp_path, monkeyp
             for name in source.namelist():
                 assert b"PRIVATE_SENTINEL" not in source.read(name), name
                 assert b"E:/private-machine" not in source.read(name)
+            assert b"https://example.invalid/guide" in source.read(
+                "routinekeel/workflow_studio/docs/example.md"
+            )

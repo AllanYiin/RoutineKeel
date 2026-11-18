@@ -36,7 +36,8 @@ def public_document(text, roots):
         for value in (str(root), root.as_posix()):
             text = text.replace(value + "/", "").replace(value + "\\", "").replace(value, ".")
     # Diagnostic evidence may mention other test-machine executable/temp paths.
-    return re.sub(r"[A-Za-z]:[/\\][^\s`\"'<>|)]+", "{local-path}", text)
+    # Match a drive letter, not the final letter of an https:// URL scheme.
+    return re.sub(r"(?<![A-Za-z0-9_])[A-Za-z]:[/\\][^\s`\"'<>|)]+", "{local-path}", text)
 
 
 def verify_wheel_sources(wheel, root, component, tracked, private_roots):
