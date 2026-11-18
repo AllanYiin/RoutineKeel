@@ -33,7 +33,7 @@
 | §10 共用 Service／事件／串流 | service.py、discovery events 與 usage；operation-events.md | 已補生成階段、驗證完成與待核准事件及交易回滾測試；CLI 目前只有部分入口，全部狀態與硬中止仍須逐項核對 |
 | §11 UI／預覽／停止／顏色＋文字 | 原生 Windows 檢視與使用者回饋；ui-review.md、project-drafts.md、test_project_edits.py | 背景重讀保留草稿、版本衝突與比較更新已補控制器測試；不操作目前使用者桌面，其他平台及新增表單仍待實機走查 |
 | §12 非功能與基準 | acceptance-benchmarks.md／fault-matrix.md及三平台CI artifacts：固定基準、20故障、3程序中止、100次隔離 | 已有三平台指定runner證據；不推論所有硬體或實體斷電情境皆通過 |
-| §13 Error／Abuse cases | 各模組拒絕測試及 error codes | 逐情境對照報告，確認取消／斷線／外部結果不明不重試；禁止刪掉失敗測試 |
+| §13 Error／Abuse cases | [17個例外情境核對](edge-acceptance.md)，對照測試斷言及run31 JUnit；另補真正兩連線同時發布 | 本機發布結果不明需核對，遠端副作用適配未支援；P2影片及真實模型仍待；錯誤碼文案／details完整矩陣未驗 |
 | AC-01 文字三步生成 | fixture discovery、真實 Runtime replay | 真實模型完整文字三步；至少五件文字及五件 Mermaid |
 | AC-02 第三版續編 | test_acceptance_lifecycle：第三版來源／證據重開、續編第四版重播、舊發布包不變 | 本機工程路徑已驗；原生視窗走查仍待 |
 | AC-03 中斷 | 固定串流斷線、failed 事件、控制器訊息及上一候選重開 | fixture／本機工程路徑已驗；真實 Provider 與原生視窗仍待 |

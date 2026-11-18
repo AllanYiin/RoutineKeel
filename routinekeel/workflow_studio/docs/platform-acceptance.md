@@ -156,3 +156,25 @@ PR head 為 `fb1e8644a818b7c6f323ee5fe2cc1faac401217b`，實際 merge checkout
 彙整為 `run27-summary.json`。截圖已檢視，確認下一步、停用說明、來源內容預覽及固定分頁。
 這是 Linux 合成視窗證據，不是 Windows 真人操作，也不計入 16/20 真人驗收。
 後續來源說明入口（031e001 起）仍須其對應的新版本結果。
+
+## 來源說明與分次保存草稿（cc12c4a）
+
+[run 44282519400](https://github.com/AllanYiin/RoutineKeel/actions/runs/44282519400)
+測試 PR head `cc12c4a7a004cdc8d0dba44b82dc8343d892eaff`，實際 merge
+`4cbea7f472520324a6cefb638ca6b333801ce8f7`。本次核對時，Windows Studio 完整套件仍在執行，
+其餘五個 job 已成功；不沿用前版成功當成新版 Windows 通過。
+
+Ubuntu/macOS 各 **583 passed、7 skipped、3 deselected**；JUnit tests=590，零錯誤／失敗，
+時間分別 147.795／128.102 秒。跳過範圍與前版相同。Ubuntu 獨立 Tk Gate
+**1 passed、0 skipped、3.064 秒**，加入名稱起案、分次保存、缺少成功條件時仍可請 AI 釐清、
+來源說明編輯與過期衝突保留；正常與小視窗合成截圖已檢視。
+
+兩平台實際 ZIP 安裝／重用／案例重播／獨立 Runtime／損毀拒絕均成功且 source_dirty=false。
+已下載並對照 GitHub metadata 的 artifact SHA-256：
+
+- Ubuntu：`a62b3a89beb229dafbf170509e938e34bfc40fb385c598064eb334a291720bbe`
+- macOS：`a4b5436f25374ec79ab21784304813e42f94463db92e7810b375277a516991cd`
+
+證據為 `dist/ui-guidance-evidence/*-run31.zip`、`run31-summary.json`。
+本機 Windows 的 cc12c4a 候選另經獨立全新安裝，證據 `dist/clarification-install-evidence/distribution.json`；
+這不替代尚未結束的 Windows 完整套件或原生 UI 驗收。
