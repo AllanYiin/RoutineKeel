@@ -408,3 +408,20 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
   加上來源版本集合後另重跑靜態基準 1 passed，0.86 秒。沒有把各輪相加冒充單次完整通過。
 - 本輪只新增測試／驗收文件，沒有產品或底座改動；不重跑不受影響的全部 Studio 測試。
   完整 20 故障、20 低風險資料集、AC 矩陣、目前底座完整回歸、平台 CI、真人及真實模型 Gate 仍待。
+
+## Stage 12 二十個固定故障點與真正程序中止
+
+- 固定 fixture 矩陣 publication_faults.json 定義 F01–F20，逐點覆蓋快照／prepared／journal／wheel／manifest／
+  current／DB finalize，以及核准撤回、審核退回、封存、來源變更、新增案例與工具停用競爭。
+  每點必須注入一次預期故障，驗證舊快照／wheel／成果 bytes，核對準備狀態，必要時回滾並重播舊包。
+- `test_edge_cases.py -q -s -x --junitxml=.../junit.xml`：20 passed，91.19 秒。
+  結果為 4 個尚無 prepared、11 個 not_applied、5 個 applied 後補齊／回滾；全部舊版可再次由底座執行。
+- `test_publication_process_crash.py -q -s -x --junitxml=.../process-junit.xml`：3 passed，17.29 秒。
+  獨立子程序在 manifest 前、後、SQLite UPDATE 後未 COMMIT 時 os._exit(97)，不走正常清理；
+  父程序能重新取得發布鎖、觀察 prepared、核對實際檔案、恢復並重播舊版。
+- 兩份 JUnit 分別確認 tests=20／3，failures/errors/skipped 均為 0。每點 JSON 記錄 matrix hash、
+  注入次數、前後快照 hash、恢復判定與 probe run_id，位於 dist/studio-gates/2026-11-18-faults。
+- 詳細邊界與重跑命令見 fault-matrix.md。不宣稱實體斷電／硬體損毀通過；切換後完整新版本須明確核對，
+  不假裝所有錯誤都自動保持舊 current。本輪只新增測試與文件，不改產品程式，也未重跑全部既有套件。
+- Ruff check、format check（160 files）、git diff --check 通過。§12.1 五項本機基準均已有證據，
+  完整 20 範例、其他 AC／安全矩陣、最新底座／流程回歸、三平台、模型與真人驗收及交付仍待。

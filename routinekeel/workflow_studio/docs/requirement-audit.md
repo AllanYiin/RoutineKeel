@@ -17,7 +17,7 @@
 | FR-07 案例 CRUD／預期實際 | GoldenCases.save/get/archive/history；案例編輯、文字與圖片歷史預覽；test_case_editing.py | 版本化修改、替換、封存後重開及核准失效已驗；新圖片預覽與視窗走查待驗 |
 | FR-08 生成版本 CRUD | Compiler、BuildReviews、ReleaseRecovery、建置／報告／發布核對 UI | prepared 核對、保留檔案結束準備與再封存已實測；新視窗實機驗收仍待 |
 | FR-09 人工決策 CRUD | Approvals、v013 審核紀錄與 sequence、送審／退回／撤回 UI | 技術結果與審核分離、同修訂退回約束及重送已補；完整操作走查與故障矩陣仍待 |
-| FR-10 發布／回滾／停用 | governance/release.py、recovery.py；test_governance.py、test_release_recovery.py | 發布及停用中斷、缺檔／損毀／過期核對、鎖競爭、交易回復已有測試；仍須完整 20 個受控故障點、跨專案相同 workflow_id 的直接回歸與跨平台實測 |
+| FR-10 發布／回滾／停用 | governance/release.py、recovery.py；test_governance.py、test_release_recovery.py、fault-matrix.md | Windows 20 個固定發布故障點及三個真正程序中止已驗；跨專案相同 workflow_id 的直接回歸與跨平台仍待 |
 | FR-11 明確工作目標 | project/models.py 與 IR goal 驗證 | 對照非技術完整流程確認輸入、預期與成功條件，不把簡短文字等同完整需求 |
 | FR-12 多來源發現 | discovery/planner.py、images.py、folder.py、video.py；test_image_discovery.py 與推論測試 | 手繪／文字混合來源、固定圖片傳送與待確認路徑已接線；真實文字／Mermaid 各至少 5 件及手繪辨識品質仍待；影片與融合仍為 P2 未驗且停用 |
 | FR-13 工具配置 | Registry policy/matching、受控內建及生成工具 | 對真實案例核對重用優先順序，不以僅固定工具通過代替新 Handler 能力 |
@@ -29,10 +29,10 @@
 | 原需求 | 現有證據 | 未完成驗收 |
 |---|---|---|
 | §8 IR、邏輯參照、節點強制契約、有限分支 | ir 模組、compiler/compatibility.py、branch_lowering.py；IR／branch 測試 | 逐欄位核對 Runtime 語意與拒絕路徑；不能把 IR 接受但 Compiler 不支援當成已實作 |
-| §9 狀態／migration／不可變／交易 | SQLite v014、v009–v013 升級備份還原、CAS、版本／證據／工具／模板／審核／發布核對紀錄；100 次建立／更新／重開已驗 | 完整長操作中斷與正式指標 20 故障矩陣仍待 |
+| §9 狀態／migration／不可變／交易 | SQLite v014、遷移備份、CAS、不可變紀錄、100 次專案循環及 20 發布故障／程序中止 | 其他長操作取消與完整跨平台狀態矩陣仍待 |
 | §10 共用 Service／事件／串流 | service.py、discovery events 與 usage | generation、verification、approval 事件與所有狀態持久化須逐項核對；CLI 目前只有部分入口 |
 | §11 UI／預覽／停止／顏色＋文字 | 原生 Windows 檢視與使用者回饋；ui-review.md、project-drafts.md、test_project_edits.py | 背景重讀保留草稿、版本衝突與比較更新已補控制器測試；不操作目前使用者桌面，其他平台及新增表單仍待實機走查 |
-| §12 非功能與基準 | acceptance-benchmarks.md：100 來源零模型、20 節點 p95 0.8214ms、100 次建立／更新／重開及 100 次不同輸入隔離已在指定 Windows／SSD 驗證 | 完整 20 故障與其他平台證據仍待；不推論所有硬體皆達標 |
+| §12 非功能與基準 | acceptance-benchmarks.md／fault-matrix.md：五項基準已有指定 Windows 環境證據，包含 20 固定故障 | 其他平台仍待；不推論所有硬體或實體斷電情境皆通過 |
 | §13 Error／Abuse cases | 各模組拒絕測試及 error codes | 逐情境對照報告，確認取消／斷線／外部結果不明不重試；禁止刪掉失敗測試 |
 | AC-01 文字三步生成 | fixture discovery、真實 Runtime replay | 真實模型完整文字三步；至少五件文字及五件 Mermaid |
 | AC-02 第三版續編 | 持久化及 UI model 重開測試 | 固定第三版草稿／證據／原發布包不可變的直接整合案例 |

@@ -24,7 +24,7 @@
 | 100 個來源檔案清單與基本 metadata 不呼叫模型 | 匯入 300.08 ms；清單及 metadata 0.538 ms；模型呼叫與帳本皆 0 | PASS；固定資料夾內 100 個不同 UTF-8 檔案，逐項核對大小／類型／hash |
 | 100 次建立／更新／重開不損壞資料 | 100 個專案與原修訂；循環中 200 次連線開啟，另有最後整體查核；1.172 秒 | PASS；100 次過期更新拒絕，integrity_check=ok，foreign_key_check 無錯誤，模型呼叫 0 |
 | 100 次不同輸入不混合成果／識別碼 | **100 次成功**；242.393 秒；100 個 run_id、delivery_id、輸入 hash 均唯一 | PASS；共用 Runtime 工作區及同名輸入路徑，100 個獨立輸出目錄；事後重核全部交付版本 |
-| 20 個受控故障點不損壞前一正式版本 | 尚未彙整完整固定矩陣 | 待驗；既有故障測試不直接用數量相加充當此 Gate |
+| 20 個受控故障點不損壞前一正式版本 | 20 個具名發布故障點逐 byte 保留舊快照／wheel／成果，並重播舊版 | PASS（Windows）；另有三個真正程序中止，見 [故障矩陣](fault-matrix.md) |
 
 100 次執行使用經 Verifier 驗收及人工 fixture 核准後正式發布的 copy-example 包，
 透過獨立 Runtime Python 的公開 plan／prepare／verify／run 及 list_run_artifacts API。
