@@ -57,11 +57,9 @@ class StudioApp:
         self._build()
         self.refresh_projects()
         self.root.update_idletasks()
-        width = self.panes.winfo_width()
-        self.panes.sashpos(0, round(width * 0.25))
-        self.panes.sashpos(1, round(width * 0.66))
         self.draw_workflow(refresh=False)
         self.refresh_actions()
+        self.root.after_idle(self.name_entry.focus_set)
         self.root.protocol("WM_DELETE_WINDOW", self.close)
         self.root.after(100, self._drain)
 
@@ -88,8 +86,7 @@ class StudioApp:
         self.buttons.append(widget)
         self.button_rules[widget] = requires
         widget.bind("<Button-1>", lambda _event: self.explain_blocked_button(widget))
-        if advanced or show_when:
-            self.defer_widget(widget, advanced=advanced, show_when=show_when)
+        self.defer_widget(widget, advanced=advanced, show_when=show_when)
         return widget
 
     def invoke_button(self, widget, command):
@@ -123,8 +120,10 @@ class StudioApp:
     def refresh_optional(self, conditions):
         expanded = hasattr(self, "advanced_var") and self.advanced_var.get()
         for widget, options in getattr(self, "optional_widgets", {}).items():
-            visible = (expanded or not options["advanced"]) and (
-                not options["condition"] or conditions.get(options["condition"], False)
+            visible = (
+                (expanded or not options["advanced"])
+                and (not options["condition"] or conditions.get(options["condition"], False))
+                and widget not in getattr(self, "button_blockers", {})
             )
             if visible == options["shown"]:
                 continue
@@ -144,6 +143,11 @@ class StudioApp:
             options["shown"] = bool(visible)
 
     def advance(self):
+        if hasattr(self, "wizard_pages"):
+            from .wizard import advance
+
+            advance(self)
+            return
         self.refresh_actions()
         action = self.current_guidance.action
         if action is None:
@@ -170,6 +174,30 @@ class StudioApp:
         else:
             getattr(self, action)()
 
+    def wizard_back(self):
+        from .wizard import access, show_page
+
+        if self.busy:
+            return
+        for index in range(self.wizard_step - 1, -1, -1):
+            if access(self.wizard_context, index):
+                show_page(self, index)
+                break
+
+    def show_wizard_page(self, index, *, internal=False):
+        from .wizard import show_page
+
+        return show_page(self, index, internal=internal)
+
+    def open_project_picker(self):
+        if self.busy:
+            return
+        self.refresh_projects()
+        self.project_picker.deiconify()
+        self.project_picker.transient(self.root)
+        self.project_picker.lift()
+        self.project_list.focus_set()
+
     def refresh_actions(self):
         project = self.current_project
         editable = project is not None and project.status == "active"
@@ -180,7 +208,7 @@ class StudioApp:
         source_count = len(
             {self.source_rows[key][0].source_id for key in selection if key in self.source_rows}
         )
-        workflow = active and self.display_ir is not None
+        workflow = active and self.display_ir is not None and not self.model.candidates
         provider_ready = self.model.provider_ready
         goal_ready = bool(self.goal_var.get().strip() and self.success_var.get().strip())
         verified = bool(
@@ -300,16 +328,33 @@ class StudioApp:
         self.refresh_optional(
             {
                 "project": project is not None,
+                "projects_available": bool(self.project_rows),
+                "picker_selected": bool(self.project_list.curselection())
+                if hasattr(self.project_list, "curselection")
+                else False,
                 "sources": bool(self.source_rows),
                 "workflow": self.display_ir is not None,
                 "candidate": bool(self.model.candidates),
                 "folder": context["single_folder"],
                 "conflict": self.project_edits.conflict,
                 "manual": bool(self.source_rows) and self.display_ir is None,
+                "existing_flow": self.display_ir is not None or bool(self.model.candidates),
+                "empty_folder": context["folder_needs_more"],
+                "needs_model": bool(self.source_rows)
+                and not provider_ready
+                and (
+                    self.display_ir is not None
+                    or bool(self.model.candidates)
+                    or context["folder_needs_more"]
+                ),
                 "failed_report": context["report_failed"],
                 "case_history": self.case_history_count > 0,
             }
         )
+        if hasattr(self, "wizard_pages"):
+            from .wizard import refresh
+
+            refresh(self, context, enabled)
 
     def entered_project_values(self):
         return entered_values(self.name_var.get(), self.goal_var.get(), self.success_var.get())
@@ -365,9 +410,11 @@ class StudioApp:
     def start_new_project(self):
         if self.confirm_leave():
             self.clear_project_view()
+            if hasattr(self, "wizard_pages"):
+                self.show_wizard_page(0, internal=True)
             self.project_list.selection_clear(0, "end")
             self.name_entry.focus_set()
-            self.status.set("輸入專案名稱與工作目標，再按「建立專案」。")
+            self.status.set("直接填寫專案名稱，完成後按下方按鈕繼續。")
 
     def _build(self):
         from .layout import build_workbench
@@ -425,6 +472,8 @@ class StudioApp:
         if identity != self.model.project_id or self.current_project is None:
             self.model.select_project(identity)
         self.refresh_project()
+        if hasattr(self, "project_picker"):
+            self.project_picker.withdraw()
 
     def refresh_project(self, *, discard_edits=False):
         selected_refs = {
@@ -658,7 +707,14 @@ class StudioApp:
                     else ""
                 ),
             )
-        self.tabs.select(0)
+        identity = (
+            source.source_id,
+            getattr(source, "version", None),
+            record["path"] if record else None,
+        )
+        if identity != getattr(self, "preview_selection", None):
+            self.tabs.select(0)
+        self.preview_selection = identity
         self.refresh_actions()
 
     def replace_source(self):
@@ -775,6 +831,8 @@ class StudioApp:
             f"找到 {len(candidates)} 個候選；{len(unknowns)} 項仍缺少證據。可先檢查案例關係再採用。"
         )
         self.refresh_project()
+        if candidates and hasattr(self, "wizard_pages"):
+            self.show_wizard_page(2, internal=True)
 
     def review_folder_relations(self):
         from .folder_dialog import open_folder_review
@@ -803,12 +861,18 @@ class StudioApp:
         self.canvas.delete("all")
         scale = self.display["scale"]
         width = max(round(280 * scale), self.canvas.winfo_width() - 4)
-        if not self.display_ir:
+        displayed = self.display_ir
+        candidate_preview = bool(self.model.candidates and self.candidate_choice.current() >= 0)
+        if candidate_preview:
+            displayed = self.model.candidates[self.candidate_choice.current()]["ir"]
+            self.selected_node = None
+            self.node_info.set("這是候選流程預覽；採用後即可調整步驟。")
+        if not displayed:
             width = max(1, self.canvas.winfo_width() - 4)
             self.canvas.create_text(
                 width / 2,
                 round(70 * scale),
-                text="整理出的流程會顯示在這裡。\n請依上方的「下一步」繼續。",
+                text="流程會顯示在這裡\n請先在來源步驟整理資料",
                 fill=COLORS["muted"],
                 width=max(1, width - round(40 * scale)),
                 font=(self.display["font_family"], 11),
@@ -818,7 +882,7 @@ class StudioApp:
             self.canvas.xview_moveto(0)
             self.selected_node = None
             return
-        nodes = self.display_ir["nodes"]
+        nodes = displayed["nodes"]
         levels = {}
         pending = {node["id"]: node for node in nodes}
         while pending:
@@ -878,9 +942,12 @@ class StudioApp:
                 width=box_width - 16 * scale,
                 tags=(tag,),
             )
-            self.canvas.tag_bind(tag, "<Button-1>", lambda _event, n=node: self.select_node(n))
+            if not candidate_preview:
+                self.canvas.tag_bind(tag, "<Button-1>", lambda _event, n=node: self.select_node(n))
         if self.selected_node not in positions:
             self.selected_node = None
+            if not candidate_preview:
+                self.node_info.set("點選步驟可查看輸入、輸出與調整選項。")
         self.canvas.configure(
             scrollregion=(0, 0, width, round((90 + max(levels.values(), default=0) * 90) * scale))
         )
@@ -1134,7 +1201,7 @@ class StudioApp:
 
         self._background(work, done)
         self.stop_button.configure(state="normal")
-        self.stop_button.pack(fill="x", pady=5)
+        self.stop_button.pack(side="left", padx=8)
 
     def release_history(self):
         rows = [r for r in self.model.release_history() if r["status"] == "published"]
@@ -1325,8 +1392,8 @@ class StudioApp:
         if self.has_unsaved_changes() or self.model.project_id != prepared.project_id:
             raise StudioError("REVISION_CONFLICT", "目標尚未儲存或專案已切換，本次分析未送出。")
         self.raw_analysis = ""
-        self._set_text(self.analysis, "")
         self.tabs.select(1)
+        self._set_text(self.analysis, "")
         self.status.set("正在分析；文字會逐段顯示，完成驗證後才保存候選流程。")
 
         def done(_):
@@ -1340,6 +1407,8 @@ class StudioApp:
                     + "\n\n待確認：\n"
                     + "\n".join(revision.ir["questions"]),
                 )
+            elif revision and "nodes" in revision.ir and hasattr(self, "wizard_pages"):
+                self.show_wizard_page(2, internal=True)
 
         self._background(
             lambda: self.model.analyze(
@@ -1350,7 +1419,7 @@ class StudioApp:
             done,
         )
         self.stop_button.configure(state="normal")
-        self.stop_button.pack(fill="x", pady=5)
+        self.stop_button.pack(side="left", padx=8)
 
     def stop(self):
         self.cancelled.set()

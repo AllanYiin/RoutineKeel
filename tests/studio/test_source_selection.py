@@ -119,15 +119,21 @@ def test_multiselect_previews_focused_file_not_always_first_selection(tmp_path):
     app.source_rows = {
         key: (
             SimpleNamespace(source_id=key, name=key, version=1, manifest={}),
-            {"preview": {"kind": "text", "text": key + " content", "truncated": False}},
+            {
+                "path": key + ".txt",
+                "preview": {"kind": "text", "text": key + " content", "truncated": False},
+            },
         )
         for key in ("a", "b")
     }
     app.image_label = app.preview_label = SimpleNamespace(configure=lambda **kwargs: None)
     app.preview_text = object()
-    app.tabs = SimpleNamespace(select=lambda index: None)
+    selected_tabs = []
+    app.tabs = SimpleNamespace(select=selected_tabs.append)
     seen = []
     app._set_text = lambda widget, text: seen.append(text)
     app._source_selected()
     assert app.selected_source == "b"
     assert seen == ["b content"]
+    app._source_selected()
+    assert selected_tabs == [0], "Restoring the same selection must not hide analysis questions"
