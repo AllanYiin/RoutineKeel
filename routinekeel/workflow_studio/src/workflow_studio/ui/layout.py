@@ -155,6 +155,19 @@ def build_workbench(app):
     right = ttk.Frame(app.panes, padding=s(12))
     app.panes.add(right, weight=4)
 
+    def keep_panes_usable(_event=None):
+        width = app.panes.winfo_width()
+        left_min, center_min, right_min = s(280), s(300), s(300)
+        if width < left_min + center_min + right_min:
+            return
+        first = min(max(app.panes.sashpos(0), left_min), width - center_min - right_min)
+        second = min(max(app.panes.sashpos(1), first + center_min), width - right_min)
+        app.panes.sashpos(0, first)
+        app.panes.sashpos(1, second)
+
+    app.panes.bind("<Configure>", keep_panes_usable, add=True)
+    app.panes.bind("<ButtonRelease-1>", keep_panes_usable, add=True)
+
     left.columnconfigure(0, weight=1)
     left.rowconfigure(4, weight=1)
     project_header = ttk.Frame(left)

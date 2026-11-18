@@ -379,4 +379,6 @@ def test_headless_guidance_disabled_feedback_and_progressive_disclosure(tmp_path
                 capture_window(root, output / "guided-workbench-final.png")
             except Exception as exc:
                 (output / "guided-screenshot-error.txt").write_text(str(exc), encoding="utf-8")
-        root.destroy()
+        from test_ui_workflow import destroy_test_window
+
+        destroy_test_window(root)

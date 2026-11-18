@@ -20,6 +20,23 @@ def case_folder(tmp_path):
     return folder
 
 
+def capture_virtual_window(root, name):
+    if os.environ.get("STUDIO_HEADLESS_UI_TESTS") == "1" and os.environ.get(
+        "STUDIO_GATE_REPORT_DIR"
+    ):
+        from test_ui_guidance import capture_window
+
+        if root.winfo_exists() and root.winfo_ismapped():
+            capture_window(root, Path(os.environ["STUDIO_GATE_REPORT_DIR"]) / name)
+
+
+def destroy_test_window(root):
+    # Each test owns its interpreter; don't leak polling callbacks into the next Tk root.
+    for pending in root.tk.splitlist(root.tk.call("after", "info")):
+        root.after_cancel(pending)
+    root.destroy()
+
+
 def test_model_end_to_end_without_editing_code_or_configuration(tmp_path):
     model = StudioUIModel(tmp_path / "studio", runtime_python=runtime_python())
     p = model.create_project("複製流程", "將檔案完整複製", "輸出內容與正確成果相同")
@@ -179,9 +196,11 @@ def test_real_tk_buttons_complete_folder_to_verification(tmp_path, monkeypatch):
         app.refresh_project()
         app.source_tree.selection_set(image_source.source_id + ":0")
         app._source_selected()
-        assert app.display_image.width() / app.display_image.height() == 2
+        width, height = app.display_image.width(), app.display_image.height()
+        assert 0 < width <= 400 and 0 < height <= 200
+        assert abs(width - 2 * height) <= 1  # Integer pixels may round by one pixel.
         identity = model.project_id
-        root.destroy()
+        destroy_test_window(root)
         root = tk.Tk()
         root.withdraw()
         root.report_callback_exception = lambda kind, value, trace: errors.append(str(value))
@@ -193,7 +212,10 @@ def test_real_tk_buttons_complete_folder_to_verification(tmp_path, monkeypatch):
         assert app.display_ir is not None and app.canvas.find_all()
         assert reopened.release_history() and not errors, errors
     finally:
-        root.destroy()
+        try:
+            capture_virtual_window(root, "workflow-final.png")
+        finally:
+            destroy_test_window(root)
 
 
 def test_tk_analysis_is_visible_before_final_revision(tmp_path, monkeypatch):
@@ -232,6 +254,9 @@ def test_tk_analysis_is_visible_before_final_revision(tmp_path, monkeypatch):
         model.provider = SlowFixture()
         model.budget = Budget(3, 1_000_000, 8000, 1_000_000, 1_000_000)
         app = StudioApp(tmp_path, root=root, model=model)
+        if os.environ.get("STUDIO_HEADLESS_UI_TESTS") == "1":
+            root.deiconify()
+            root.update()
         app.load_project(model.project_id)
         model.provider = SlowFixture()
         model.budget = Budget(3, 1_000_000, 8000, 1_000_000, 1_000_000)
@@ -244,6 +269,7 @@ def test_tk_analysis_is_visible_before_final_revision(tmp_path, monkeypatch):
             time.sleep(0.02)
         assert "根據來源" in app.analysis.get("1.0", "end")
         assert model.revision() is None
+        capture_virtual_window(root, "workflow-streaming.png")
         release.set()
         deadline = time.monotonic() + 10
         while app.busy and time.monotonic() < deadline:
@@ -253,4 +279,4 @@ def test_tk_analysis_is_visible_before_final_revision(tmp_path, monkeypatch):
         assert model.revision().status == "ir_ready"
     finally:
         release.set()
-        root.destroy()
+        destroy_test_window(root)

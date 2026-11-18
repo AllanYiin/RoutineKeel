@@ -80,10 +80,15 @@ def test_ui_state_multiline_and_bounds(tmp_path, monkeypatch):
         assert publish.winfo_rooty() + publish.winfo_height() <= limit
         for button in app.buttons:
             if button.winfo_ismapped():
-                assert button.winfo_width() >= button.winfo_reqwidth() - 2
+                assert button.winfo_width() >= button.winfo_reqwidth() - 2, button["text"]
         assert not errors
     finally:
-        root.destroy()
+        from test_ui_workflow import capture_virtual_window, destroy_test_window
+
+        try:
+            capture_virtual_window(root, "workflow-readability-final.png")
+        finally:
+            destroy_test_window(root)
 
 
 def test_settings_failure_does_not_change_active_profile(tmp_path):
