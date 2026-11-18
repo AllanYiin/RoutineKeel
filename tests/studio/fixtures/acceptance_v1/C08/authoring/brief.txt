@@ -1,0 +1,5 @@
+依優先順序排列工作
+
+JSON 陣列每筆有 name 與整數 priority。priority 由大到小排序，同分維持原順序；輸出 name 的 JSON 陣列。
+
+輸出格式：json

@@ -425,3 +425,24 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
   不假裝所有錯誤都自動保持舊 current。本輪只新增測試與文件，不改產品程式，也未重跑全部既有套件。
 - Ruff check、format check（160 files）、git diff --check 通過。§12.1 五項本機基準均已有證據，
   完整 20 範例、其他 AC／安全矩陣、最新底座／流程回歸、三平台、模型與真人驗收及交付仍待。
+
+## 固定 20 件驗收材料與測試揭露的來源缺陷
+
+- acceptance-v1 包含文字／Mermaid／成功資料夾／流程圖片各 5 件、21 組訓練及 40 組未見資料。
+  以獨立 acceptance_oracle 核對固定預期成果；catalog 保存逐檔指紋，results-template 綁定資料集 hash，
+  全部結果保持 not_run。圖片是合成方塊圖，不是手寫辨識品質證據。操作與評分見 acceptance-corpus.md。
+- 多選控制器先重現「只送第一來源」及「多選時只預覽第一列」，修正後去重並固定完整範圍、預覽焦點列、
+  拒絕空白／過期選取，重讀時依來源 ID＋檔案路徑保留多選。單來源操作在多來源選取時停用。
+- 初次資料／控制器 58 passed，16.47 秒；相關來源／Discovery 回歸 108 passed、2 deselected，37.90 秒。
+  補完整多選狀態／焦點測試後，控制器／草稿／UI model 專項 25 passed、2 deselected，24.77 秒。
+- 五個成功資料夾從候選推導到 training＋held_out 真實重播及隔離發布：5 passed，31.06 秒。
+  後續資料集／來源／資料夾組合 50 passed，34.97 秒。C15 真正包含中間產物的兩步流程。
+  這些是工程執行，沒有填入真人或模型轉換成功率。
+- C10「無匹配輸出空檔」先重現無法匯入預期檔。修正 import_path 可接受空白文字檔，
+  不改空白貼上說明的拒絕規則；NUL、空白 JSON／Mermaid 仍拒收。空成果實際由生成 Handler／Runtime 驗證通過。
+  空檔／預覽／上傳安全專項 28 passed，8.56 秒；最後來源、案例、比較、圖文 Discovery 等回歸
+  157 passed，25.80 秒；再明確核對 file-path NUL 拒收 1 passed、2 deselected，0.64 秒。
+- `.gitattributes` 僅在固定資料集內關閉文字／空白正規化，保護刻意的 CRLF、BOM、尾端空白與空檔。
+  實際 Git index 的 155 個資料／catalog／result 檔案 bytes SHA-256 與預期一致；原工作樹及新 checkout 不應漂移。
+- Ruff check、format check（167 files）通過；新增介面提示與多選行為僅控制器測試，沒有重新操作桌面。
+  真實模型、至少 16/20 真人轉換、實際手寫品質、完整安全／平台／底座回歸與 Stage 13 交付仍待。

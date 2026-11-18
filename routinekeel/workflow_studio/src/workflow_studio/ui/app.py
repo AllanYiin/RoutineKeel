@@ -74,7 +74,11 @@ class StudioApp:
         editable = project is not None and project.status == "active"
         dirty = self.has_unsaved_changes()
         active = editable and not dirty and not self.project_edits.conflict
-        source = active and self.selected_source in self.source_rows
+        selection = self.source_tree.selection()
+        source = active and bool(selection) and all(key in self.source_rows for key in selection)
+        source_count = len(
+            {self.source_rows[key][0].source_id for key in selection if key in self.source_rows}
+        )
         workflow = active and self.display_ir is not None
         verified = bool(
             self.last_report
@@ -90,6 +94,7 @@ class StudioApp:
             "new": project is None and bool(self.name_var.get().strip()),
             "archived": project is not None and project.status == "archived",
             "source": source,
+            "single_source": source and source_count == 1,
             "analysis": source and self.model.provider is not None,
             "candidate": active
             and bool(self.model.candidates)
@@ -252,6 +257,14 @@ class StudioApp:
         self.refresh_project()
 
     def refresh_project(self, *, discard_edits=False):
+        selected_refs = {
+            (
+                self.source_rows[key][0].source_id,
+                self.source_rows[key][1]["path"] if self.source_rows[key][1] else None,
+            )
+            for key in self.source_tree.selection()
+            if key in self.source_rows
+        }
         p = self.model.project()
         reload_fields = self.project_edits.observe(p, self.entered_project_values())
         if discard_edits:
@@ -279,7 +292,15 @@ class StudioApp:
         self.case_count = len(self.model.cases())
         self.case_history_count = len(self.model.cases(include_archived=True))
         self.case_label.set(f"已設定 {self.case_count} 個固定成功案例")
-        if self.selected_source in self.source_rows:
+        retained = [
+            key
+            for key, (source, record) in self.source_rows.items()
+            if (source.source_id, record["path"] if record else None) in selected_refs
+        ]
+        if retained:
+            self.source_tree.selection_set(retained)
+            self.selected_source = self.source_rows[retained[0]][0].source_id
+        elif self.selected_source in self.source_rows:
             self.source_tree.selection_set(self.selected_source)
         else:
             self.selected_source = None
@@ -383,9 +404,20 @@ class StudioApp:
         ttk.Button(window, text="預覽並匯入", command=save).pack(pady=10)
 
     def _source_selected(self, _event=None):
-        if self.busy or not self.source_tree.selection():
+        if self.busy:
             return
-        source, record = self.source_rows[self.source_tree.selection()[0]]
+        if (
+            not self.source_tree.selection()
+            or self.source_tree.selection()[0] not in self.source_rows
+        ):
+            self.selected_source = None
+            self.refresh_actions()
+            return
+        focused = self.source_tree.focus()
+        key = (
+            focused if focused in self.source_tree.selection() else self.source_tree.selection()[0]
+        )
+        source, record = self.source_rows[key]
         self.selected_source = source.source_id
         self.display_image = None
         self.image_label.configure(image="")
@@ -411,7 +443,11 @@ class StudioApp:
         else:
             self._set_text(
                 self.preview_text,
-                record["preview"]["text"]
+                (
+                    "此檔案為空（0 bytes）。"
+                    if record.get("size") == 0
+                    else record["preview"]["text"]
+                )
                 + (
                     "\n（預覽已截斷，原始副本仍完整保存。）"
                     if record["preview"]["truncated"]
@@ -1039,11 +1075,14 @@ class StudioApp:
         ttk.Button(controls, text="取消", command=window.destroy).pack(side="right", padx=8)
 
     def analyze(self):
-        if not self.selected_source:
+        keys = self.source_tree.selection()
+        if not keys:
             raise StudioError("SOURCE_NOT_FOUND", "請先選擇要分析的來源。")
-        selected = self.selected_source
+        if any(key not in self.source_rows for key in keys):
+            raise StudioError("SOURCE_NOT_FOUND", "來源清單已改變，請重新選取。")
+        selected = list(dict.fromkeys(self.source_rows[key][0].source_id for key in keys))
         self.status.set("正在本機準備來源與圖片預覽，尚未傳送給模型……")
-        self._background(lambda: self.model.prepare_analysis([selected]), self.offer_analysis)
+        self._background(lambda: self.model.prepare_analysis(selected), self.offer_analysis)
 
     def offer_analysis(self, prepared):
         if self.close_requested:

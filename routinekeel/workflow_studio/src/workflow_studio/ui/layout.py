@@ -165,7 +165,7 @@ def build_workbench(app):
         )
     tree_frame = ttk.Frame(left)
     tree_frame.grid(row=4, column=0, sticky="nsew")
-    app.source_tree = ttk.Treeview(tree_frame, show="tree", height=4)
+    app.source_tree = ttk.Treeview(tree_frame, show="tree", height=4, selectmode="extended")
     scroll = ttk.Scrollbar(tree_frame, orient="vertical", command=app.source_tree.yview)
     scroll.pack(side="right", fill="y")
     app.source_tree.configure(yscrollcommand=scroll.set)
@@ -176,13 +176,19 @@ def build_workbench(app):
     row = ttk.Frame(actions)
     row.pack(fill="x")
     app.button(
-        row, "替換來源", app.replace_source, requires="source", side="left", expand=True, fill="x"
+        row,
+        "替換來源",
+        app.replace_source,
+        requires="single_source",
+        side="left",
+        expand=True,
+        fill="x",
     )
     app.button(
         row,
         "移除參照",
         app.remove_source,
-        requires="source",
+        requires="single_source",
         side="left",
         expand=True,
         fill="x",
@@ -192,7 +198,7 @@ def build_workbench(app):
         actions,
         "從成功案例找流程",
         app.find_folder_candidates,
-        requires="source",
+        requires="single_source",
         fill="x",
         pady=(s(10), s(5)),
     )
@@ -216,7 +222,7 @@ def build_workbench(app):
     app.stop_button.pack(fill="x", pady=s(5))
     ttk.Label(
         actions,
-        text="案例比對不需模型；AI 分析請先設定模型。",
+        text="可按 Ctrl／Command 多選來源一起分析；單一資料夾會包含其全部檔案。案例比對不需模型。",
         wraplength=s(270),
         foreground="#64748B",
         font=(family, 10),

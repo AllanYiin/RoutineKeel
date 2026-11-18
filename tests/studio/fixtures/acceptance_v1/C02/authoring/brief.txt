@@ -1,0 +1,5 @@
+篩選待處理訂單
+
+讀取 CSV，只保留 status 等於 open 且整數 amount 至少 100 的列。輸出 id,amount 兩欄，保留原順序及 CSV 引號語意，使用 LF。
+
+輸出格式：csv

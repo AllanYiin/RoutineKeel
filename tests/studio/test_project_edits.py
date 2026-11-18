@@ -22,7 +22,7 @@ class Variable:
 
 class ListView:
     def __init__(self):
-        self.rows, self.selection = {}, []
+        self.rows, self.selected = {}, []
 
     def get_children(self):
         return list(self.rows)
@@ -35,10 +35,13 @@ class ListView:
         self.rows[iid] = kwargs
 
     def selection_clear(self, *args):
-        self.selection = []
+        self.selected = []
+
+    def selection(self):
+        return tuple(self.selected)
 
     def selection_set(self, item):
-        self.selection = [item]
+        self.selected = list(item) if isinstance(item, (list, tuple)) else [item]
 
 
 def controller(tmp_path):
@@ -170,7 +173,7 @@ def test_cancel_switch_and_save_failure_keep_original_project_and_draft(tmp_path
     )
     app.load_project(other.project_id)
     assert app.model.project_id == p.project_id and app.goal_var.get() == "must keep"
-    assert app.project_list.selection == [0]
+    assert app.project_list.selected == [0]
     external_goal(app)
     monkeypatch.setattr(
         "workflow_studio.ui.app.messagebox.askyesnocancel", lambda *args, **kwargs: True

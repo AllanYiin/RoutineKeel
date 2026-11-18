@@ -1,0 +1,5 @@
+以識別碼合併兩組資料
+
+一份 JSON 含 people 與 scores 兩個陣列，各組 id 唯一。以 id 內連接，只輸出有分數的人的 name,score，依 people 原順序，輸出 JSON 陣列。
+
+輸出格式：json

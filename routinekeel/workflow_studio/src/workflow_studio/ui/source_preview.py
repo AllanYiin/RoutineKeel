@@ -43,6 +43,8 @@ class SourcePreview(ttk.Frame):
             try:
                 decoded = content.decode("utf-8-sig")
                 shown = decoded[:16000] + ("\n（預覽已截斷）" if len(decoded) > 16000 else "")
+                if not content:
+                    shown = "此檔案為空（0 bytes）。"
             except UnicodeDecodeError:
                 shown = "此來源為二進位檔案，沒有可用的文字預覽。"
             self.text.configure(state="normal")

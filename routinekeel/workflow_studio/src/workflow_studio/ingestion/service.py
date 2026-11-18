@@ -39,7 +39,9 @@ class SourceService:
             metadata = {name: (path / name).lstat().st_mtime_ns for name in files}
         elif path.suffix.lower() != ".zip":
             metadata = {path.name: path.lstat().st_mtime_ns}
-        return self._save(project_id, expected_version, files, path.name, source_id, metadata)
+        return self._save(
+            project_id, expected_version, files, path.name, source_id, metadata, allow_empty=True
+        )
 
     def _save(
         self,
@@ -53,6 +55,7 @@ class SourceService:
         previews=None,
         extra_metadata=None,
         source_kind=None,
+        allow_empty=False,
     ):
         name = validate_name(name)
         records, blobs = [], {}
@@ -62,7 +65,9 @@ class SourceService:
             total += len(payload)
             if len(payload) > self.limits.max_file_bytes or total > self.limits.max_total_bytes:
                 raise StudioError("INPUT_INVALID", "來源大小超過限制。")
-            preview = (previews or {}).get(relative) or preview_file(relative, payload, self.limits)
+            preview = (previews or {}).get(relative) or preview_file(
+                relative, payload, self.limits, allow_empty=allow_empty
+            )
             digest = hashlib.sha256(payload).hexdigest()
             blobs[digest] = payload
             records.append(

@@ -21,10 +21,10 @@ def fit_size(width: int, height: int, max_width: int, max_height: int) -> tuple[
     return max(1, round(width * scale)), max(1, round(height * scale))
 
 
-def preview_file(name: str, data: bytes, limits: ImportLimits) -> Preview:
+def preview_file(name: str, data: bytes, limits: ImportLimits, *, allow_empty=False) -> Preview:
     suffix = PurePosixPath(name).suffix.lower()
     if suffix in TEXT_SUFFIXES | {".mmd", ".mermaid"}:
-        text = decode_text(data)
+        text = decode_text(data, allow_empty=allow_empty)
         kind = "mermaid" if suffix in {".mmd", ".mermaid"} else "text"
         if kind == "mermaid":
             parse_mermaid(text)
