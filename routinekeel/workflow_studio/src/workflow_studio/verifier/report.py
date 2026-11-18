@@ -18,7 +18,9 @@ from .static import verify_static
 class Verifier:
     def __init__(self, studio, runtime_python=None):
         self.studio = studio
-        self.runtime_python = Path(runtime_python or sys.executable).resolve()
+        # POSIX venv executables are symlinks. Resolving them selects the base
+        # interpreter and loses the independent Runtime's installed packages.
+        self.runtime_python = Path(runtime_python or sys.executable).absolute()
 
     def verify(self, project_id, build_id, cases, policy, *, authorization=None):
         if self.studio.projects.get(project_id).status != "active":

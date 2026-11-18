@@ -44,3 +44,30 @@ Studio 另用自己的依賴環境驗證，這不是從整體驗收移除 Studio
 
 CLI 的 gh 尚未登入；Git 既有 credential manager 在無互動模式可讀 remote。GitHub 連接器可查 repo 與 PR／Actions 結果，
 新的 workflow 透過草稿 PR 觸發。尚未取得三平台成功結果前，AC-07 保持待驗。
+
+## 首次 CI 與修正
+
+草稿 [PR #9](https://github.com/AllanYiin/RoutineKeel/pull/9) 的整合版本 `1663f4f`
+在 [run 44236192522](https://github.com/AllanYiin/RoutineKeel/actions/runs/44236192522) 完整執行：
+
+| 工作 | 結果 |
+|---|---|
+| 底座 Ubuntu／Windows／macOS | 三者 success |
+| Studio Windows | 518 passed、1 failed、6 skipped、3 deselected；894.84 秒 |
+| Studio macOS | 398 passed、121 failed、6 skipped、3 deselected；21.41 秒 |
+| Studio Ubuntu | 398 passed、121 failed、6 skipped、3 deselected；35.81 秒 |
+| 正式發布 | skipped |
+
+POSIX 的共通問題是 Verifier 對 Runtime Python 使用 `Path.resolve()`，把虛擬環境的
+`bin/python` 符號連結解析成系統 Python，因而遺失獨立環境的依賴。WSL Python 3.12.3
+用原始建構子重現：選定 venv 卻啟動 `/usr/bin/python3.12`、`sys.prefix=/usr`；改用
+`absolute()` 後實際子程序留在所選 venv。新增明確路徑、相對路徑、目前 Python 三種選擇的
+真實子程序測試，CI 將使用原生 POSIX venv symlink 驗證。
+
+Windows 的唯一失敗來自舊模板測試：Git 已將 `.txt` 取出為 CRLF，測試再把每個 LF 換成
+CRLF 而產生 CRCRLF。現在先正規化測試資料，再分別用 LF／CRLF 建立舊 wheel，兩者均須
+通過 Verifier 與實際 Runtime 執行。未放寬產品的可信模板比對。
+
+修正後本機相關五檔 **16 passed，40.54 秒**；舊模板 **3 passed，6.14 秒**；
+Ruff check／format **172 檔通過**。證據在 `dist/posix-repro/`，修正版本仍須重新取得三平台 CI 結果。
+6 個 skip 是缺少 FFmpeg 的 P2 影片測試，3 個 deselected 為未授權重啟的原生 GUI 測試；兩者不能宣稱通過。
