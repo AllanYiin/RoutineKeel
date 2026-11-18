@@ -1,0 +1,5 @@
+計算各列小計
+
+CSV 的 qty 與 unit_cents 為非負整數。每列 total_cents 等於兩者相乘；輸出 item,total_cents，保留列順序，金額使用整數分，不做浮點計算。
+
+輸出格式：csv

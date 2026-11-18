@@ -1,0 +1,5 @@
+統計啟用狀態
+
+JSON 陣列的 active 欄位皆為布林值，計數 true 與 false，輸出 active 與 inactive 兩個整數欄位。
+
+輸出格式：json

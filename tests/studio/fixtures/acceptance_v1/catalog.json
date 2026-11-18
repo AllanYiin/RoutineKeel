@@ -1,0 +1,884 @@
+{
+  "schema_version": 1,
+  "dataset_version": "acceptance-v1",
+  "status": "fixtures_only_not_acceptance_results",
+  "cases": [
+    {
+      "id": "C01",
+      "title": "整理行首尾空白與換行",
+      "mode": "text",
+      "goal": {
+        "description": "將 CRLF 或 CR 統一成 LF，去除每行頭尾空白，最後恰好一個 LF；保留行的順序。",
+        "success_criteria": [
+          "符合來源規則與固定驗收案例；不修改輸入檔，不執行外部副作用。"
+        ]
+      },
+      "evaluator_rule": "normalize_trim",
+      "comparison": "exact_bytes",
+      "visible_sources": [
+        "C01/authoring",
+        "C01/training"
+      ],
+      "training": [
+        {
+          "input": "C01/training/input/sample1.txt",
+          "expected": "C01/training/output/result1.txt"
+        }
+      ],
+      "held_out": [
+        {
+          "input": "C01/held_out/input/sample1.txt",
+          "expected": "C01/held_out/output/result1.txt"
+        },
+        {
+          "input": "C01/held_out/input/sample2.txt",
+          "expected": "C01/held_out/output/result2.txt"
+        }
+      ],
+      "acceptance_status": "not_run",
+      "files": {
+        "C01/authoring/brief.txt": "2d3b9bc9c320624820841ac3b3bd765f305327e0476bc550b7250da651f5bc86",
+        "C01/held_out/input/sample1.txt": "f3c99e7710c04dbc631ce4cf932221a1392de58d2be859adaa68a1010b5d7fec",
+        "C01/held_out/input/sample2.txt": "637936631abf916cf04c9a6ae25b9fae57bdefc7813086d7190f666795ece229",
+        "C01/held_out/output/result1.txt": "e7c6bf85920ae8b0f1a263be5aea6656a45921daa514662f10b34a427c04d84b",
+        "C01/held_out/output/result2.txt": "b6285c57e8797db5d4c51c80d6f11938afda9b11c6a003549709189e9b4b92a2",
+        "C01/training/input/sample1.txt": "501980e6d7fbac444d476833093b6839618aa536ef16f1c6eae61628ef30513f",
+        "C01/training/output/result1.txt": "e49c81e2d2f84e259d40e2fb8192f3bcd198b355184845d76d8f58807d0d78ee"
+      }
+    },
+    {
+      "id": "C02",
+      "title": "篩選待處理訂單",
+      "mode": "text",
+      "goal": {
+        "description": "讀取 CSV，只保留 status 等於 open 且整數 amount 至少 100 的列。輸出 id,amount 兩欄，保留原順序及 CSV 引號語意，使用 LF。",
+        "success_criteria": [
+          "符合來源規則與固定驗收案例；不修改輸入檔，不執行外部副作用。"
+        ]
+      },
+      "evaluator_rule": "orders_filter",
+      "comparison": "exact_bytes",
+      "visible_sources": [
+        "C02/authoring",
+        "C02/training"
+      ],
+      "training": [
+        {
+          "input": "C02/training/input/sample1.csv",
+          "expected": "C02/training/output/result1.csv"
+        }
+      ],
+      "held_out": [
+        {
+          "input": "C02/held_out/input/sample1.csv",
+          "expected": "C02/held_out/output/result1.csv"
+        },
+        {
+          "input": "C02/held_out/input/sample2.csv",
+          "expected": "C02/held_out/output/result2.csv"
+        }
+      ],
+      "acceptance_status": "not_run",
+      "files": {
+        "C02/authoring/brief.txt": "8691a805e4474be0d7f2812fa0fc7b866ff932637683459cb40f3cfa5fb010a6",
+        "C02/held_out/input/sample1.csv": "09b1999c6b5fe3db75b5952aeeda4cf9c0db92866f78cccd2add96fdd7ea6f87",
+        "C02/held_out/input/sample2.csv": "bddc920c086b05999984d4a89b209e4713e7e8f09527bb1d851ca8d05898dac2",
+        "C02/held_out/output/result1.csv": "f378e0e933dd17d0dd8bdb55ac5aace9d1ce33af027063c231e39fc5befb59c3",
+        "C02/held_out/output/result2.csv": "7cc6d67dcd8e39717210da85e857c76a92229fe78e83ed4a1dbb58708d3a19b0",
+        "C02/training/input/sample1.csv": "5393ba88b4f84371e7a70e3599166c7bf8530bfbb9cd980e7da3a13f3390d6eb",
+        "C02/training/output/result1.csv": "c7bf4d4063c837ea80f591e5b5f50d396559e67daa01124f8d1ba0ea89a204e2"
+      }
+    },
+    {
+      "id": "C03",
+      "title": "按分類加總數量",
+      "mode": "text",
+      "goal": {
+        "description": "JSON 陣列每筆有 category 與整數 quantity，依 category 加總，輸出分類到整數總數的 JSON 物件。",
+        "success_criteria": [
+          "符合來源規則與固定驗收案例；不修改輸入檔，不執行外部副作用。"
+        ]
+      },
+      "evaluator_rule": "category_sum",
+      "comparison": "json_equal",
+      "visible_sources": [
+        "C03/authoring",
+        "C03/training"
+      ],
+      "training": [
+        {
+          "input": "C03/training/input/sample1.json",
+          "expected": "C03/training/output/result1.json"
+        }
+      ],
+      "held_out": [
+        {
+          "input": "C03/held_out/input/sample1.json",
+          "expected": "C03/held_out/output/result1.json"
+        },
+        {
+          "input": "C03/held_out/input/sample2.json",
+          "expected": "C03/held_out/output/result2.json"
+        }
+      ],
+      "acceptance_status": "not_run",
+      "files": {
+        "C03/authoring/brief.txt": "715aa7dd7002a5221d02bff8bd5e07826ae4e9ec04cb34e8465b44943a2ed9d7",
+        "C03/held_out/input/sample1.json": "b00bef3d77b6d56fbf078341fa66d78d725b5c4c99a1c94f9914e56ef0144bd5",
+        "C03/held_out/input/sample2.json": "1a5e0b439b368d63e38ffa406f0357e8e6604d78ee81b91cfcf3c708fc706d8b",
+        "C03/held_out/output/result1.json": "3f8fbc4fa6e191c6238e232bd4bf41864e1119fb50119e80e8cf82c6f8166948",
+        "C03/held_out/output/result2.json": "c3636477aa2b68f790a5ac091015e8035ccafb8e2c21394a7989e4cd4f21b682",
+        "C03/training/input/sample1.json": "ef0faecdcd48766f6dc6319072461a37e0955d61b91d2f2ddbe3802b5e072026",
+        "C03/training/output/result1.json": "d3ec2d849b649ff6799028df05ca8f933463bc2ca9fe4d21d6000c65be819125"
+      }
+    },
+    {
+      "id": "C04",
+      "title": "清理重複清單",
+      "mode": "text",
+      "goal": {
+        "description": "每行去頭尾空白，移除空行及重複項目，大小寫有別，保留第一次出現順序。輸出每項一行，最後 LF。",
+        "success_criteria": [
+          "符合來源規則與固定驗收案例；不修改輸入檔，不執行外部副作用。"
+        ]
+      },
+      "evaluator_rule": "unique_lines",
+      "comparison": "exact_bytes",
+      "visible_sources": [
+        "C04/authoring",
+        "C04/training"
+      ],
+      "training": [
+        {
+          "input": "C04/training/input/sample1.txt",
+          "expected": "C04/training/output/result1.txt"
+        }
+      ],
+      "held_out": [
+        {
+          "input": "C04/held_out/input/sample1.txt",
+          "expected": "C04/held_out/output/result1.txt"
+        },
+        {
+          "input": "C04/held_out/input/sample2.txt",
+          "expected": "C04/held_out/output/result2.txt"
+        }
+      ],
+      "acceptance_status": "not_run",
+      "files": {
+        "C04/authoring/brief.txt": "367cde871da82dc59d484304c71cf17cb00371b5af52c4d4361d8f41d6be826c",
+        "C04/held_out/input/sample1.txt": "eb9590c835fda37c1dbfb91345353b00e9d6eb5338c7740cb48d5858035145de",
+        "C04/held_out/input/sample2.txt": "8047e831a33ce1d2cf3b5d1a3af2983529454ecff6195feb98b14a2d48adc29c",
+        "C04/held_out/output/result1.txt": "c011d97eaa603957b3223a2ebccc884736b28ba42000e43621e032ab85a712d1",
+        "C04/held_out/output/result2.txt": "e3ae78572ec1c676a5d3b841da69cfe4e9d500ba6a2bee95f6a24a0d75d692df",
+        "C04/training/input/sample1.txt": "1921c19c02c9ac0fa9e97af44e2676b64583f1cc664d217c334f5e58c3b33a4f",
+        "C04/training/output/result1.txt": "911169ddaaf146aff539f58c26c489af3b892dff0fe283c1c264c65ae5aa59a2"
+      }
+    },
+    {
+      "id": "C05",
+      "title": "統計啟用狀態",
+      "mode": "text",
+      "goal": {
+        "description": "JSON 陣列的 active 欄位皆為布林值，計數 true 與 false，輸出 active 與 inactive 兩個整數欄位。",
+        "success_criteria": [
+          "符合來源規則與固定驗收案例；不修改輸入檔，不執行外部副作用。"
+        ]
+      },
+      "evaluator_rule": "count_flags",
+      "comparison": "json_equal",
+      "visible_sources": [
+        "C05/authoring",
+        "C05/training"
+      ],
+      "training": [
+        {
+          "input": "C05/training/input/sample1.json",
+          "expected": "C05/training/output/result1.json"
+        }
+      ],
+      "held_out": [
+        {
+          "input": "C05/held_out/input/sample1.json",
+          "expected": "C05/held_out/output/result1.json"
+        },
+        {
+          "input": "C05/held_out/input/sample2.json",
+          "expected": "C05/held_out/output/result2.json"
+        }
+      ],
+      "acceptance_status": "not_run",
+      "files": {
+        "C05/authoring/brief.txt": "be2679d142e71c953f49e4e7f32d72158fc95065984fb07430f5c9139b177b3a",
+        "C05/held_out/input/sample1.json": "c834e5e9b6a77584a8e4cce0260351533a455ad3207f99944750225b159ad6ee",
+        "C05/held_out/input/sample2.json": "1e5971fe72cade19e02403ec5cc27a0f68a382b9a7b65075e63cd2616918d3c5",
+        "C05/held_out/output/result1.json": "c55b60de58f9895c291702a03306cee62db5de25b221687f4cbc8158817db5e4",
+        "C05/held_out/output/result2.json": "0483eca83febe867fe51331589f4fc3d8f55436791a231a259ff449b7f12c42b",
+        "C05/training/input/sample1.json": "8e0b62fbab369c55fa63710d33dd94e51684b6218f422144d0073a6c073b9703",
+        "C05/training/output/result1.json": "5d5a7e2a02e93fa879366651e8ebdd93e36dda0164659ca087bbda70de267199"
+      }
+    },
+    {
+      "id": "C06",
+      "title": "重整庫存欄位",
+      "mode": "mermaid",
+      "goal": {
+        "description": "讀取 CSV，選 sku 與 stock 欄，輸出欄名改為 item,quantity；保留字串值與順序，不輸出 note，CSV 使用 LF。",
+        "success_criteria": [
+          "符合來源規則與固定驗收案例；不修改輸入檔，不執行外部副作用。"
+        ]
+      },
+      "evaluator_rule": "inventory_columns",
+      "comparison": "exact_bytes",
+      "visible_sources": [
+        "C06/authoring",
+        "C06/training"
+      ],
+      "training": [
+        {
+          "input": "C06/training/input/sample1.csv",
+          "expected": "C06/training/output/result1.csv"
+        }
+      ],
+      "held_out": [
+        {
+          "input": "C06/held_out/input/sample1.csv",
+          "expected": "C06/held_out/output/result1.csv"
+        },
+        {
+          "input": "C06/held_out/input/sample2.csv",
+          "expected": "C06/held_out/output/result2.csv"
+        }
+      ],
+      "acceptance_status": "not_run",
+      "files": {
+        "C06/authoring/brief.txt": "4839828701f3d77ab1df5c880d85ce5181b2f04d293f24203d0ef63b839a741b",
+        "C06/authoring/flow.mmd": "77045bfc16bd8de7b276152f3e020bede582e5889ab9358ac341056b3f485f4c",
+        "C06/held_out/input/sample1.csv": "ab5e66ae5831bffb945ef2d1d963e976a6a3b214157f497d4c0c40eb1f0a4ded",
+        "C06/held_out/input/sample2.csv": "1a633942cf89bea7a562771290eaec9f0ca0b78ec726f82af43c9573bc4ba20d",
+        "C06/held_out/output/result1.csv": "f3884ecb73fe410ce04b38eec4e6066877c09256c7d6f13cd5ab47f5de1cf4d5",
+        "C06/held_out/output/result2.csv": "1af61638dbb0f468dfdd2f7af8ff8f9ac1223b73563518035284565f327149c5",
+        "C06/training/input/sample1.csv": "e92e5a1361bb3ca39f268da3d15f05cd8390589bcb20a6688c862b3df9931aec",
+        "C06/training/output/result1.csv": "bc58f7c939cbb29f13c85295414dd3b64a82db6d82339a74250fe98de000411f"
+      }
+    },
+    {
+      "id": "C07",
+      "title": "計算各列小計",
+      "mode": "mermaid",
+      "goal": {
+        "description": "CSV 的 qty 與 unit_cents 為非負整數。每列 total_cents 等於兩者相乘；輸出 item,total_cents，保留列順序，金額使用整數分，不做浮點計算。",
+        "success_criteria": [
+          "符合來源規則與固定驗收案例；不修改輸入檔，不執行外部副作用。"
+        ]
+      },
+      "evaluator_rule": "line_totals",
+      "comparison": "exact_bytes",
+      "visible_sources": [
+        "C07/authoring",
+        "C07/training"
+      ],
+      "training": [
+        {
+          "input": "C07/training/input/sample1.csv",
+          "expected": "C07/training/output/result1.csv"
+        }
+      ],
+      "held_out": [
+        {
+          "input": "C07/held_out/input/sample1.csv",
+          "expected": "C07/held_out/output/result1.csv"
+        },
+        {
+          "input": "C07/held_out/input/sample2.csv",
+          "expected": "C07/held_out/output/result2.csv"
+        }
+      ],
+      "acceptance_status": "not_run",
+      "files": {
+        "C07/authoring/brief.txt": "af41ae7d02458479f63dd15415335bccff15d965623b7fcd8e4daa70dcda8249",
+        "C07/authoring/flow.mmd": "504f4af69191fe61b576de91e5f13c177dfd3e84572bdcce0ac1c966bad4fc03",
+        "C07/held_out/input/sample1.csv": "b8477ac9391407ade9cd25c752d42a6cd67d10861e0d88d585d77e059c79f817",
+        "C07/held_out/input/sample2.csv": "f712e718aa2fa1377ea42732530d50c2b3241b57cafd6c88fc0ba0865dcf5f4e",
+        "C07/held_out/output/result1.csv": "d1a4c2a497ad223eb4d5a138356da841ff89c2c95018e8e2fc6f501da2d26eec",
+        "C07/held_out/output/result2.csv": "7f955684bdfbe3b9d88c13344bda4bcea0d4f7338b3e5143d8b22bdbf7e50e05",
+        "C07/training/input/sample1.csv": "c04ddce8b48ee91cc32938d69df9bf33e4253e852093e70a9ab8e7d1a565b466",
+        "C07/training/output/result1.csv": "e169c025b13bbe2bca341a6873b39636fee293da3cd4ca73fd533f7ab8d3071c"
+      }
+    },
+    {
+      "id": "C08",
+      "title": "依優先順序排列工作",
+      "mode": "mermaid",
+      "goal": {
+        "description": "JSON 陣列每筆有 name 與整數 priority。priority 由大到小排序，同分維持原順序；輸出 name 的 JSON 陣列。",
+        "success_criteria": [
+          "符合來源規則與固定驗收案例；不修改輸入檔，不執行外部副作用。"
+        ]
+      },
+      "evaluator_rule": "priority_names",
+      "comparison": "json_equal",
+      "visible_sources": [
+        "C08/authoring",
+        "C08/training"
+      ],
+      "training": [
+        {
+          "input": "C08/training/input/sample1.json",
+          "expected": "C08/training/output/result1.json"
+        }
+      ],
+      "held_out": [
+        {
+          "input": "C08/held_out/input/sample1.json",
+          "expected": "C08/held_out/output/result1.json"
+        },
+        {
+          "input": "C08/held_out/input/sample2.json",
+          "expected": "C08/held_out/output/result2.json"
+        }
+      ],
+      "acceptance_status": "not_run",
+      "files": {
+        "C08/authoring/brief.txt": "84d94ef576e9b113b37325764346a1d1de1c8bc7f6e6a4b80fd3ae8c888a3db5",
+        "C08/authoring/flow.mmd": "26403715e100ade6c1f13a13745d04acbb73b1eec131739126b65c24493c389c",
+        "C08/held_out/input/sample1.json": "2799ccd157647f8a94fb687e313a072fab37350d7d5b8a1beb99001ebe3f3362",
+        "C08/held_out/input/sample2.json": "ed9d7b55be7e01614a5ab3eefde3791466b564e5105cd4a1bc4957980aa9695a",
+        "C08/held_out/output/result1.json": "f6864230f2b08d206c7e7e5c382e5d99ed6992298d76b6d7b137fe3eb426ad1f",
+        "C08/held_out/output/result2.json": "65e3c131dc4263b5b6f6bb2c457eeafc66c9e1cfe1e2880f29734881f6bfe148",
+        "C08/training/input/sample1.json": "dfbaf57c372f0db842632f04fab4a8c8d4dbb129a668d2fd8fe086eaaedfead7",
+        "C08/training/output/result1.json": "2485b2be89f565c7e4ea1b156f1a0397d17d3a217e9bed87ceefb02f9387fd70"
+      }
+    },
+    {
+      "id": "C09",
+      "title": "以識別碼合併兩組資料",
+      "mode": "mermaid",
+      "goal": {
+        "description": "一份 JSON 含 people 與 scores 兩個陣列，各組 id 唯一。以 id 內連接，只輸出有分數的人的 name,score，依 people 原順序，輸出 JSON 陣列。",
+        "success_criteria": [
+          "符合來源規則與固定驗收案例；不修改輸入檔，不執行外部副作用。"
+        ]
+      },
+      "evaluator_rule": "join_scores",
+      "comparison": "json_equal",
+      "visible_sources": [
+        "C09/authoring",
+        "C09/training"
+      ],
+      "training": [
+        {
+          "input": "C09/training/input/sample1.json",
+          "expected": "C09/training/output/result1.json"
+        }
+      ],
+      "held_out": [
+        {
+          "input": "C09/held_out/input/sample1.json",
+          "expected": "C09/held_out/output/result1.json"
+        },
+        {
+          "input": "C09/held_out/input/sample2.json",
+          "expected": "C09/held_out/output/result2.json"
+        }
+      ],
+      "acceptance_status": "not_run",
+      "files": {
+        "C09/authoring/brief.txt": "d7742429b4f0889ada60ee611e447d36ca872b2afceb0dead26d0fefb4405188",
+        "C09/authoring/flow.mmd": "73b31742231cce6f52d33984ddee4a459ca3197d7ae8d5a64fed3ee4c2c7d771",
+        "C09/held_out/input/sample1.json": "6f33a75b437bf8e159d7731200ccd6d1a3ecbbce0a65aa4a318ae2c247d86d20",
+        "C09/held_out/input/sample2.json": "3785e86c4a16efbaee640a271b2e9e4f1beb4f611105cc5e8634a0c15e43e4b1",
+        "C09/held_out/output/result1.json": "597e12e4efff066b85ee17172072b1b5f438185b0189436db0e7791b97be7b71",
+        "C09/held_out/output/result2.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "C09/training/input/sample1.json": "cdc1772874ec01559c6b357254ccc6deb2e69ef30be875dfdb8feea632d58291",
+        "C09/training/output/result1.json": "93b728d7f3a024e6f7e4845dc4a9f6e42403253b9410645520a010e030fc0874"
+      }
+    },
+    {
+      "id": "C10",
+      "title": "擷取錯誤紀錄",
+      "mode": "mermaid",
+      "goal": {
+        "description": "只保留行首精確等於 ERROR| 的文字列，去掉這個前綴，其餘字元保留，包含訊息中的其他 |。不去頭尾空白，不比對小寫 error；每筆輸出 LF，沒有符合項目時輸出空檔。",
+        "success_criteria": [
+          "符合來源規則與固定驗收案例；不修改輸入檔，不執行外部副作用。"
+        ]
+      },
+      "evaluator_rule": "error_lines",
+      "comparison": "exact_bytes",
+      "visible_sources": [
+        "C10/authoring",
+        "C10/training"
+      ],
+      "training": [
+        {
+          "input": "C10/training/input/sample1.txt",
+          "expected": "C10/training/output/result1.txt"
+        }
+      ],
+      "held_out": [
+        {
+          "input": "C10/held_out/input/sample1.txt",
+          "expected": "C10/held_out/output/result1.txt"
+        },
+        {
+          "input": "C10/held_out/input/sample2.txt",
+          "expected": "C10/held_out/output/result2.txt"
+        }
+      ],
+      "acceptance_status": "not_run",
+      "files": {
+        "C10/authoring/brief.txt": "fec46328165b0e2a3e0634ee0e6b55aec4fbedd954890861071bf2db176e4ced",
+        "C10/authoring/flow.mmd": "85a30412820c8d1eb7960ea54fc38b16bb7bd600e48b9ab52f532227d6cb1dd1",
+        "C10/held_out/input/sample1.txt": "741e1b291a72c30ae2f552ee8a7777db1f06c752cfd5afa04312b05a0c1828b9",
+        "C10/held_out/input/sample2.txt": "3c3717285dbfe5af4a79b91eb9e606ae591f8b5e2af993d7410b9b3e3b3b6934",
+        "C10/held_out/output/result1.txt": "78051faade059d70866df6a3fb83ef348721fd74a87e93ef95c493f87d0d236b",
+        "C10/held_out/output/result2.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "C10/training/input/sample1.txt": "e095fc79feeb4b626c692a32ba01de21735098fd9734d8e4860b38ec1fb1dc55",
+        "C10/training/output/result1.txt": "c8e57d28de88a95064969a2ce61bd44691ac0f540467b9f0b412c4b5a053c5d3"
+      }
+    },
+    {
+      "id": "C11",
+      "title": "原封不動複製檔案",
+      "mode": "folder",
+      "goal": {
+        "description": "參考成功資料夾，輸出必須與輸入逐位元組相同，不改空白、BOM 或換行。",
+        "success_criteria": [
+          "符合來源規則與固定驗收案例；不修改輸入檔，不執行外部副作用。"
+        ]
+      },
+      "evaluator_rule": "copy_bytes",
+      "comparison": "exact_bytes",
+      "visible_sources": [
+        "C11/authoring",
+        "C11/training"
+      ],
+      "training": [
+        {
+          "input": "C11/training/input/sample1.txt",
+          "expected": "C11/training/output/result1.txt"
+        }
+      ],
+      "held_out": [
+        {
+          "input": "C11/held_out/input/sample1.txt",
+          "expected": "C11/held_out/output/result1.txt"
+        },
+        {
+          "input": "C11/held_out/input/sample2.txt",
+          "expected": "C11/held_out/output/result2.txt"
+        }
+      ],
+      "acceptance_status": "not_run",
+      "files": {
+        "C11/authoring/brief.txt": "6f3d972dcc3c906ea884199b1209d6b18dc1915d3221d60532d64490cf29817f",
+        "C11/held_out/input/sample1.txt": "644d3d1b703d68e04e046c99993ad2f3ef1bf5c5b108dd06d94da33b3f9d7e3a",
+        "C11/held_out/input/sample2.txt": "71c20c3cff3f5bae15d07239a2eff3a83f554e7309ff22eb1a1275c3ac1190fa",
+        "C11/held_out/output/result1.txt": "644d3d1b703d68e04e046c99993ad2f3ef1bf5c5b108dd06d94da33b3f9d7e3a",
+        "C11/held_out/output/result2.txt": "71c20c3cff3f5bae15d07239a2eff3a83f554e7309ff22eb1a1275c3ac1190fa",
+        "C11/training/input/sample1.txt": "696606569e6cb1dba7669517d12af4ae1a0b6855af7ac1b2b088f5e1c7c044ac",
+        "C11/training/output/result1.txt": "696606569e6cb1dba7669517d12af4ae1a0b6855af7ac1b2b088f5e1c7c044ac"
+      }
+    },
+    {
+      "id": "C12",
+      "title": "標準化 JSON 排版",
+      "mode": "folder",
+      "goal": {
+        "description": "JSON 鍵名遞迴排序，兩個空白縮排，中文字直接保留，最後一個 LF。內容不改動，排版也要完全相同。",
+        "success_criteria": [
+          "符合來源規則與固定驗收案例；不修改輸入檔，不執行外部副作用。"
+        ]
+      },
+      "evaluator_rule": "pretty_json",
+      "comparison": "exact_bytes",
+      "visible_sources": [
+        "C12/authoring",
+        "C12/training"
+      ],
+      "training": [
+        {
+          "input": "C12/training/input/sample1.json",
+          "expected": "C12/training/output/result1.json"
+        }
+      ],
+      "held_out": [
+        {
+          "input": "C12/held_out/input/sample1.json",
+          "expected": "C12/held_out/output/result1.json"
+        },
+        {
+          "input": "C12/held_out/input/sample2.json",
+          "expected": "C12/held_out/output/result2.json"
+        }
+      ],
+      "acceptance_status": "not_run",
+      "files": {
+        "C12/authoring/brief.txt": "99f74ae776f385511500e70e554e5b580111c427b1c6b332327d3eba6c94b8a9",
+        "C12/held_out/input/sample1.json": "1a1f17b7512064445fb4e92bd9bd16813c0e1626e4ad9d5e9b4024ec8ae7d43d",
+        "C12/held_out/input/sample2.json": "b742eeed91d177fd12c05af54d7985ca14acb53c50734530380a468ed986e9f0",
+        "C12/held_out/output/result1.json": "1c156f5f250cf04c979ea2f47acb19011e243a0c0837f5943d517b22e02bed37",
+        "C12/held_out/output/result2.json": "6920f2be13b1bb99c246b58b5b5abc8c7c9e10900f5269ab2df7a4163a442212",
+        "C12/training/input/sample1.json": "3fb75453225c732a76b7899ea2096dda1455189c89817239732182f73fe5a09f",
+        "C12/training/output/result1.json": "080d51f49b27c73d17f51f3b808515a425d16218aa40021eed2ca1d204e59224"
+      }
+    },
+    {
+      "id": "C13",
+      "title": "只整理換行而保留空白",
+      "mode": "folder",
+      "goal": {
+        "description": "CRLF 與 CR 改為 LF，保留每行頭尾空白，結尾移除多餘 LF 後保留恰好一個 LF。",
+        "success_criteria": [
+          "符合來源規則與固定驗收案例；不修改輸入檔，不執行外部副作用。"
+        ]
+      },
+      "evaluator_rule": "normalize_keep",
+      "comparison": "exact_bytes",
+      "visible_sources": [
+        "C13/authoring",
+        "C13/training"
+      ],
+      "training": [
+        {
+          "input": "C13/training/input/sample1.txt",
+          "expected": "C13/training/output/result1.txt"
+        }
+      ],
+      "held_out": [
+        {
+          "input": "C13/held_out/input/sample1.txt",
+          "expected": "C13/held_out/output/result1.txt"
+        },
+        {
+          "input": "C13/held_out/input/sample2.txt",
+          "expected": "C13/held_out/output/result2.txt"
+        }
+      ],
+      "acceptance_status": "not_run",
+      "files": {
+        "C13/authoring/brief.txt": "4559a6ad9b675c0b4f09daaa7f66d216c5c724dde347ddfb9b7102165ef3bc90",
+        "C13/held_out/input/sample1.txt": "90d25807bfd8a6b35117c4157b1eb63b63a111d8f12de0e15bbbbcf19a4f7ec1",
+        "C13/held_out/input/sample2.txt": "f320155565eaa9e16dbbd32de92147544e049b61d213fef1799fc6490fd7e626",
+        "C13/held_out/output/result1.txt": "db450ce4c087adde3052833247780b7049880f6694363e3930f0085a2e53a6bc",
+        "C13/held_out/output/result2.txt": "857cdb11863905abbb4c867ee598a50a526c22b2609d9791b37724e4eb8a14b1",
+        "C13/training/input/sample1.txt": "079cbd643c64ac25bab88f42212b4abd41fabcec68aec231c228402b9ae58cf6",
+        "C13/training/output/result1.txt": "41b4db35d1f7f4f424e542259762c7e0e3bc06e74d0922c8f027b87b175c1a57"
+      }
+    },
+    {
+      "id": "C14",
+      "title": "產生檔案指紋清單",
+      "mode": "folder",
+      "goal": {
+        "description": "輸出 JSON 包含輸入檔案的位元組數 bytes 與完整 SHA-256 sha256；不是字元數。",
+        "success_criteria": [
+          "符合來源規則與固定驗收案例；不修改輸入檔，不執行外部副作用。"
+        ]
+      },
+      "evaluator_rule": "file_report",
+      "comparison": "json_equal",
+      "visible_sources": [
+        "C14/authoring",
+        "C14/training"
+      ],
+      "training": [
+        {
+          "input": "C14/training/input/sample1.txt",
+          "expected": "C14/training/output/result1.json"
+        }
+      ],
+      "held_out": [
+        {
+          "input": "C14/held_out/input/sample1.txt",
+          "expected": "C14/held_out/output/result1.json"
+        },
+        {
+          "input": "C14/held_out/input/sample2.txt",
+          "expected": "C14/held_out/output/result2.json"
+        }
+      ],
+      "acceptance_status": "not_run",
+      "files": {
+        "C14/authoring/brief.txt": "836e7217459e3041f68b2ff7ab34b06c8207971c72461c1e479b5628a82bfa13",
+        "C14/held_out/input/sample1.txt": "670d9743542cae3ea7ebe36af56bd53648b0a1126162e78d81a32934a711302e",
+        "C14/held_out/input/sample2.txt": "539c01e33e675eb874dbd9b4d61cdb3cc5070ce0e7d93e8aa481398d370f001c",
+        "C14/held_out/output/result1.json": "b1277543d1793a6cb8897b55751a6ab7a29b3571f735c51da6083214359c05b3",
+        "C14/held_out/output/result2.json": "c697e5f618d79c3fe81ca6d1fa787b1031c4da696418ec81b4989e7c8297a69a",
+        "C14/training/input/sample1.txt": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+        "C14/training/output/result1.json": "4ec7cba44258d9ebe67f0a61ef1d58ab26e55af87b0be292517ba3a9e6784317"
+      }
+    },
+    {
+      "id": "C15",
+      "title": "先清理文字再產生指紋",
+      "mode": "folder",
+      "goal": {
+        "description": "參考原始檔、中間成果與最終成果：先統一 LF 並去每行頭尾空白、結尾一個 LF，再對清理後 bytes 產生 bytes 與 SHA-256 JSON。",
+        "success_criteria": [
+          "符合來源規則與固定驗收案例；不修改輸入檔，不執行外部副作用。"
+        ]
+      },
+      "evaluator_rule": "normalize_report",
+      "comparison": "json_equal",
+      "visible_sources": [
+        "C15/authoring",
+        "C15/training"
+      ],
+      "training": [
+        {
+          "input": "C15/training/input/sample1.txt",
+          "expected": "C15/training/output/result1.json"
+        }
+      ],
+      "held_out": [
+        {
+          "input": "C15/held_out/input/sample1.txt",
+          "expected": "C15/held_out/output/result1.json"
+        },
+        {
+          "input": "C15/held_out/input/sample2.txt",
+          "expected": "C15/held_out/output/result2.json"
+        }
+      ],
+      "acceptance_status": "not_run",
+      "files": {
+        "C15/authoring/brief.txt": "de817935697a5ce5474de79aa4bb7267a64275b335f0486f3f3859bc45ac299d",
+        "C15/held_out/input/sample1.txt": "0aff72ff2dde228695c79812cd74e4a8bfb1b03696b61128da68e58e272ac0f6",
+        "C15/held_out/input/sample2.txt": "4be143c70be1ee1bb0c6ed2589b0914be2a109faa368e1807b697f90c93646fb",
+        "C15/held_out/output/result1.json": "a4cfa00e3cd11a425f30438c52c5a71f3ad85ebdee05a8ad9a179a74daa541ee",
+        "C15/held_out/output/result2.json": "5574b462fffaa9c004f24b9125069597a22a358005e97d3a1a761119e5508e37",
+        "C15/training/input/sample1.txt": "501980e6d7fbac444d476833093b6839618aa536ef16f1c6eae61628ef30513f",
+        "C15/training/intermediate/normalized.txt": "e49c81e2d2f84e259d40e2fb8192f3bcd198b355184845d76d8f58807d0d78ee",
+        "C15/training/output/result1.json": "28c8fd33fdc2218c83c385dcd301ed059c1ad3144e5443023a6d6c727572fa53"
+      }
+    },
+    {
+      "id": "C16",
+      "title": "依圖替換文字標記",
+      "mode": "image",
+      "goal": {
+        "description": "依附圖的文字處理規則轉換，保留沒有被規則指定修改的字元。看不清楚請提問。",
+        "success_criteria": [
+          "符合來源規則與固定驗收案例；不修改輸入檔，不執行外部副作用。"
+        ]
+      },
+      "evaluator_rule": "replace_marker",
+      "comparison": "exact_bytes",
+      "visible_sources": [
+        "C16/authoring",
+        "C16/training"
+      ],
+      "training": [
+        {
+          "input": "C16/training/input/sample1.txt",
+          "expected": "C16/training/output/result1.txt"
+        }
+      ],
+      "held_out": [
+        {
+          "input": "C16/held_out/input/sample1.txt",
+          "expected": "C16/held_out/output/result1.txt"
+        },
+        {
+          "input": "C16/held_out/input/sample2.txt",
+          "expected": "C16/held_out/output/result2.txt"
+        }
+      ],
+      "acceptance_status": "not_run",
+      "files": {
+        "C16/authoring/brief.txt": "fc6eef4e8a50f4cb830b795b994362906136e2fdc0a473c27ae57b43bdf9bfa5",
+        "C16/authoring/diagram.png": "b94c54015af7a4f206a61b92de8c17a8f7f57eda2f8a1fa4a65c06043548c81d",
+        "C16/held_out/input/sample1.txt": "4adedbe9caec74af47c3c41de915b1b213b47722b7812e05f7da891ced43745c",
+        "C16/held_out/input/sample2.txt": "784cee45621b6e8f1827b592baf32059e2be335eba8244264b3f82c99e1b8510",
+        "C16/held_out/output/result1.txt": "871a9352252ece838424c6a6055af32e9d762e5baa0538f722fc76bf6bbb0fe2",
+        "C16/held_out/output/result2.txt": "784cee45621b6e8f1827b592baf32059e2be335eba8244264b3f82c99e1b8510",
+        "C16/training/input/sample1.txt": "97c7aec98f0ecfac88b4b1305db9d259377bd68806b86aa6061fc1f4a2a0a95f",
+        "C16/training/output/result1.txt": "43ab0b4c5f4f5e459e5bf3e313c19b5e8a9fd3a89b05db8cc762a21dff8eeb51"
+      }
+    },
+    {
+      "id": "C17",
+      "title": "依圖篩選佇列",
+      "mode": "image",
+      "goal": {
+        "description": "依附圖篩選 CSV 並輸出指定欄位，保留原順序，使用 LF。看不清楚請提問。",
+        "success_criteria": [
+          "符合來源規則與固定驗收案例；不修改輸入檔，不執行外部副作用。"
+        ]
+      },
+      "evaluator_rule": "queue_filter",
+      "comparison": "exact_bytes",
+      "visible_sources": [
+        "C17/authoring",
+        "C17/training"
+      ],
+      "training": [
+        {
+          "input": "C17/training/input/sample1.csv",
+          "expected": "C17/training/output/result1.csv"
+        }
+      ],
+      "held_out": [
+        {
+          "input": "C17/held_out/input/sample1.csv",
+          "expected": "C17/held_out/output/result1.csv"
+        },
+        {
+          "input": "C17/held_out/input/sample2.csv",
+          "expected": "C17/held_out/output/result2.csv"
+        }
+      ],
+      "acceptance_status": "not_run",
+      "files": {
+        "C17/authoring/brief.txt": "dccffffcacf25fed457d72de5ecdc00bca49f81e23275c40622fa39d15979a72",
+        "C17/authoring/diagram.png": "7ba0d41c5856e0dcc2e63d344c42e38630d3feed948499cc9d9c2c561c6027ab",
+        "C17/held_out/input/sample1.csv": "8509fc0b44244200caacabb75fe3bdd21877e48718a48dc45dd00c5486926fee",
+        "C17/held_out/input/sample2.csv": "585015e93b8a5178644f3af6d752fa32a0fe1243931fbcb04650002829f4f893",
+        "C17/held_out/output/result1.csv": "3b7c45a3579d4ce24924280e7cebe637c24ae561ee5134940f7e898c3e778949",
+        "C17/held_out/output/result2.csv": "2c33764a6f92ca080a2a413a90992b1918887f5d077485d6c922ca79f2e5953d",
+        "C17/training/input/sample1.csv": "6fa9a63aaf83bae3292880f7bdcf6941b1c5616ab2bd96b41fa79dd4c5c624a0",
+        "C17/training/output/result1.csv": "c3c9770d746e82079c3fa217f1d56003364d5c4eb4908b35c22fc7c4bd637538"
+      }
+    },
+    {
+      "id": "C18",
+      "title": "依圖選擇文字處理路徑",
+      "mode": "image",
+      "goal": {
+        "description": "依附圖的條件與兩條路徑處理文字。請保留真正的條件判斷；看不清楚請提問。",
+        "success_criteria": [
+          "符合來源規則與固定驗收案例；不修改輸入檔，不執行外部副作用。"
+        ]
+      },
+      "evaluator_rule": "urgent_branch",
+      "comparison": "exact_bytes",
+      "visible_sources": [
+        "C18/authoring",
+        "C18/training"
+      ],
+      "training": [
+        {
+          "input": "C18/training/input/sample1.txt",
+          "expected": "C18/training/output/result1.txt"
+        },
+        {
+          "input": "C18/training/input/sample2.txt",
+          "expected": "C18/training/output/result2.txt"
+        }
+      ],
+      "held_out": [
+        {
+          "input": "C18/held_out/input/sample1.txt",
+          "expected": "C18/held_out/output/result1.txt"
+        },
+        {
+          "input": "C18/held_out/input/sample2.txt",
+          "expected": "C18/held_out/output/result2.txt"
+        }
+      ],
+      "acceptance_status": "not_run",
+      "files": {
+        "C18/authoring/brief.txt": "a2f3c248880d39669a3c27e90b5231e861dac01ee2c61191a43e2e93aaf43945",
+        "C18/authoring/diagram.png": "eabe57ab0252694756a3104b2c49b081feec686395920135d2998a061b99eadc",
+        "C18/held_out/input/sample1.txt": "ee5d5709803dcf10cde7cf89edbe917e0ad25fbd35726ab58fc02bac84418169",
+        "C18/held_out/input/sample2.txt": "8d04531cbcf9568260a1908707a99945cae4b53aeed09bf4e3d51754bd1db5f5",
+        "C18/held_out/output/result1.txt": "7ffcbae03be84b63349ddc08b7f237d56ddd0979c45ca50b42cd5d8a34f8d0db",
+        "C18/held_out/output/result2.txt": "8d04531cbcf9568260a1908707a99945cae4b53aeed09bf4e3d51754bd1db5f5",
+        "C18/training/input/sample1.txt": "0eda193da7661dfe450a5edb46f5dc1d8c496b608bba4701ef600d21906f872f",
+        "C18/training/input/sample2.txt": "20c80a1f0f6bbe17d364e470731b63b52d80fb914dcbb9c614ff038a331319a7",
+        "C18/training/output/result1.txt": "5af333e050759f1396c56a7875e69b683a768de590a2cab5cece87b68082af2a",
+        "C18/training/output/result2.txt": "20c80a1f0f6bbe17d364e470731b63b52d80fb914dcbb9c614ff038a331319a7"
+      }
+    },
+    {
+      "id": "C19",
+      "title": "依圖整理標籤",
+      "mode": "image",
+      "goal": {
+        "description": "依附圖將 JSON 字串陣列轉為文字清單。字串皆為小寫英文字；看不清楚請提問。",
+        "success_criteria": [
+          "符合來源規則與固定驗收案例；不修改輸入檔，不執行外部副作用。"
+        ]
+      },
+      "evaluator_rule": "sort_tags",
+      "comparison": "exact_bytes",
+      "visible_sources": [
+        "C19/authoring",
+        "C19/training"
+      ],
+      "training": [
+        {
+          "input": "C19/training/input/sample1.json",
+          "expected": "C19/training/output/result1.txt"
+        }
+      ],
+      "held_out": [
+        {
+          "input": "C19/held_out/input/sample1.json",
+          "expected": "C19/held_out/output/result1.txt"
+        },
+        {
+          "input": "C19/held_out/input/sample2.json",
+          "expected": "C19/held_out/output/result2.txt"
+        }
+      ],
+      "acceptance_status": "not_run",
+      "files": {
+        "C19/authoring/brief.txt": "7dbdb460febf131cb272462aac607ed1d3441101657e57ee00dad4de960acf15",
+        "C19/authoring/diagram.png": "0a3bd9160766ea9d5ad26d652bcc4517b5503ca250d91c2ce3a1ed724bac3cd2",
+        "C19/held_out/input/sample1.json": "f3783d01c2b004ddf0c512a47822415afd408f451905f241d89629e155a89843",
+        "C19/held_out/input/sample2.json": "dc63a1504d50f77b46c50a152ffdb27ad995f65f762924bbbef89314429d0900",
+        "C19/held_out/output/result1.txt": "90c5f1fd630d28b4c48a4e745994ae2873c3883dfe0c0642d45bd0795f93c90f",
+        "C19/held_out/output/result2.txt": "8731beb9ed1f441400f320fe8b5c90defa4f76e9524b3e036d31adb82049d784",
+        "C19/training/input/sample1.json": "aa830f59396f240931f8e6ec73f5832f834578565cd86f165b68899f5a6c74cf",
+        "C19/training/output/result1.txt": "9ff482bbad59dc6d2dda31549c8431f4cfd280a2e6b52f4b0f761b5961593322"
+      }
+    },
+    {
+      "id": "C20",
+      "title": "依圖標記補貨需求",
+      "mode": "image",
+      "goal": {
+        "description": "依附圖為 CSV 的每筆資料產生標記，只輸出檔案，不執行採購或通知。看不清楚請提問。",
+        "success_criteria": [
+          "符合來源規則與固定驗收案例；不修改輸入檔，不執行外部副作用。"
+        ]
+      },
+      "evaluator_rule": "stock_flags",
+      "comparison": "exact_bytes",
+      "visible_sources": [
+        "C20/authoring",
+        "C20/training"
+      ],
+      "training": [
+        {
+          "input": "C20/training/input/sample1.csv",
+          "expected": "C20/training/output/result1.csv"
+        }
+      ],
+      "held_out": [
+        {
+          "input": "C20/held_out/input/sample1.csv",
+          "expected": "C20/held_out/output/result1.csv"
+        },
+        {
+          "input": "C20/held_out/input/sample2.csv",
+          "expected": "C20/held_out/output/result2.csv"
+        }
+      ],
+      "acceptance_status": "not_run",
+      "files": {
+        "C20/authoring/brief.txt": "c8d79104ca9e4dd1525a37f13b248481c597b3f084a78644ef7bb84eb9dd87e7",
+        "C20/authoring/diagram.png": "a649392cc3ce6991c01dd4b1e7fb873b5f582881f8bafe017af985ee6bbbd22c",
+        "C20/held_out/input/sample1.csv": "9e0ba36a7780d58d6e6ed17c361d4a425add69dfc497bd586e35ad47bcceeadd",
+        "C20/held_out/input/sample2.csv": "70bc82b03091bd9c96dbf742642adb482451499df1d3b971b83b5e884cbb65eb",
+        "C20/held_out/output/result1.csv": "d6b417aa9c7b23a0ec762bc08212e18b29a5e47753b9d34971f3f77fefe55adb",
+        "C20/held_out/output/result2.csv": "e38d76c472ad8f2f155b665330aa6809a8ca047fc44d8cffd3cadec145aac3d7",
+        "C20/training/input/sample1.csv": "98bf9823c19e9c525d6a0ccf2ce0eaeb4f399c1d8bfecd9153a3c59bcb5e4f92",
+        "C20/training/output/result1.csv": "0931f3c3327d731b249d78e467d4e751ac80ffdb4ff6b19a0d704a10a6292c5d"
+      }
+    }
+  ]
+}

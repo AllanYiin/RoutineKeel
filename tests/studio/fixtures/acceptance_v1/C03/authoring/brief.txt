@@ -1,0 +1,5 @@
+按分類加總數量
+
+JSON 陣列每筆有 category 與整數 quantity，依 category 加總，輸出分類到整數總數的 JSON 物件。
+
+輸出格式：json

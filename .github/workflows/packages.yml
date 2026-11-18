@@ -16,6 +16,12 @@ permissions:
   contents: read
 
 jobs:
+  studio-acceptance:
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    uses: ./.github/workflows/studio-acceptance.yml
+
   build:
     if: >-
       github.event_name == 'pull_request' ||
@@ -38,7 +44,7 @@ jobs:
         shell: bash
         run: |
           export FLOW_BASE_TEST_PWSH="$(command -v pwsh)"
-          uv run --locked --project routinekeel/flow_base --extra mcp --group dev pytest tests routinekeel/flows -q
+          uv run --locked --project routinekeel/flow_base --extra mcp --group dev pytest tests routinekeel/flows --ignore=tests/studio -q
           (cd dist/release && sha256sum -c SHA256SUMS)
       - name: Keep verified release assets
         if: github.event_name == 'workflow_dispatch'
@@ -76,10 +82,10 @@ jobs:
       - name: Build separate ZIPs
         run: python tools/release.py
       - name: Test packages and source with optional MCP
-        run: uv run --locked --python 3.12 --project routinekeel/flow_base --extra mcp --group dev pytest tests routinekeel/flows -q
+        run: uv run --locked --python 3.12 --project routinekeel/flow_base --extra mcp --group dev pytest tests routinekeel/flows --ignore=tests/studio -q
 
   publish:
-    needs: [build, platform-acceptance]
+    needs: [build, platform-acceptance, studio-acceptance]
     if: >-
       github.event_name == 'workflow_dispatch' &&
       github.ref == 'refs/heads/main' &&

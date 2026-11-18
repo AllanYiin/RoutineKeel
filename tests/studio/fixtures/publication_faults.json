@@ -1,0 +1,22 @@
+[
+  {"id":"F01","point":"snapshot_readme","boundary":"before_switch","error":"io"},
+  {"id":"F02","point":"snapshot_manifest","boundary":"before_switch","error":"io"},
+  {"id":"F03","point":"snapshot_wheel_partial","boundary":"before_switch","error":"io"},
+  {"id":"F04","point":"prepared_insert","boundary":"before_switch","error":"sqlite"},
+  {"id":"F05","point":"journal_before","boundary":"before_switch","error":"io"},
+  {"id":"F06","point":"journal_after","boundary":"before_switch","error":"io"},
+  {"id":"F07","point":"wheel_before","boundary":"before_switch","error":"io"},
+  {"id":"F08","point":"wheel_partial","boundary":"before_switch","error":"io"},
+  {"id":"F09","point":"manifest_before","boundary":"before_switch","error":"io"},
+  {"id":"F10","point":"manifest_after","boundary":"after_switch","error":"io"},
+  {"id":"F11","point":"pointer_before","boundary":"after_switch","error":"io"},
+  {"id":"F12","point":"pointer_after","boundary":"after_switch","error":"io"},
+  {"id":"F13","point":"release_finalize","boundary":"after_switch","error":"sqlite"},
+  {"id":"F14","point":"revision_finalize","boundary":"after_switch","error":"sqlite"},
+  {"id":"F15","point":"approval_revoked","boundary":"before_switch","error":"APPROVAL_REQUIRED"},
+  {"id":"F16","point":"review_returned","boundary":"before_switch","error":"REVIEW_RETURNED"},
+  {"id":"F17","point":"project_archived","boundary":"before_switch","error":"PROJECT_INACTIVE"},
+  {"id":"F18","point":"source_changed","boundary":"before_switch","error":"REVISION_CONFLICT"},
+  {"id":"F19","point":"case_added","boundary":"before_switch","error":"TEST_FAILED"},
+  {"id":"F20","point":"tool_disabled","boundary":"before_switch","error":"TOOL_NOT_ALLOWED"}
+]

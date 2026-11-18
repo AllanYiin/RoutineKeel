@@ -1,0 +1,2 @@
+INFO|clean
+WARN|minor

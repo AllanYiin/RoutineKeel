@@ -1,0 +1,566 @@
+{
+  "$defs": {
+    "Binding": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "port": {
+          "$ref": "#/$defs/Port"
+        }
+      },
+      "required": [
+        "source",
+        "port"
+      ],
+      "title": "Binding",
+      "type": "object"
+    },
+    "CachePolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "none",
+            "content_addressed"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "fingerprint_fields": {
+          "items": {
+            "enum": [
+              "inputs",
+              "parameters",
+              "tool_version"
+            ],
+            "type": "string"
+          },
+          "title": "Fingerprint Fields",
+          "type": "array"
+        }
+      },
+      "required": [
+        "mode",
+        "fingerprint_fields"
+      ],
+      "title": "CachePolicy",
+      "type": "object"
+    },
+    "Condition": {
+      "additionalProperties": false,
+      "properties": {
+        "operator": {
+          "enum": [
+            "exists",
+            "nonempty",
+            "equals",
+            "sha256"
+          ],
+          "title": "Operator",
+          "type": "string"
+        },
+        "reference": {
+          "title": "Reference",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/JsonValue",
+          "default": null
+        }
+      },
+      "required": [
+        "operator",
+        "reference"
+      ],
+      "title": "Condition",
+      "type": "object"
+    },
+    "EvidenceRef": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "source_id": {
+          "minLength": 1,
+          "title": "Source Id",
+          "type": "string"
+        },
+        "source_version": {
+          "minimum": 1,
+          "title": "Source Version",
+          "type": "integer"
+        },
+        "evidence_locator": {
+          "minLength": 1,
+          "title": "Evidence Locator",
+          "type": "string"
+        },
+        "claim": {
+          "minLength": 1,
+          "title": "Claim",
+          "type": "string"
+        },
+        "confidence_label": {
+          "enum": [
+            "observed",
+            "inferred",
+            "verified",
+            "human_confirmed",
+            "conflicted"
+          ],
+          "title": "Confidence Label",
+          "type": "string"
+        },
+        "verified_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Verified By"
+        }
+      },
+      "required": [
+        "id",
+        "source_id",
+        "source_version",
+        "evidence_locator",
+        "claim",
+        "confidence_label"
+      ],
+      "title": "EvidenceRef",
+      "type": "object"
+    },
+    "Goal": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "success_criteria": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Success Criteria",
+          "type": "array"
+        }
+      },
+      "required": [
+        "description",
+        "success_criteria"
+      ],
+      "title": "Goal",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "LLMPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "minLength": 1,
+          "title": "Model",
+          "type": "string"
+        },
+        "api_key": {
+          "title": "Api Key",
+          "type": "string"
+        },
+        "max_calls": {
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Max Calls",
+          "type": "integer"
+        },
+        "max_output_tokens": {
+          "maximum": 16000,
+          "minimum": 1,
+          "title": "Max Output Tokens",
+          "type": "integer"
+        },
+        "budget_micro_usd": {
+          "exclusiveMinimum": 0,
+          "title": "Budget Micro Usd",
+          "type": "integer"
+        },
+        "timeout_seconds": {
+          "maximum": 300,
+          "minimum": 1,
+          "title": "Timeout Seconds",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "model",
+        "api_key",
+        "max_calls",
+        "max_output_tokens",
+        "budget_micro_usd",
+        "timeout_seconds"
+      ],
+      "title": "LLMPolicy",
+      "type": "object"
+    },
+    "Node": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-z][a-z0-9_-]{0,31}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "deterministic",
+            "model_inference",
+            "llm",
+            "human_approval",
+            "composite_branch"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "tool": {
+          "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$",
+          "title": "Tool",
+          "type": "string"
+        },
+        "tool_version": {
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "title": "Tool Version",
+          "type": "string"
+        },
+        "inputs": {
+          "patternProperties": {
+            "^[a-z][a-z0-9_-]{0,63}$": {
+              "$ref": "#/$defs/Binding"
+            }
+          },
+          "title": "Inputs",
+          "type": "object"
+        },
+        "outputs": {
+          "patternProperties": {
+            "^[a-z][a-z0-9_-]{0,63}$": {
+              "$ref": "#/$defs/Port"
+            }
+          },
+          "title": "Outputs",
+          "type": "object"
+        },
+        "depends_on": {
+          "items": {
+            "pattern": "^[a-z][a-z0-9_-]{0,31}$",
+            "type": "string"
+          },
+          "title": "Depends On",
+          "type": "array"
+        },
+        "parameters": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Parameters",
+          "type": "object"
+        },
+        "preconditions": {
+          "items": {
+            "$ref": "#/$defs/Condition"
+          },
+          "title": "Preconditions",
+          "type": "array"
+        },
+        "postconditions": {
+          "items": {
+            "$ref": "#/$defs/Condition"
+          },
+          "minItems": 1,
+          "title": "Postconditions",
+          "type": "array"
+        },
+        "side_effects": {
+          "enum": [
+            "none",
+            "local_write",
+            "external"
+          ],
+          "title": "Side Effects",
+          "type": "string"
+        },
+        "retry_policy": {
+          "$ref": "#/$defs/RetryPolicy"
+        },
+        "cache_policy": {
+          "$ref": "#/$defs/CachePolicy"
+        },
+        "platform_requirements": {
+          "items": {
+            "enum": [
+              "windows",
+              "macos",
+              "linux"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Platform Requirements",
+          "type": "array"
+        },
+        "resources": {
+          "$ref": "#/$defs/Resources"
+        },
+        "timeout_seconds": {
+          "maximum": 3600,
+          "minimum": 1,
+          "title": "Timeout Seconds",
+          "type": "integer"
+        },
+        "evidence_refs": {
+          "items": {
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Evidence Refs",
+          "type": "array"
+        },
+        "llm_policy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LLMPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "tool",
+        "tool_version",
+        "inputs",
+        "outputs",
+        "depends_on",
+        "parameters",
+        "preconditions",
+        "postconditions",
+        "side_effects",
+        "retry_policy",
+        "cache_policy",
+        "platform_requirements",
+        "resources",
+        "timeout_seconds",
+        "evidence_refs"
+      ],
+      "title": "Node",
+      "type": "object"
+    },
+    "Port": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "enum": [
+            "file",
+            "string",
+            "integer",
+            "number",
+            "boolean",
+            "object",
+            "array"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Format"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        },
+        "schema_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Schema Id"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "Port",
+      "type": "object"
+    },
+    "Resources": {
+      "additionalProperties": false,
+      "properties": {
+        "memory_mb": {
+          "minimum": 0,
+          "title": "Memory Mb",
+          "type": "integer"
+        },
+        "disk_mb": {
+          "minimum": 0,
+          "title": "Disk Mb",
+          "type": "integer"
+        },
+        "network": {
+          "title": "Network",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "memory_mb",
+        "disk_mb",
+        "network"
+      ],
+      "title": "Resources",
+      "type": "object"
+    },
+    "RetryPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "never",
+            "manual",
+            "transient_only"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "max_attempts": {
+          "maximum": 3,
+          "minimum": 1,
+          "title": "Max Attempts",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "mode",
+        "max_attempts"
+      ],
+      "title": "RetryPolicy",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "ir_version": {
+      "const": "1.0",
+      "title": "Ir Version",
+      "type": "string"
+    },
+    "workflow_id": {
+      "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+      "title": "Workflow Id",
+      "type": "string"
+    },
+    "revision": {
+      "minimum": 1,
+      "title": "Revision",
+      "type": "integer"
+    },
+    "goal": {
+      "$ref": "#/$defs/Goal"
+    },
+    "inputs": {
+      "patternProperties": {
+        "^[a-z][a-z0-9_-]{0,63}$": {
+          "$ref": "#/$defs/Port"
+        }
+      },
+      "title": "Inputs",
+      "type": "object"
+    },
+    "secrets": {
+      "items": {
+        "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+        "type": "string"
+      },
+      "title": "Secrets",
+      "type": "array"
+    },
+    "nodes": {
+      "items": {
+        "$ref": "#/$defs/Node"
+      },
+      "maxItems": 200,
+      "minItems": 1,
+      "title": "Nodes",
+      "type": "array"
+    },
+    "outputs": {
+      "patternProperties": {
+        "^[a-z][a-z0-9_-]{0,63}$": {
+          "type": "string"
+        }
+      },
+      "title": "Outputs",
+      "type": "object"
+    },
+    "evidence": {
+      "items": {
+        "$ref": "#/$defs/EvidenceRef"
+      },
+      "title": "Evidence",
+      "type": "array"
+    }
+  },
+  "required": [
+    "ir_version",
+    "workflow_id",
+    "revision",
+    "goal",
+    "inputs",
+    "secrets",
+    "nodes",
+    "outputs",
+    "evidence"
+  ],
+  "title": "WorkflowIR",
+  "type": "object"
+}

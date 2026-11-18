@@ -1,0 +1,3 @@
+# Preserve deliberate CRLF, BOM and byte-exact expected outputs on every checkout.
+* -text -whitespace
+.gitattributes text eol=lf whitespace

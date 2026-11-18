@@ -1,0 +1,5 @@
+重整庫存欄位
+
+讀取 CSV，選 sku 與 stock 欄，輸出欄名改為 item,quantity；保留字串值與順序，不輸出 note，CSV 使用 LF。
+
+輸出格式：csv

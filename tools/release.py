@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / 'dist'
 PRODUCT = ROOT / 'routinekeel'
 BASE = PRODUCT / 'flow_base'
+STUDIO = PRODUCT / 'workflow_studio'
 
 
 def sha(path):
@@ -126,6 +127,11 @@ def write_ui_launchers(dest):
 
 def build_project(path, staging):
     name, version, archive_name = project_info(path)
+    if path == STUDIO:
+        project_info(BASE)
+        from studio_release import build_studio
+        return build_studio(path, staging, root=ROOT, base=BASE,
+                            run=run, write_bootstrap=write_bootstrap)
     wheels = staging / 'wheels'
     launcher = BASE / 'scripts/project_launcher.py'
     if path == BASE:
@@ -185,22 +191,37 @@ def build_project(path, staging):
 
 
 def main():
-    projects = discover_projects()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--project', help='Optional component folder name or Python package name')
     args = parser.parse_args()
+    # Studio is opt-in; the existing default set of Runtime/flow ZIPs is unchanged.
+    projects = ([STUDIO] if args.project in {'studio', 'workflow_studio', 'workflow-studio'}
+                else discover_projects())
     if args.project:
-        selected = 'flow_base' if args.project == 'base' else args.project
+        selected = ('flow_base' if args.project == 'base' else
+                    'workflow_studio' if args.project == 'studio' else args.project)
         projects = [p for p in projects if selected in (p.name, project_info(p)[0])]
         if len(projects) != 1:
             parser.error(f'Unknown or ambiguous component: {args.project}')
 
+    if DIST.is_symlink() or (hasattr(DIST, 'is_junction') and DIST.is_junction()):
+        raise ValueError('Build output cannot be a linked directory')
     DIST.mkdir(exist_ok=True)
+    if not DIST.resolve().is_relative_to(ROOT.resolve()):
+        raise ValueError('Build output must remain inside the repository')
     with tempfile.TemporaryDirectory(dir=DIST, prefix='build-') as temporary:
         staging = Path(temporary)
         (staging / 'release').mkdir()
         reports = [build_project(path, staging) for path in projects]
-        write_workspace_guide(staging / 'workspace')
+        if projects == [STUDIO]:
+            (staging / 'workspace/AGENTS.md').write_text(
+                '# Studio 測試工作區\n\n'
+                '唯一套件在 workflow_studio/；先讀該目錄的 AGENTS.md 與 README.md。\n'
+                '從其 Studio 啟動器操作，不把設計期套件當成 flow.json 領域流程。\n'
+                '這是候選安裝驗證區；正式發布與外部資料傳送仍須原有授權。\n',
+                encoding='utf-8')
+        else:
+            write_workspace_guide(staging / 'workspace')
         (staging / 'release/SHA256SUMS').write_text(
             ''.join(f"{item['sha256']}  {item['file']}\n" for item in reports), encoding='utf-8')
         (staging / 'release/versions.json').write_text(
@@ -208,6 +229,9 @@ def main():
         # Replacing build output also removes stale assets from earlier versions.
         for name in ('release', 'workspace', 'wheels'):
             target = DIST / name
+            if (target.is_symlink() or (hasattr(target, 'is_junction') and target.is_junction())
+                    or target.resolve().parent != DIST.resolve()):
+                raise ValueError(f'Refusing linked build output: {target}')
             if target.exists():
                 shutil.rmtree(target)
             (staging / name).rename(target)

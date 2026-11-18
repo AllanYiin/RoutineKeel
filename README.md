@@ -93,6 +93,15 @@ RoutineKeel 想解決的是這段「從作者的方法到他人能穩定使用�
 
 **版本 0.2.2。** 用簡單的檔案工作示範「同一個底座支援另一個獨立流程」。適合先確認啟動與輸出機制，不需要先下載語音模型。
 
+## 製作自己的流程：Workflow Studio
+
+Studio 提供設計期工作台，讓使用者從文字、流程圖或成功案例建立候選流程，經試做與人工核准後，交給共用底座執行。
+目前仍是驗收候選，尚未納入既有 GitHub Releases。候選包的入口為 `open_studio.bat`、`open_studio.command` 或 `open_studio.sh`；
+原始碼的 Windows 開發入口則在 `routinekeel/workflow_studio/open_studio.bat`。
+
+從[建立第一個工作流](routinekeel/workflow_studio/docs/user-guide.md)開始，可用附帶的複製案例完成不需模型金鑰的練習。
+安裝方式見 [Studio 候選包指南](routinekeel/workflow_studio/docs/distribution.md)，未驗收範圍見[已知問題](routinekeel/workflow_studio/docs/known-issues.md)。
+
 ## 資料夾怎麼看？
 
 GitHub 的目錄按原始碼責任組織。想使用程式時，從 Releases 下載 ZIP 即可。
@@ -101,6 +110,7 @@ GitHub 的目錄按原始碼責任組織。想使用程式時，從 Releases 下
 | --- | --- |
 | `routinekeel/` | RoutineKeel 的產品原始碼 |
 | `routinekeel/flow_base/` | 共用底座原始碼與安裝工具 |
+| `routinekeel/workflow_studio/` | 設計期工作台、編譯驗證、操作指南與入門案例 |
 | `routinekeel/flows/課程影片產生字幕/` | 字幕流程原始碼、套件設定與測試 |
 | `routinekeel/flows/檔案複製範例/` | 獨立的複製流程範例 |
 | `tests/`、`tools/` | 跨套件測試與共用打包工具 |
