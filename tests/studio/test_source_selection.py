@@ -118,7 +118,7 @@ def test_multiselect_previews_focused_file_not_always_first_selection(tmp_path):
     app.source_tree = SimpleNamespace(selection=lambda: ("a", "b"), focus=lambda: "b")
     app.source_rows = {
         key: (
-            SimpleNamespace(source_id=key, name=key, version=1),
+            SimpleNamespace(source_id=key, name=key, version=1, manifest={}),
             {"preview": {"kind": "text", "text": key + " content", "truncated": False}},
         )
         for key in ("a", "b")

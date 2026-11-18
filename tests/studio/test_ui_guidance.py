@@ -254,6 +254,41 @@ def test_headless_guidance_disabled_feedback_and_progressive_disclosure(tmp_path
         app.refresh_actions()
         root.update()
         assert tools.winfo_ismapped()
+        description = app.edit_source_description()
+        root.update()
+        editor = next(w for w in description.winfo_children() if isinstance(w, tk.Text))
+        editor.delete("1.0", "end")
+        editor.insert("1.0", "合成來源：用來檢查預覽與流程引導。")
+        actions = next(w for w in description.winfo_children() if w.winfo_class() == "TFrame")
+        save = next(w for w in actions.winfo_children() if w["text"] == "儲存說明")
+        save.invoke()
+        root.update()
+        assert not errors, errors
+        assert not description.winfo_exists()
+        assert "合成來源" in app.preview_label["text"]
+        assert "synthetic preview" in app.preview_text.get("1.0", "end")
+        source = app.single_source()
+        stale = app.edit_source_description()
+        root.update()
+        stale_editor = next(w for w in stale.winfo_children() if isinstance(w, tk.Text))
+        stale_editor.delete("1.0", "end")
+        stale_editor.insert("1.0", "保留這份未儲存草稿")
+        with app.model.service() as studio:
+            latest = studio.projects.get(app.model.project_id)
+            studio.sources.describe(
+                latest.project_id, source.source_id, latest.version, "其他編輯者的來源說明"
+            )
+        stale_actions = next(w for w in stale.winfo_children() if w.winfo_class() == "TFrame")
+        conflicts = []
+        app.error = conflicts.append
+        next(w for w in stale_actions.winfo_children() if w["text"] == "儲存說明").invoke()
+        root.update()
+        assert conflicts and conflicts[0].code == "REVISION_CONFLICT"
+        assert stale.winfo_exists() and stale_editor.get("1.0", "end-1c") == "保留這份未儲存草稿"
+        next(w for w in stale_actions.winfo_children() if w["text"] == "取消").invoke()
+        app.error = lambda exc: errors.append(repr(exc))
+        app.refresh_project()
+        app.focus_imported_source(source.source_id)
         app.advanced_var.set(False)
         app.refresh_actions()
         root.update()

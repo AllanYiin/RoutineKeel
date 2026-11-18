@@ -278,6 +278,17 @@ class StudioUIModel:
         self.candidates = []
         return result
 
+    def describe_source(self, source_id, description, expected_project):
+        if expected_project is None or self.project_id != expected_project.project_id:
+            raise StudioError("REVISION_CONFLICT", "專案已切換，來源說明尚未儲存。")
+        with self.service() as studio:
+            result = studio.sources.describe(
+                expected_project.project_id, source_id, expected_project.version, description
+            )
+        self.build_id = self.approval_id = None
+        self.candidates = []
+        return result
+
     def sources(self):
         with self.service() as studio:
             return studio.sources.list(self.project_id) if self.project_id else []

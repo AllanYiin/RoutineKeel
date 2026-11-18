@@ -9,7 +9,7 @@
 | 原需求 | 現有證據入口 | 仍需完成或補強的證據 |
 |---|---|---|
 | FR-01 專案 CRUD／續編 | project/service.py；test_projects.py、test_ui_workflow.py | 確認 UI 軟刪除、第三版草稿續編及正式歷史保留的完整使用者路徑 |
-| FR-02 來源 CRUD／預覽 | ingestion/service.py、preview 與 folder 模組；來源相關測試 | UI 說明修改；所有已接受格式的最終視覺矩陣 |
+| FR-02 來源 CRUD／預覽 | ingestion/service.py、preview／folder、source_description.py；版本及過期寫入測試 | UI 說明已接上，保留原檔/歷史、過期與跨專案寫入拒絕；新表單虛擬視窗及所有格式的最終視覺矩陣仍待 |
 | FR-03 草稿版本與差異 | project/history.py、版本與差異 UI、test_history_editing.py | 續編新版本／明確還原目標／捨棄保護已驗；新視窗實機走查待驗 |
 | FR-04 業務規則 CRUD | governance/evidence.py、machine_evidence.py、規則／步驟／資料夾關係表單；test_evidence_decisions.py、test_machine_evidence.py、test_folder_review.py | 人工與固定試做機器證據已分開綁定，修改處理內容使舊機器狀態失效；完整實機走查仍待 |
 | FR-05 工具註冊及政策 | registry/catalog.py、handlers.py、policy.py、available、v011–v012、工具管理 UI | 描述管理與同工作區 Handler 跨專案重用已實測；第三方適配覆蓋及新視窗實機驗收仍待，模板庫目前以同工作區為範圍 |
@@ -17,7 +17,7 @@
 | FR-07 案例 CRUD／預期實際 | GoldenCases.save/get/archive/history；案例編輯、文字與圖片歷史預覽；test_case_editing.py | 版本化修改、替換、封存後重開及核准失效已驗；新圖片預覽與視窗走查待驗 |
 | FR-08 生成版本 CRUD | Compiler、BuildReviews、ReleaseRecovery、建置／報告／發布核對 UI | prepared 核對、保留檔案結束準備與再封存已實測；新視窗實機驗收仍待 |
 | FR-09 人工決策 CRUD | Approvals、v013 審核紀錄與 sequence、送審／退回／撤回 UI | 技術結果與審核分離、同修訂退回約束及重送已補；完整操作走查與故障矩陣仍待 |
-| FR-10 發布／回滾／停用 | governance/release.py、recovery.py；test_governance.py、test_release_recovery.py、fault-matrix.md | Windows 20 個固定發布故障點及三個真正程序中止已驗；跨專案相同 workflow_id 的直接回歸與跨平台仍待 |
+| FR-10 發布／回滾／停用 | governance/release.py、recovery.py；test_governance.py、test_release_recovery.py、test_security_end_to_end.py、fault-matrix.md | 三平台20個故障點/3個程序中止及跨專案同workflow_id保護已有CI證據；真人發布/回滾走查仍待 |
 | FR-11 明確工作目標 | project/models.py 與 IR goal 驗證 | 對照非技術完整流程確認輸入、預期與成功條件，不把簡短文字等同完整需求 |
 | FR-12 多來源發現 | discovery/planner.py、images.py、folder.py、video.py；test_image_discovery.py 與推論測試 | 手繪／文字混合來源、固定圖片傳送與待確認路徑已接線；真實文字／Mermaid 各至少 5 件及手繪辨識品質仍待；影片與融合仍為 P2 未驗且停用 |
 | FR-13 工具配置 | Registry policy/matching、受控內建及生成工具 | 對真實案例核對重用優先順序，不以僅固定工具通過代替新 Handler 能力 |
@@ -32,7 +32,7 @@
 | §9 狀態／migration／不可變／交易 | SQLite v014、遷移備份、CAS、不可變紀錄、100 次專案循環及 20 發布故障／程序中止 | 其他長操作取消與完整跨平台狀態矩陣仍待 |
 | §10 共用 Service／事件／串流 | service.py、discovery events 與 usage；operation-events.md | 已補生成階段、驗證完成與待核准事件及交易回滾測試；CLI 目前只有部分入口，全部狀態與硬中止仍須逐項核對 |
 | §11 UI／預覽／停止／顏色＋文字 | 原生 Windows 檢視與使用者回饋；ui-review.md、project-drafts.md、test_project_edits.py | 背景重讀保留草稿、版本衝突與比較更新已補控制器測試；不操作目前使用者桌面，其他平台及新增表單仍待實機走查 |
-| §12 非功能與基準 | acceptance-benchmarks.md／fault-matrix.md：五項基準已有指定 Windows 環境證據，包含 20 固定故障 | 其他平台仍待；不推論所有硬體或實體斷電情境皆通過 |
+| §12 非功能與基準 | acceptance-benchmarks.md／fault-matrix.md及三平台CI artifacts：固定基準、20故障、3程序中止、100次隔離 | 已有三平台指定runner證據；不推論所有硬體或實體斷電情境皆通過 |
 | §13 Error／Abuse cases | 各模組拒絕測試及 error codes | 逐情境對照報告，確認取消／斷線／外部結果不明不重試；禁止刪掉失敗測試 |
 | AC-01 文字三步生成 | fixture discovery、真實 Runtime replay | 真實模型完整文字三步；至少五件文字及五件 Mermaid |
 | AC-02 第三版續編 | test_acceptance_lifecycle：第三版來源／證據重開、續編第四版重播、舊發布包不變 | 本機工程路徑已驗；原生視窗走查仍待 |

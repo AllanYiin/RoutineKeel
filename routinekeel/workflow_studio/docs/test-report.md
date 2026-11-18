@@ -531,3 +531,12 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
   這是控制器／模型證據；新捲動容器與實際 disabled 滑鼠事件仍須 CI 虛擬顯示器驗證。
 - CI 新增 Linux 獨立 Xvfb／CJK 字型環境，檢查灰色按鈕的實際事件、匯入預覽、進階收合、Tab 焦點、
   小視窗捲動及主要按鈕可見性，並保存合成畫面截圖。未重新控制使用者目前的 Windows 視窗。
+
+## 來源說明的工作臺入口
+
+- 原 FR-02 的 describe 服務已存在，但工作臺無操作入口；現在於進階來源管理新增說明編輯及預覽摘要。
+  使用開啟表單時的 project_id／version 提交，過期、跨專案、超長資料拒絕，對話框不因拒絕而關閉。
+- 修改只新增來源版本，原檔 bytes、content hash、舊版本及發布檔案保留；成功清除本機舊 build／approval／候選快取。
+  來源版本變動後，舊案例核准不能再次發布。
+- source_descriptions／source_selection／ui_guidance／project_edits：**58 passed、1 虛擬顯示器 Gate skipped，4.63 秒**。
+  該 Gate 已擴充實際來源說明表單與衝突草稿保留，待最新 CI；沒有操作使用者的 Windows 視窗。

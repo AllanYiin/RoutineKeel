@@ -16,6 +16,7 @@ from .display import configure_display, enable_high_dpi
 from .guidance import blocked_reason, next_step
 from .model import StudioUIModel, analysis_text
 from .project_edits import ProjectEdits, entered_values
+from .source_description import source_caption
 
 COLORS = {
     "bg": "#F8FAFC",
@@ -621,7 +622,7 @@ class StudioApp:
         self.selected_source = source.source_id
         self.display_image = None
         self.image_label.configure(image="")
-        self.preview_label.configure(text=f"{source.name} · 第 {source.version} 版")
+        self.preview_label.configure(text=source_caption(source))
         if record is None:
             self._set_text(
                 self.preview_text, "\n".join(r["path"] for r in source.manifest["files"])
@@ -668,6 +669,11 @@ class StudioApp:
             self.model.import_path(path, source.source_id)
             self.refresh_project()
             self.focus_imported_source(source.source_id)
+
+    def edit_source_description(self):
+        from .source_description import open_source_description
+
+        return open_source_description(self)
 
     def remove_source(self):
         source = self.single_source()

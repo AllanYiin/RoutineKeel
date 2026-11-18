@@ -258,6 +258,16 @@ def build_workbench(app):
     )
     app.button(
         actions,
+        "編輯來源說明",
+        app.edit_source_description,
+        requires="single_source",
+        fill="x",
+        pady=(s(4), s(5)),
+        advanced=True,
+        show_when="sources",
+    )
+    app.button(
+        actions,
         "從成功案例找流程",
         app.find_folder_candidates,
         requires="folder",
