@@ -543,3 +543,15 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
 - run44279614920 已驗證新表單保存與衝突保留；後續小視窗焦點檢查失敗。
   失敗截圖沒有焦點框，Xvfb 未在 transient 關閉後恢復 root focus；測試改為明確啟用虛擬視窗並
   先斷言實際 focus_get，再驗證 Tab 及完整可見性。未放寬裁切邊界，也未在產品中強制搶使用者焦點。
+
+## 不完整目標的草稿路徑
+
+- 只填名稱即可保存專案；部分目標可儲存、重開與匯入來源，不強迫一次填完所有欄位。
+  建立可執行候選、試做與發布前仍需完整目標。AI 整理保留可用，能先提出補充問題。
+- project_edits／ui_guidance／discovery：**60 passed、1 explicit virtual-display skip，2.39 秒**。
+  包含不完整成功條件的真實 Discovery 服務與資料庫重開，結果為 needs_clarification，原目標未被改寫；
+  Provider 使用合成回應，沒有付費呼叫，不代表真實模型品質。
+- 941f5df 的 run44281896651 虛擬 Tk 步驟已成功，驗證名稱起案、分次保存與後續匯入；
+  後續保留 AI 釐清入口的修正仍須最新 CI。Windows 完整測試尚在執行。
+- 941f5df 獨立 Windows 整包安裝通過，證據 dist/draft-install-evidence/distribution.json；
+  source_dirty=false、重用、案例重播、獨立 Runtime 與損毀包拒絕皆通過。使用者原視窗未動。

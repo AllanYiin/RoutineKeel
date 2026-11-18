@@ -199,7 +199,7 @@ class StudioApp:
             "archived": project is not None and project.status == "archived",
             "source": source,
             "single_source": source and source_count == 1,
-            "analysis": source and provider_ready and goal_ready,
+            "analysis": source and provider_ready,
             "candidate": active
             and goal_ready
             and bool(self.model.candidates)

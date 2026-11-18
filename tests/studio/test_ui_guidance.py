@@ -242,7 +242,7 @@ def test_headless_guidance_disabled_feedback_and_progressive_disclosure(tmp_path
         assert app.current_project.goal["description"] == ""
         assert not file_button.instate(["disabled"])
         for button, rule in app.button_rules.items():
-            if rule in {"analysis", "initialize", "verify", "publish"}:
+            if rule in {"initialize", "verify", "publish"}:
                 assert button.instate(["disabled"])
                 assert "草稿" in app.button_blockers[button]
         app.goal_var.set("完整複製文字")
@@ -268,6 +268,17 @@ def test_headless_guidance_disabled_feedback_and_progressive_disclosure(tmp_path
         assert len(app.source_tree.selection()) == 1
         assert "synthetic preview" in app.preview_text.get("1.0", "end")
         assert app.current_guidance.action == "configure_model"
+        # Discovery may ask about missing criteria; only executable candidates need them.
+        complete_success = app.success_var.get()
+        app.success_var.set("")
+        app.save_project()
+        with monkeypatch.context() as provider_patch:
+            provider_patch.setattr(type(app.model), "provider_ready", property(lambda self: True))
+            app.refresh_actions()
+            analysis_button = next(b for b, rule in app.button_rules.items() if rule == "analysis")
+            assert not analysis_button.instate(["disabled"])
+        app.success_var.set(complete_success)
+        app.save_project()
         app.advanced_var.set(True)
         app.refresh_actions()
         root.update()

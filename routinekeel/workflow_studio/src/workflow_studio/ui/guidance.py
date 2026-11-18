@@ -65,7 +65,7 @@ def next_step(state):
         if not state.get(field):
             return NextStep(
                 "草稿已保存，繼續補充",
-                f"請補上「{label}」後再整理或試做流程；來源資料也可以先匯入。",
+                f"請補上「{label}」後再試做流程；也可先匯入說明，讓 AI 整理並提出待確認問題。",
                 f"填寫{label}",
                 "focus_" + field,
             )
@@ -207,7 +207,6 @@ def blocked_reason(rule, state):
     if state.get("dirty"):
         return "目標有尚未儲存的修改；請先按「儲存目標」。"
     if rule in {
-        "analysis",
         "candidate",
         "initialize",
         "verify",
@@ -215,7 +214,7 @@ def blocked_reason(rule, state):
         "publish",
         "folder",
     } and (not state.get("goal") or not state.get("success")):
-        return "目前仍是未完成的草稿；請先補充工作目標與成功條件，再整理、試做或發布。"
+        return "目前仍是未完成的草稿；請先補充工作目標與成功條件，再建立、試做或發布流程。"
     if rule in {"source", "single_source", "analysis", "folder"}:
         if not state.get("selected"):
             return "請先點選左側來源；只有匯入、尚未選取時，仍不能執行這項操作。"
