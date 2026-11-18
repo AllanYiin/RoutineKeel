@@ -39,7 +39,8 @@ SQLite 遷移會先建立一致性的 before-vNNN 資料庫備份及 checksum，
 至少核對專案數、目前 Revision、來源與案例版本、已核准／已發布指紋，以及一個實際 Runtime 試做。
 比對原先的 manifest 與成果，確認 Studio 升級沒有改動正式發布內容。
 `status` 命令可以回報版本與 schema，但開啟動作可能觸發遷移，不能拿它當成備份前的唯讀探測。
-完整 schema 備份測試已存在；真人依本頁執行整包升級／回退與最終發行包演練仍待驗收。
+完整 schema 備份測試已存在；另已核對同版本靜止工作區的完整複製、重開與再次試做，
+見 [wheel 安裝預檢](installation-preflight.md)。真人整包升級／跨版本回退與最終發行包演練仍待驗收。
 
 ## 回滾（Rollback）
 

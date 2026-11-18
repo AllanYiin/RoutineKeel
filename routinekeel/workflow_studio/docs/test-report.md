@@ -491,3 +491,7 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
   機器證據：`dist/documentation-check/d2d2e405b96c4081b77fa30aea8a587a/result.json`。
 - 指南中的 status／help 及 Python Service 建案範例實際執行，schema=14、version=0.1.0。
   沒有啟動原生視窗，未執行真人操作、正式安裝器或整包升級回退；Stage 13 仍未完成。
+- 後續已完成 Windows 新環境安裝預檢：兩個實際 wheel、鎖定且驗 hash 的依賴、非 editable、
+  互相隔離的 Studio／Runtime；入門案例試做／發布及第二份輸入的底座獨立執行通過。
+  117 個檔案的同版本工作區副本可重開並再次試做，原工作區不變。
+  命令、wheel 指紋、初輪檢查程式錯誤及限制見 installation-preflight.md；正式安裝器仍待。
