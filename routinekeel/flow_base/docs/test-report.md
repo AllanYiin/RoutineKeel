@@ -45,6 +45,6 @@
 
 ## 平台與 CI
 
-`.github/workflows/packages.yml` 的 Ubuntu 24.04、`windows-2025`、`macos-15` 三平台 Gate 在 PR 最後 head 與合併後 run 均 success。合併後自動發布揭露原工作流缺少真人 Gate；修訂候選改為只有在 `main` 上手動觸發且明確勾選 `publish_release` 時才執行 publish，並仍等待三平台 job。另有只手動觸發的 `.github/workflows/platform-checks.yml`；它尚未單獨執行。macOS Finder／Tk GUI 與官方 MCP Inspector 尚未執行。
+`.github/workflows/packages.yml` 的 Ubuntu 24.04、`windows-2025`、`macos-15` 三平台 Gate 在 PR 最後 head 與合併後 run 均 success。合併後自動發布揭露原工作流缺少真人 Gate；[PR #5](https://github.com/AllanYiin/RoutineKeel/pull/5) 已合併至 `main`，後續只有在 `main` 上手動觸發且明確勾選 `publish_release` 時才執行 publish，並仍等待三平台 job。另有只手動觸發的 `.github/workflows/platform-checks.yml`；它尚未單獨執行。macOS Finder／Tk GUI 與官方 MCP Inspector 尚未執行。
 
-下一步：完成發行包使用手冊的非技術真人走查與 macOS Finder／Tk 實機驗證。使用者已選擇保留先前自動發布的 Release；本次發行控制修訂的三平台 CI 已通過，仍待 PR 審閱與合併。人工 Gate 在取得走查證據前維持未通過。
+下一步：完成發行包使用手冊的非技術真人走查與 macOS Finder／Tk 實機驗證。使用者已選擇保留先前自動發布的 Release；發行控制修訂的三平台 CI 已通過且 PR #5 已合併。人工 Gate 在取得走查證據前維持未通過。

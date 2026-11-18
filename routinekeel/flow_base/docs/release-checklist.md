@@ -18,4 +18,4 @@
 
 回滾順序：先停止 queue-worker 與新 Run → 保留 `share_states`／`share_logs`／`outputs` → 核對新舊 DB schema → 若退回不支援 v004 的舊版底座，先按 `upgrade-and-rollback.md` 的備份校驗與還原流程處理 DB → 再替換 `flow_base`。不可只覆蓋 wheel 就讓舊版程式寫新版資料庫。
 
-完成真人走查、確認發行授權且本發行控制修訂已進入 `main` 後，維護者才可在 GitHub Actions 手動執行 `Build and release packages`，選 `main` 並勾選 `publish_release`。工作流會重新建置並測試 Ubuntu、Windows、macOS；三平台成功後才發布 ZIP。未勾選時只執行驗證，不建立 Release。
+發行控制修訂已隨 [PR #5](https://github.com/AllanYiin/RoutineKeel/pull/5) 進入 `main`。完成真人走查並取得發行授權後，維護者才可在 GitHub Actions 手動執行 `Build and release packages`，選 `main` 並勾選 `publish_release`。工作流會重新建置並測試 Ubuntu、Windows、macOS；三平台成功後才發布 ZIP。未勾選時只執行驗證，不建立 Release。

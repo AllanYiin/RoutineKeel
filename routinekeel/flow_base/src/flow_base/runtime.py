@@ -369,8 +369,8 @@ class Runtime:
         with self.lock("env:" + self.profile_key(profile), timeout=600):
             root.mkdir(parents=True, exist_ok=True)
             location = root / "location.json"
-            current = {"path": str(root)}
-            if (root / ".venv").exists() and (not location.exists() or read_json(location) != current):
+            location_record = {"path": str(root)}
+            if (root / ".venv").exists() and (not location.exists() or read_json(location) != location_record):
                 shutil.rmtree(root / ".venv")
             for name in ("pyproject.toml", "uv.lock", ".python-version"):
                 shutil.copyfile(source / name, root / name)
@@ -378,7 +378,11 @@ class Runtime:
             if not uv:
                 raise FlowError("UV_MISSING", "Install uv with the included launcher, then retry")
             env = os.environ.copy()
-            env.update({"UV_CACHE_DIR": str(self.home / "packages"), "UV_PYTHON_INSTALL_DIR": str(self.home / "python"),
+            python_install_dir = self.home / "python"
+            local_app_data = env.get("LOCALAPPDATA")
+            if os.name == "nt" and local_app_data and (self.home / "launcher" / "use-local-python").is_file():
+                python_install_dir = Path(local_app_data) / "RoutineKeel" / "python"
+            env.update({"UV_CACHE_DIR": str(self.home / "packages"), "UV_PYTHON_INSTALL_DIR": str(python_install_dir),
                         "UV_PROJECT_ENVIRONMENT": str(root / ".venv"), "UV_NO_PROGRESS": "1"})
             version = (source / ".python-version").read_text().strip()
             argv = [uv, "sync", "--locked", "--no-dev", "--no-editable", "--python", version, "--no-build"]
@@ -393,7 +397,7 @@ class Runtime:
                         cancel_event=context.cancel_requested if context else None)
             if not python.is_file():
                 raise FlowError("ENV_INVALID", "Profile Python was not created")
-            atomic_json(location, current)
+            atomic_json(location, location_record)
         return python
 
     def worker(self, profile, request, *, timeout=60, log=None, context=None):
