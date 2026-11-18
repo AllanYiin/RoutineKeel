@@ -35,9 +35,9 @@
 | §12 非功能與基準 | acceptance-benchmarks.md／fault-matrix.md：五項基準已有指定 Windows 環境證據，包含 20 固定故障 | 其他平台仍待；不推論所有硬體或實體斷電情境皆通過 |
 | §13 Error／Abuse cases | 各模組拒絕測試及 error codes | 逐情境對照報告，確認取消／斷線／外部結果不明不重試；禁止刪掉失敗測試 |
 | AC-01 文字三步生成 | fixture discovery、真實 Runtime replay | 真實模型完整文字三步；至少五件文字及五件 Mermaid |
-| AC-02 第三版續編 | 持久化及 UI model 重開測試 | 固定第三版草稿／證據／原發布包不可變的直接整合案例 |
-| AC-03 中斷 | 串流故障／草稿保存測試 | 真實 Provider、重新開啟與 UI 狀態對照 |
-| AC-04 未授權寄送 | 工具政策與編譯拒絕測試 | 固定外部寄送負例的完整發布流程，外部呼叫必須為零 |
+| AC-02 第三版續編 | test_acceptance_lifecycle：第三版來源／證據重開、續編第四版重播、舊發布包不變 | 本機工程路徑已驗；原生視窗走查仍待 |
+| AC-03 中斷 | 固定串流斷線、failed 事件、控制器訊息及上一候選重開 | fixture／本機工程路徑已驗；真實 Provider 與原生視窗仍待 |
+| AC-04 未授權寄送 | test_security_end_to_end：外寄描述／自授權來源被拒、不能建置核准發布、SMTP/socket/HTTP 呼叫 0 | 目前未支援真實寄送適配，未宣稱其已授權路徑完成；負例工程驗收已具證據 |
 | AC-05 確定性零 LLM | 已核准發布至隔離工作區的 copy 包，連續 100 次不同輸入均 registered_requests=0，事後重核全部交付 | 本機固定案例已驗；仍需完整範例與平台矩陣，不推論任意流程皆正確 |
 | AC-06 成功資料夾 | acceptance-v1 C11–C15 從資料夾推導、訓練與未見資料真實重播、隔離發布；C15 含中間產物 | Windows 工程路徑已驗；原生操作與真人結果另列，未用工程測試替代真人 Gate |
 | AC-07 平台報告 | policy 平台拒絕與 package compatibility | 同一 IR 的三平台報告及實際 CI；目前未完成 |
@@ -49,12 +49,12 @@
   資料完整性／參考答案通過不算轉換成功。真實模型與至少 16 件非技術使用者完成仍未有證據，結果模板全部 not_run。
 - Stage 8 已有明確 JSON 比較、最多兩輪 ModelRepair Provider／UI 接線及獨立範圍／預算授權，
   CSV 算法及參數修復已用真正 Runtime 重播；模型輸出目前仍為 fixture，真實品質及新按鈕視覺驗收待完成。
-- Stage 12：Studio 獨立依賴與三平台 CI 尚未接線。現有 packages.yml 使用底座環境收集 tests，
-  不可假設它已完整驗證 Studio，也不可用整批跳過 Studio 測試替代依賴配置。
+- Stage 12：已接可重用的 Studio 三平台 CI 與獨立 Runtime／Studio 環境，packages 及手動平台流程都呼叫；
+  實際 CI 成功結果仍待。詳見 platform-acceptance.md，不以設定存在當成平台通過。
 - Stage 13：開發用 open_studio.bat 不等於乾淨安裝交付。尚需發行工具、使用者／開發者指南、
   隱私／限制／升級回滾文件、完整包清單、無私密內容檢查、乾淨安裝啟動及最終 commit 證據。
-- 底座與兩個現有流程回歸仍須在最終變更上重測。既有工作樹的 recovery JSON 輸出失敗單列，
-  不擅自修改使用者既有底座變更以讓 Studio 看似通過。
+- 目前工作樹底座／流程回歸 383 passed、21 skipped、1 桌面測試 deselected，沒有失敗；
+  使用者既有變更保留，後續最終變更仍須對照有效範圍，不把工作樹結果冒充乾淨 release。
 - 最終審核須再展開每階段的命名產物與測試要求；本表只提供主索引，不能直接拿來宣告完成。
 - Stage 7 原文明列「不支援 IR 正確阻擋」及不支援功能／原因輸出，不能另把所有任意型別與工具適配都推定為必要 Gate。
   同時也不能用拒絕路徑替代明定的 P0/P1 功能；須以原始案例與契約逐項驗證。兩個固定 Golden Case

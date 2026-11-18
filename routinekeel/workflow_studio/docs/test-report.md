@@ -446,3 +446,18 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
   實際 Git index 的 155 個資料／catalog／result 檔案 bytes SHA-256 與預期一致；原工作樹及新 checkout 不應漂移。
 - Ruff check、format check（167 files）通過；新增介面提示與多選行為僅控制器測試，沒有重新操作桌面。
   真實模型、至少 16/20 真人轉換、實際手寫品質、完整安全／平台／底座回歸與 Stage 13 交付仍待。
+
+## 安全端到端、續編與目前底座回歸
+
+- test_security_end_to_end、test_acceptance_lifecycle、test_comparison：30 passed，22.10 秒。
+  未授權外寄從來源／候選到建置、核准與發布均拒絕，SMTP/socket/HTTP 呼叫 0，舊包仍可執行；
+  同 workflow_id 的另一專案與歷史回復不能覆寫既有擁有者。第三版來源／證據重開、續編第四版試做、
+  串流中斷訊息與舊候選保留直接驗證。JSON 型別與精度邊界已有正確實作，未重寫產品比較器。
+- 目前底座與流程環境：383 passed、21 skipped、1 native Tk deselected，287.62 秒，沒有失敗。
+  命令、跳過原因及使用者未提交修改的限制見 platform-acceptance.md；舊 383/1 failed/21 基線不再當成目前結果。
+- 同一固定來源 ID 的 IR，三平台政策生成一致，實際 Windows Runtime 重播通過：1 passed，2.17 秒。
+  此處不把另外兩個 policy 的靜態檢查當成已執行 macOS／Linux。
+- 新增可重用 Studio 三平台 CI；底座及 Studio 分離依賴，packages／platform-checks 皆呼叫，
+  正式發布仍須 main／人工 workflow_dispatch／publish_release=true，且新增 Studio 成功依賴。
+- YAML 解析及矩陣／發布依賴檢查通過；本機 ci_environment 確認 Runtime 無 Studio 可匯入。
+  Ruff check／format 通過。CI 執行結果待實際 run 證據，真人／模型與交付 Gate 仍未完成。
