@@ -19,6 +19,7 @@ def test_ui_state_multiline_and_bounds(tmp_path, monkeypatch):
     root = app.root
     root.withdraw()
     errors = []
+    root.report_callback_exception = lambda kind, value, trace: errors.append(str(value))
     monkeypatch.setattr(
         "workflow_studio.ui.app.messagebox.showerror",
         lambda title, message, **kwargs: errors.append(message),
@@ -69,6 +70,9 @@ def test_ui_state_multiline_and_bounds(tmp_path, monkeypatch):
         root.geometry(f"{round(980 * app.display['scale'])}x{round(640 * app.display['scale'])}")
         app.tabs.select(2)
         root.deiconify()
+        root.update()
+        root.focus_force()
+        app.actor_entry.focus_set()
         root.update()
         limit = root.winfo_rooty() + root.winfo_height()
         assert app.stop_button.winfo_rooty() + app.stop_button.winfo_height() <= limit

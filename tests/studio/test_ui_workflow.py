@@ -1,5 +1,7 @@
+import os
 import socket
 import time
+from pathlib import Path
 
 import pytest
 from compiler_helpers import runtime_python
@@ -105,6 +107,7 @@ def test_real_tk_buttons_complete_folder_to_verification(tmp_path, monkeypatch):
         pytest.skip(f"Native Tk display unavailable: {exc}")
     root.withdraw()
     errors = []
+    root.report_callback_exception = lambda kind, value, trace: errors.append(str(value))
     monkeypatch.setattr(
         "workflow_studio.ui.app.messagebox.showerror",
         lambda title, message, **kwargs: errors.append(message),
@@ -117,6 +120,9 @@ def test_real_tk_buttons_complete_folder_to_verification(tmp_path, monkeypatch):
     try:
         model = StudioUIModel(tmp_path / "studio", runtime_python=runtime_python())
         app = StudioApp(tmp_path / "studio", root=root, model=model)
+        if os.environ.get("STUDIO_HEADLESS_UI_TESTS") == "1":
+            root.deiconify()
+            root.update()
         app.name_var.set("按鈕測試")
         app.goal_var.set("複製檔案")
         app.success_var.set("內容相符")
@@ -136,6 +142,7 @@ def test_real_tk_buttons_complete_folder_to_verification(tmp_path, monkeypatch):
         app.accept_candidate()
         assert app.canvas.find_all()
         app.verify_button.invoke()
+        deadline = time.monotonic() + 30
         while app.busy and time.monotonic() < deadline:
             root.update()
             time.sleep(0.02)
@@ -148,13 +155,22 @@ def test_real_tk_buttons_complete_folder_to_verification(tmp_path, monkeypatch):
         )
         app.actor_var.set("UI 測試者")
         app.reviewed.set(True)
-        app.publish()
+        app.refresh_actions()
+        publish = next(button for button, rule in app.button_rules.items() if rule == "publish")
+        assert not publish.instate(["disabled"])
+        publish.invoke()
         deadline = time.monotonic() + 20
         while app.busy and time.monotonic() < deadline:
             root.update()
             time.sleep(0.02)
         assert not app.busy and not errors, errors
         assert list(target.glob("*/flow.json"))
+        if os.environ.get("STUDIO_GATE_REPORT_DIR"):
+            from test_ui_guidance import capture_window
+
+            capture_window(
+                root, Path(os.environ["STUDIO_GATE_REPORT_DIR"]) / "workflow-published.png"
+            )
         from PIL import Image
 
         image_path = tmp_path / "預覽圖.png"
@@ -164,6 +180,18 @@ def test_real_tk_buttons_complete_folder_to_verification(tmp_path, monkeypatch):
         app.source_tree.selection_set(image_source.source_id + ":0")
         app._source_selected()
         assert app.display_image.width() / app.display_image.height() == 2
+        identity = model.project_id
+        root.destroy()
+        root = tk.Tk()
+        root.withdraw()
+        root.report_callback_exception = lambda kind, value, trace: errors.append(str(value))
+        reopened = StudioUIModel(tmp_path / "studio", runtime_python=runtime_python())
+        app = StudioApp(tmp_path / "studio", root=root, model=reopened)
+        app.load_project(identity)
+        root.update()
+        assert app.current_project.project_id == identity
+        assert app.display_ir is not None and app.canvas.find_all()
+        assert reopened.release_history() and not errors, errors
     finally:
         root.destroy()
 
@@ -192,6 +220,7 @@ def test_tk_analysis_is_visible_before_final_revision(tmp_path, monkeypatch):
                     release.wait(5)
 
     errors = []
+    root.report_callback_exception = lambda kind, value, trace: errors.append(str(value))
     monkeypatch.setattr(
         "workflow_studio.ui.app.messagebox.showerror",
         lambda title, message, **kwargs: errors.append(message),

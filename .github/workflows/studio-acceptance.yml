@@ -53,7 +53,7 @@ jobs:
           STUDIO_HEADLESS_UI_TESTS: '1'
           STUDIO_GATE_REPORT_DIR: ${{ runner.temp }}/studio-evidence
         run: |
-          xvfb-run -a -s '-screen 0 1440x1000x24' uv run --locked --project routinekeel/workflow_studio --group dev python -m pytest tests/studio/test_ui_guidance.py -q -k headless --junitxml="${{ runner.temp }}/studio-evidence/guided-ui-junit.xml"
+          xvfb-run -a -s '-screen 0 1440x1000x24' uv run --locked --project routinekeel/workflow_studio --group dev python -m pytest tests/studio/test_ui_guidance.py tests/studio/test_ui_workflow.py tests/studio/test_ui_readability.py -q -k "headless or test_real_tk_buttons or test_tk_analysis or test_ui_state_multiline" --junitxml="${{ runner.temp }}/studio-evidence/guided-ui-junit.xml"
       - name: Run complete non-desktop Studio acceptance
         env:
           STUDIO_GATE_REPORT_DIR: ${{ runner.temp }}/studio-evidence
