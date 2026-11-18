@@ -540,3 +540,6 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
   來源版本變動後，舊案例核准不能再次發布。
 - source_descriptions／source_selection／ui_guidance／project_edits：**58 passed、1 虛擬顯示器 Gate skipped，4.63 秒**。
   該 Gate 已擴充實際來源說明表單與衝突草稿保留，待最新 CI；沒有操作使用者的 Windows 視窗。
+- run44279614920 已驗證新表單保存與衝突保留；後續小視窗焦點檢查失敗。
+  失敗截圖沒有焦點框，Xvfb 未在 transient 關閉後恢復 root focus；測試改為明確啟用虛擬視窗並
+  先斷言實際 focus_get，再驗證 Tab 及完整可見性。未放寬裁切邊界，也未在產品中強制搶使用者焦點。

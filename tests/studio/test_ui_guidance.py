@@ -293,8 +293,11 @@ def test_headless_guidance_disabled_feedback_and_progressive_disclosure(tmp_path
         app.refresh_actions()
         root.update()
         assert not tools.winfo_ismapped()
+        # Xvfb has no window manager to return focus after closing a transient.
+        root.focus_force()
         app.goal_input.focus_set()
         root.update()
+        assert root.focus_get() == app.goal_input
         original = app.goal_var.get()
         app.goal_input.event_generate("<Tab>")
         root.update()
@@ -320,6 +323,7 @@ def test_headless_guidance_disabled_feedback_and_progressive_disclosure(tmp_path
         tabs_top = app.tabs.winfo_rooty()
         app.actor_entry.focus_set()
         root.update()
+        assert root.focus_get() == app.actor_entry
         assert app.tabs.winfo_rooty() == tabs_top
         assert (
             app.next_button.winfo_rooty() + app.next_button.winfo_height()
