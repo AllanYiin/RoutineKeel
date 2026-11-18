@@ -1,7 +1,7 @@
 """Ordered, transactional Studio schema migrations."""
 
 APPLICATION_ID = 0x53545544  # STUD; rejects accidentally selected Runtime databases.
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 V001 = (
     """CREATE TABLE studio_projects (
@@ -200,6 +200,15 @@ V014 = (
         BEGIN SELECT RAISE(ABORT, 'retain release reconciliation'); END""",
 )
 
+V015 = (
+    # One mutable row per project: the guided session is working state, not history.
+    # Committed revisions, evidence decisions and approvals keep their own immutable tables.
+    """CREATE TABLE studio_guided_sessions (
+        project_id TEXT PRIMARY KEY REFERENCES studio_projects(project_id),
+        version INTEGER NOT NULL CHECK(version > 0), state_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL)""",
+)
+
 MIGRATIONS = {
     1: V001,
     2: V002,
@@ -215,4 +224,5 @@ MIGRATIONS = {
     12: V012,
     13: V013,
     14: V014,
+    15: V015,
 }

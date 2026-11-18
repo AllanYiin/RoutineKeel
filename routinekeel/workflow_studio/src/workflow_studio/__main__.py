@@ -9,9 +9,15 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="RoutineKeel 工作流程製作工作台")
     parser.add_argument("--workspace", type=Path, default=Path.cwd())
     parser.add_argument("--runtime-python", type=Path)
-    parser.add_argument("command", choices=("ui", "projects", "status"), nargs="?", default="ui")
+    parser.add_argument(
+        "command", choices=("ui", "mcp", "projects", "status"), nargs="?", default="ui"
+    )
     args = parser.parse_args(argv)
-    if args.command == "ui":
+    if args.command == "mcp":
+        from .guided.mcp_server import run_stdio
+
+        run_stdio(args.workspace)
+    elif args.command == "ui":
         from .ui.app import StudioApp
         from .ui.model import StudioUIModel
 

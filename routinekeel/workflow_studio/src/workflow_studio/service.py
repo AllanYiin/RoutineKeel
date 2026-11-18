@@ -103,6 +103,11 @@ class StudioService:
 
         return BuildReviews(self, tool_policy)
 
+    def guided(self, tool_policy):
+        from .guided.session import GuidedSessions
+
+        return GuidedSessions(self, tool_policy)
+
     def confirmed_evidence(self, project_id, payload):
         from .governance.evidence import EvidenceRecords
         from .governance.machine_evidence import MachineEvidence
