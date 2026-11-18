@@ -5,6 +5,15 @@ Studio 將工作描述與成功案例整理成可驗證、可重複使用的 Rou
 目前已有可操作的本機工作台，但仍是開發版，尚未完成整體驗收。
 Windows 可雙擊 [open_studio.bat](open_studio.bat)，操作見 [工作台指南](docs/workbench.md)。
 
+第一次使用請看[建立第一個工作流](docs/user-guide.md)：使用隨附的複製案例，
+不需要模型金鑰即可完成本機案例比對與試做。開發環境須先由管理者準備；
+目前啟動器仍是原始碼入口，正式安裝包與真人走查尚未完成。
+
+- [開發、CLI 及 Handler 擴充](docs/developer-guide.md)
+- [模型用量與資料隱私](docs/privacy-and-model-usage.md)
+- [已知問題與驗收範圍](docs/known-issues.md)
+- [備份、升級與回滾](docs/upgrade-and-rollback.md)
+
 從儲存庫根目錄執行開發測試：
 
 ```powershell

@@ -479,3 +479,15 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
   這輪 collection 早於額外的結果讀回負例；最後交易補強由上述 48 項覆蓋，最新 commit 的完整回歸以後續 CI 為準。
 - 此次沒有 schema 遷移、不補造舊事件、不授予核准、不改底座。詳細契約及強制終止限制見
   operation-events.md；新事件仍須隨最新程式版本取得完整三平台回歸。
+
+## 交付文件與入門案例預備
+
+- 新增 user-guide、developer-guide、privacy-and-model-usage、known-issues、upgrade-and-rollback；
+  更新架構、來源格式與 README，移除已過時的 Stage 0／影片尚未實作描述。
+- 五份文件分別以 technical-documentation-writer 的 doc_quality_audit（tutorial／reference／how-to／reference／migration-guide）
+  檢查，均 100/100；這只證明結構訊號齊全，不代表內容或產品已放行。37 份 README／docs 的本機連結與 code fence 檢查無錯誤。
+- examples/first-copy 由 UI model 依指南建立專案、匯入／推導／採用、試做、具名工程核准、隔離發布、
+  重開還原，再用第二份輸入由獨立 Runtime 執行成功、registered_requests=0，原始範例 bytes 保持不變。
+  機器證據：`dist/documentation-check/d2d2e405b96c4081b77fa30aea8a587a/result.json`。
+- 指南中的 status／help 及 Python Service 建案範例實際執行，schema=14、version=0.1.0。
+  沒有啟動原生視窗，未執行真人操作、正式安裝器或整包升級回退；Stage 13 仍未完成。

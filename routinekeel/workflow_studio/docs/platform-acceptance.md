@@ -82,20 +82,22 @@ Ruff check／format **172 檔通過**。證據在 `dist/posix-repro/`，修正�
 | 範圍 | Ubuntu 24.04 | Windows 2025 | macOS 15 |
 |---|---|---|---|
 | 底座與流程（含 optional MCP） | 409 passed／3 skipped | 386 passed／26 skipped | 410 passed／2 skipped |
-| Studio 非桌面套件 | 523 passed／6 skipped／3 deselected | 執行中 | 523 passed／6 skipped／3 deselected |
-| Studio 耗時 | 214.65 秒 | 待結果 | 128.09 秒 |
+| Studio 非桌面套件 | 523 passed／6 skipped／3 deselected | 523 passed／6 skipped／3 deselected | 523 passed／6 skipped／3 deselected |
+| Studio 耗時 | 214.65 秒 | 1278.82 秒 | 128.09 秒 |
 
-已完成的 POSIX artifacts 均含 20 個固定發布故障報告及 100 次隔離執行紀錄；
+此 run 已 completed/success，六個測試 job 均 success，正式 publish skipped。
+三平台 artifacts 均含 20 個固定發布故障報告、三個真正程序中止及 100 次隔離執行紀錄；
 100 次實際成功、不同 run ID、成果重核通過、registered model calls=0。
-20 節點靜態驗證 p95：Ubuntu 1.763391 ms、macOS 1.143792 ms，皆低於 500 ms。
+20 節點靜態驗證 p95：Ubuntu 1.763391 ms、Windows 1.5033 ms、macOS 1.143792 ms，皆低於 500 ms。
 這是指定 runner 的量測，不推論任意硬體皆有相同效能。
 
-兩平台固定 IR hash 為 `457ff785685189c702672e5cd6be5815a9fad1b22bb2a11f45ffddd1d3fba1aa`，
+三平台固定 IR hash 為 `457ff785685189c702672e5cd6be5815a9fad1b22bb2a11f45ffddd1d3fba1aa`，
 實際輸出 hash 為 `99c09682844681a9f8d9b752336f037ae8efa85fa9c551699248cceb877fd73f`。
 artifact ZIP SHA-256 已與 GitHub metadata 核對：
 
 - macOS：`757c88434be0f3bcaf2f04ce17590af6481c258e27d5f6828353039a07028828`
 - Ubuntu：`e9ac10765ed5c025ecf4acd777a25baaf437e0cb9c81b6900fa431d6395c78ff`
+- Windows：`fe3ed4aaea9d3b0bd71c7c39a835b9af0da009e5ba45a0dbc6154fb99f2c32e1`
 
 下載的原始 artifacts 及彙整保存在 `dist/posix-repro/`，不提交到 Git。
 此結果只覆蓋該 commit；後續程式修正須另有回歸證據。真人、付費模型及原生視窗 Gate 仍未完成。
