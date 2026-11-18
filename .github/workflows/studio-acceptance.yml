@@ -40,10 +40,6 @@ jobs:
         run: |
           uv run --locked --project routinekeel/workflow_studio --group dev ruff check --config routinekeel/workflow_studio/pyproject.toml routinekeel/workflow_studio/src routinekeel/workflow_studio/scripts tests/studio tools/studio_release.py
           uv run --locked --project routinekeel/workflow_studio --group dev ruff format --check --config routinekeel/workflow_studio/pyproject.toml routinekeel/workflow_studio/src routinekeel/workflow_studio/scripts tests/studio tools/studio_release.py
-      - name: Run complete non-desktop Studio acceptance
-        env:
-          STUDIO_GATE_REPORT_DIR: ${{ runner.temp }}/studio-evidence
-        run: uv run --locked --project routinekeel/workflow_studio --group dev python -m pytest tests/studio -q -rs -k "not test_real_tk_buttons and not test_tk_analysis and not test_ui_state_multiline" --junitxml="${{ runner.temp }}/studio-evidence/studio-junit.xml"
       - name: Prepare isolated GUI test dependencies
         if: runner.os == 'Linux'
         timeout-minutes: 5
@@ -58,6 +54,10 @@ jobs:
           STUDIO_GATE_REPORT_DIR: ${{ runner.temp }}/studio-evidence
         run: |
           xvfb-run -a -s '-screen 0 1440x1000x24' uv run --locked --project routinekeel/workflow_studio --group dev python -m pytest tests/studio/test_ui_guidance.py -q -k headless --junitxml="${{ runner.temp }}/studio-evidence/guided-ui-junit.xml"
+      - name: Run complete non-desktop Studio acceptance
+        env:
+          STUDIO_GATE_REPORT_DIR: ${{ runner.temp }}/studio-evidence
+        run: uv run --locked --project routinekeel/workflow_studio --group dev python -m pytest tests/studio -q -rs -k "not test_real_tk_buttons and not test_tk_analysis and not test_ui_state_multiline" --junitxml="${{ runner.temp }}/studio-evidence/studio-junit.xml"
       - name: Build opt-in Studio distribution
         run: python tools/release.py --project studio
       - name: Verify packaged launchers and clean installation without desktop

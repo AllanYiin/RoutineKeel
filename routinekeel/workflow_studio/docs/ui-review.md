@@ -61,3 +61,9 @@ Studio 是新增的設計工作台，沿用本機 Tk 模式並呼叫底座 Workf
 環境準備與視窗測試已拆分，改用 Ubuntu 提供的
 [WenQuanYi Micro Hei 套件](https://packages.ubuntu.com/noble/fonts-wqy-microhei)（約 1.6 MB），
 並加入最後順位 CJK fallback；不改既有 Windows／macOS 優先字型，也未更動使用者系統字型設定。
+
+下一輪 run 44269782075 已成功準備虛擬環境，實際 Tk 初始化揭露 ttk.Label 的繼承 wraplength
+可能是空字串；已將此情況視為不換行，並補非桌面回歸。虛擬測試另捕捉 Tk callback 例外，
+避免錯誤對話框等待無人操作；視窗 Gate 移到完整套件之前，仍保留後續完整測試。
+另以測試重現背景工作結束時自動關閉會略過未儲存確認，已改為結束後先保留草稿並詢問保存／取消，
+取消關閉會繼續處理 UI 事件，且不擅自啟動原本已停止的後續工作。

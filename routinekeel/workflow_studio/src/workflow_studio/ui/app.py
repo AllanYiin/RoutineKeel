@@ -722,15 +722,15 @@ class StudioApp:
                 if hasattr(self.stop_button, "pack_forget"):
                     self.stop_button.pack_forget()
                 if self.close_requested:
-                    self.root.destroy()
-                    return
+                    if self.finish_requested_close():
+                        return
+                    continue
                 if kind == "error":
                     self.error(value)
                 else:
                     self.guard(lambda: callback(value))
                 self.refresh_actions()
-                if self.close_requested:
-                    self.root.destroy()
+                if self.finish_requested_close():
                     return
         except queue.Empty:
             pass
@@ -1338,6 +1338,22 @@ class StudioApp:
     def stop(self):
         self.cancelled.set()
         self.status.set("已要求停止，等待模型連線回應；尚未宣告完成。")
+
+    def finish_requested_close(self):
+        if not self.close_requested or self.busy:
+            return False
+        self.close_requested = False
+        try:
+            if self.model.project_id:
+                self.refresh_project()
+            if self.confirm_leave():
+                self.root.destroy()
+                return True
+        except Exception as exc:
+            self.error(exc)
+        self.status.set("後續操作已停止；視窗與未儲存內容仍保留。")
+        self.refresh_actions()
+        return False
 
     def close(self):
         if self.busy:

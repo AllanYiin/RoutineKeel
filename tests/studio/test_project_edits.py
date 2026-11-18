@@ -65,6 +65,34 @@ def controller(tmp_path):
     return app, project
 
 
+@pytest.mark.parametrize("save", [None, True])
+def test_background_close_respects_unsaved_draft_decision(tmp_path, monkeypatch, save):
+    import queue
+
+    app, project = controller(tmp_path)
+    app.goal_var.set("unsaved goal while background work finishes")
+    app.busy = app.close_requested = True
+    app.messages = queue.Queue()
+    started, closed, scheduled = [], [], []
+    app.messages.put(("done", lambda _value: started.append("next phase"), None))
+    app.stop_button = SimpleNamespace(configure=lambda **kw: None)
+    app.root = SimpleNamespace(
+        destroy=lambda: closed.append(True), after=lambda *args: scheduled.append(True)
+    )
+    monkeypatch.setattr("workflow_studio.ui.app.messagebox.askyesnocancel", lambda *a, **kw: save)
+    app._drain()
+    assert started == []
+    assert bool(closed) == (save is True)
+    with app.model.service() as studio:
+        saved_goal = studio.projects.get(project.project_id).goal["description"]
+    if save:
+        assert saved_goal == "unsaved goal while background work finishes"
+    else:
+        assert saved_goal == "original goal"
+        assert app.goal_var.get() == "unsaved goal while background work finishes"
+        assert not app.close_requested and scheduled
+
+
 def background_source(app):
     with app.model.service() as studio:
         p = studio.projects.get(app.model.project_id)

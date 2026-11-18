@@ -6,6 +6,22 @@ from tkinter import ttk
 from .widgets import BoundText, ScrollColumn
 
 
+def fit_wrapped_labels(parent, minimum_width):
+    for widget in parent.winfo_children():
+        if (
+            isinstance(widget, ttk.Label)
+            and widget.winfo_pixels(widget.cget("wraplength") or 0) > 0
+        ):
+            widget.bind(
+                "<Configure>",
+                lambda event, label=widget: label.configure(
+                    wraplength=max(minimum_width, event.width)
+                ),
+                add=True,
+            )
+        fit_wrapped_labels(widget, minimum_width)
+
+
 def build_workbench(app):
     root, family = app.root, app.display["font_family"]
 
@@ -543,14 +559,4 @@ def build_workbench(app):
         "先採用流程並提供正確成果樣本，再進行試做。\n\n只有驗證通過的版本才能核准發布。",
     )
 
-    def fit_wrapped_labels(parent):
-        for widget in parent.winfo_children():
-            if isinstance(widget, ttk.Label) and widget.winfo_pixels(widget.cget("wraplength")) > 0:
-                widget.bind(
-                    "<Configure>",
-                    lambda event, label=widget: label.configure(wraplength=max(s(80), event.width)),
-                    add=True,
-                )
-            fit_wrapped_labels(widget)
-
-    fit_wrapped_labels(root)
+    fit_wrapped_labels(root, s(80))

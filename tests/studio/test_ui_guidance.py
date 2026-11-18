@@ -11,6 +11,37 @@ def ready(**changes):
     return {"project": True, "name": "test", "goal": "copy", "success": "equal", **changes}
 
 
+def test_inherited_empty_label_wrap_does_not_break_window_construction(monkeypatch):
+    from workflow_studio.ui.layout import fit_wrapped_labels
+
+    class Label:
+        def __init__(self, wrap):
+            self.wrap, self.bound = wrap, None
+
+        def cget(self, name):
+            return self.wrap
+
+        def winfo_pixels(self, value):
+            assert value != "", "Tk rejects an empty screen distance"
+            return int(value)
+
+        def winfo_children(self):
+            return []
+
+        def bind(self, event, callback, **kwargs):
+            self.bound = callback
+
+        def configure(self, **kwargs):
+            self.wrap = kwargs["wraplength"]
+
+    plain, wrapping = Label(""), Label(270)
+    monkeypatch.setattr("workflow_studio.ui.layout.ttk.Label", Label)
+    fit_wrapped_labels(SimpleNamespace(winfo_children=lambda: [plain, wrapping]), 80)
+    assert plain.bound is None
+    wrapping.bound(SimpleNamespace(width=180))
+    assert wrapping.wrap == 180
+
+
 @pytest.mark.parametrize(
     "state, action",
     [
@@ -171,11 +202,17 @@ def test_headless_guidance_disabled_feedback_and_progressive_disclosure(tmp_path
 
     root = tk.Tk()
     root.withdraw()
+    errors = []
+    root.report_callback_exception = lambda kind, value, traceback: errors.append(
+        f"{kind.__name__}: {value}"
+    )
     app = StudioApp(tmp_path / "workspace", root=root)
+    app.error = lambda exc: errors.append(repr(exc))
     try:
         root.deiconify()
         root.update()
         root.focus_force()
+        assert not errors, errors
         assert app.next_button.winfo_ismapped()
         tools = next(b for b in app.buttons if b["text"] == "工具管理")
         assert not tools.winfo_ismapped()
@@ -192,6 +229,7 @@ def test_headless_guidance_disabled_feedback_and_progressive_disclosure(tmp_path
         assert app.current_guidance.action == "create_project"
         app.next_button.invoke()
         root.update()
+        assert not errors, errors
         assert app.current_guidance.action == "paste_source"
         sample = tmp_path / "sample.txt"
         sample.write_text("synthetic preview", encoding="utf-8")
@@ -200,6 +238,7 @@ def test_headless_guidance_disabled_feedback_and_progressive_disclosure(tmp_path
         )
         file_button.invoke()
         root.update()
+        assert not errors, errors
         assert len(app.source_tree.selection()) == 1
         assert "synthetic preview" in app.preview_text.get("1.0", "end")
         assert app.current_guidance.action == "configure_model"
@@ -251,6 +290,7 @@ def test_headless_guidance_disabled_feedback_and_progressive_disclosure(tmp_path
         )
         for column in app.columns:
             assert column.body.winfo_width() <= column.canvas.winfo_width() + 1
+        assert not errors, errors
         if os.environ.get("STUDIO_GATE_REPORT_DIR"):
             ImageGrab.grab().save(output / "guided-workbench-compact.png")
     finally:
