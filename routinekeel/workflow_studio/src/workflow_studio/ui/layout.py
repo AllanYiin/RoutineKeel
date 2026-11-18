@@ -148,10 +148,12 @@ def build_workbench(app):
     app.workspace_label.pack(side="bottom", fill="x")
     app.panes = ttk.Panedwindow(root, orient="horizontal")
     app.panes.pack(fill="both", expand=True, padx=s(14), pady=(0, s(14)))
-    app.columns = [ScrollColumn(app.panes, padding=s(12)) for _ in range(3)]
-    for column, weight in zip(app.columns, (3, 5, 4)):
+    app.columns = [ScrollColumn(app.panes, padding=s(12)) for _ in range(2)]
+    for column, weight in zip(app.columns, (3, 5)):
         app.panes.add(column, weight=weight)
-    left, center, right = [column.body for column in app.columns]
+    left, center = [column.body for column in app.columns]
+    right = ttk.Frame(app.panes, padding=s(12))
+    app.panes.add(right, weight=4)
 
     left.columnconfigure(0, weight=1)
     left.rowconfigure(4, weight=1)
@@ -439,8 +441,10 @@ def build_workbench(app):
 
     app.tabs = ttk.Notebook(right)
     app.tabs.pack(fill="both", expand=True)
-    preview, analysis, result = [ttk.Frame(app.tabs, padding=s(10)) for _ in range(3)]
-    for tab, name in zip((preview, analysis, result), ("來源預覽", "分析與疑問", "試做與發布")):
+    tab_columns = [ScrollColumn(app.tabs, padding=s(10)) for _ in range(3)]
+    preview, analysis, result = [column.body for column in tab_columns]
+    app.columns.append(tab_columns[2])
+    for tab, name in zip(tab_columns, ("來源預覽", "分析與疑問", "試做與發布")):
         app.tabs.add(tab, text=name)
     app.preview_label = ttk.Label(
         preview, text="尚未選取來源", wraplength=s(330), font=(family, 11, "bold")

@@ -11,6 +11,14 @@ def ready(**changes):
     return {"project": True, "name": "test", "goal": "copy", "success": "equal", **changes}
 
 
+def capture_window(root, path):
+    from PIL import ImageGrab
+
+    root.update_idletasks()
+    x, y = root.winfo_rootx(), root.winfo_rooty()
+    ImageGrab.grab(bbox=(x, y, x + root.winfo_width(), y + root.winfo_height())).save(path)
+
+
 def test_inherited_empty_label_wrap_does_not_break_window_construction(monkeypatch):
     from workflow_studio.ui.layout import fit_wrapped_labels
 
@@ -266,18 +274,18 @@ def test_headless_guidance_disabled_feedback_and_progressive_disclosure(tmp_path
         if os.environ.get("STUDIO_GATE_REPORT_DIR"):
             from pathlib import Path
 
-            from PIL import ImageGrab
-
             output = Path(os.environ["STUDIO_GATE_REPORT_DIR"])
             output.mkdir(parents=True, exist_ok=True)
-            ImageGrab.grab().save(output / "guided-workbench.png")
+            capture_window(root, output / "guided-workbench.png")
         root.geometry(f"{round(980 * app.display['scale'])}x{round(640 * app.display['scale'])}")
         app.advanced_var.set(True)
         app.refresh_actions()
         app.tabs.select(2)
         root.update()
+        tabs_top = app.tabs.winfo_rooty()
         app.actor_entry.focus_set()
         root.update()
+        assert app.tabs.winfo_rooty() == tabs_top
         assert (
             app.next_button.winfo_rooty() + app.next_button.winfo_height()
             <= root.winfo_rooty() + root.winfo_height()
@@ -292,18 +300,15 @@ def test_headless_guidance_disabled_feedback_and_progressive_disclosure(tmp_path
             assert column.body.winfo_width() <= column.canvas.winfo_width() + 1
         assert not errors, errors
         if os.environ.get("STUDIO_GATE_REPORT_DIR"):
-            ImageGrab.grab().save(output / "guided-workbench-compact.png")
+            capture_window(root, output / "guided-workbench-compact.png")
     finally:
         if os.environ.get("STUDIO_GATE_REPORT_DIR"):
             try:
                 from pathlib import Path
 
-                from PIL import ImageGrab
-
                 output = Path(os.environ["STUDIO_GATE_REPORT_DIR"])
                 output.mkdir(parents=True, exist_ok=True)
-                root.update_idletasks()
-                ImageGrab.grab().save(output / "guided-workbench-final.png")
+                capture_window(root, output / "guided-workbench-final.png")
             except Exception as exc:
                 (output / "guided-screenshot-error.txt").write_text(str(exc), encoding="utf-8")
         root.destroy()
