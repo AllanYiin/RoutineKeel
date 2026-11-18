@@ -5,6 +5,7 @@ See PROVENANCE.md for scope and upstream hash.
 from __future__ import annotations
 import csv, hashlib, html, json, math, re, shutil, unicodedata, wave
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 
 
@@ -141,14 +142,63 @@ def edited_rows(rows: list[dict], edits: dict, timing_edits: dict | None = None,
         result.append(clone)
     return result
 
-def cues_from(rows: list[dict], config: dict, duration: float) -> tuple[list[dict], list[dict]]:
+def display_chunks(row, config, cursor, end, cues, issues):
+    source = row["text"]
+    chunks = split_text(source, config["max_line_width"])
+    timed_words = row.get("words") or []
+    word_chars = "".join(normalize(word["text"], config.get("traditional_chinese", True)) for word in timed_words)
+    word_timing_ok = word_chars.replace(" ", "") == source.replace(" ", "")
+    word_positions = []
+    if word_timing_ok:
+        chars = 0
+        for word in timed_words:
+            chars += len(normalize(word["text"], config.get("traditional_chinese", True)).replace(" ", ""))
+            word_positions.append((chars, float(word["end"])))
+    consumed = 0
+    for index, chunk in enumerate(chunks):
+        remaining = sum(max(width(part), 1) for part in chunks[index:])
+        if index == len(chunks) - 1:
+            chunk_end = end
+        elif word_timing_ok:
+            consumed += len(chunk.replace(" ", ""))
+            candidates = [time for position, time in word_positions if position >= consumed and time > cursor]
+            chunk_end = min(end, candidates[0]) if candidates else cursor
+            if chunk_end <= cursor:
+                chunk_end = cursor + (end - cursor) * max(width(chunk), 1) / remaining
+                word_timing_ok = False
+        else:
+            chunk_end = cursor + (end - cursor) * max(width(chunk), 1) / remaining
+        text = wrap(chunk, config["max_line_width"])
+        cues.append({"start": round(cursor, 3), "end": round(chunk_end, 3),
+                     "text": text, "source_id": row["id"]})
+        cursor = chunk_end
+    if len(chunks) > 1 and not word_timing_ok:
+        issues.append({"id": row["id"], "reason": "approximate_split_timing",
+                       "text": source, "start": row["start"], "end": row["end"]})
+
+
+def wrap_retained(text, line_width):
+    # A continuous passage can exceed both display limits. Keep its single timecode,
+    # preserve every character, and let QA report the excess lines.
+    lines, start, used = [], 0, 0
+    if width(text) <= 2 * line_width:
+        return wrap(text, line_width)
+    for i, char in enumerate(text):
+        char_width = width(char)
+        if used + char_width > line_width:
+            lines.append(text[start:i])
+            start, used = i, 0
+        used += char_width
+    lines.append(text[start:])
+    return "\n".join(lines)
+
+
+def cues_from(rows: list[dict], config: dict, duration: float, *, find_pauses=None, pause_log=None) -> tuple[list[dict], list[dict]]:
     cues, issues = [], []
+    limit = math.floor(config["max_cue_seconds"] * 1000)
     for row in rows:
         source = row["text"]
         if not source:
-            continue
-        chunks = split_text(source, config["max_line_width"])
-        if not chunks:
             continue
         cursor = max(0.0, float(row["start"]))
         end = min(duration, float(row["end"]))
@@ -156,36 +206,26 @@ def cues_from(rows: list[dict], config: dict, duration: float) -> tuple[list[dic
             issues.append({"id": row["id"], "reason": "invalid_timing", "text": source,
                            "start": cursor, "end": end})
             continue
-        timed_words = row.get("words") or []
-        word_chars = "".join(normalize(word["text"]) for word in timed_words)
-        word_timing_ok = word_chars.replace(" ", "") == source.replace(" ", "")
-        word_positions = []
-        if word_timing_ok:
-            chars = 0
-            for word in timed_words:
-                chars += len(normalize(word["text"]).replace(" ", ""))
-                word_positions.append((chars, float(word["end"])))
-        consumed = 0
-        for index, chunk in enumerate(chunks):
-            remaining = sum(max(width(part), 1) for part in chunks[index:])
-            if index == len(chunks) - 1:
-                chunk_end = end
-            elif word_timing_ok:
-                consumed += len(chunk.replace(" ", ""))
-                candidates = [time for position, time in word_positions if position >= consumed and time > cursor]
-                chunk_end = min(end, candidates[0]) if candidates else cursor
-                if chunk_end <= cursor:
-                    chunk_end = cursor + (end - cursor) * max(width(chunk), 1) / remaining
-                    word_timing_ok = False
-            else:
-                chunk_end = cursor + (end - cursor) * max(width(chunk), 1) / remaining
-            text = wrap(chunk, config["max_line_width"])
-            cues.append({"start": round(cursor, 3), "end": round(chunk_end, 3),
-                         "text": text, "source_id": row["id"]})
-            cursor = chunk_end
-        if len(chunks) > 1 and not word_timing_ok:
-            issues.append({"id": row["id"], "reason": "approximate_split_timing",
-                           "text": source, "start": row["start"], "end": row["end"]})
+        first, last = round(cursor * 1000), round(end * 1000)
+        if last - first > limit:
+            gaps = find_pauses(first, last) if find_pauses else None
+            parts, cuts, retained = domain_module("pause_splitting").partition(
+                row, first, last, limit, config["max_line_width"] * config["max_lines"], gaps,
+                lambda word: normalize(word, config.get("traditional_chinese", True)), width)
+            if pause_log is not None:
+                pause_log.append({"source_id": row["id"], "start_ms": first, "end_ms": last,
+                                  "measured_pauses_ms": gaps, "cuts": cuts, "retained": retained})
+            for start_ms, end_ms, text in parts:
+                cues.append({"start": start_ms / 1000, "end": end_ms / 1000,
+                             "text": wrap_retained(text, config["max_line_width"]), "source_id": row["id"]})
+            if any(c["text_mapping"] == "estimated_text" for c in cuts):
+                issues.append({"id": row["id"], "reason": "pause_text_estimated", "text": source,
+                               "start": cursor, "end": end})
+            for fragment in retained:
+                issues.append({"id": row["id"], "reason": fragment["reason"], "text": source,
+                               "start": fragment["start_ms"] / 1000, "end": fragment["end_ms"] / 1000})
+        else:
+            display_chunks(row, config, cursor, end, cues, issues)
         if row.get("avg_logprob") is not None and row["avg_logprob"] < config["low_logprob_threshold"]:
             issues.append({"id": row["id"], "reason": "low_asr_confidence",
                            "text": source, "start": row["start"], "end": row["end"]})
@@ -214,27 +254,37 @@ def validate(cues: list[dict], config: dict, duration: float) -> list[dict]:
                              else "error"})
         if span < config["min_cue_seconds"]:
             findings.append({"cue": index, "reason": "short_duration", "severity": "review"})
-        elif span > config["max_cue_seconds"]:
+        elif round(cue["end"] * 1000) - round(cue["start"] * 1000) > math.floor(config["max_cue_seconds"] * 1000):
             findings.append({"cue": index, "reason": "long_duration", "severity": "error"})
         previous = cue
     return findings
 
-def ease_short_cues(cues: list[dict], config: dict, duration: float) -> list[dict]:
+def ease_short_cues(cues: list[dict], config: dict, duration: float, skipped_silence=(), fixed_ids=()) -> list[dict]:
     """Use nearby free display time; never overlap speech or hold across a long gap."""
+    from bisect import bisect_right
+    gap_ends = [gap["end"] for gap in skipped_silence]
     adjusted = [dict(cue) for cue in cues]
     for index, cue in enumerate(adjusted):
+        if cue.get("source_id") in fixed_ids:
+            continue
         readable_width = sum(width(line) for line in cue["text"].splitlines())
         target = max(config["min_cue_seconds"], readable_width / config["max_cps"])
+        target = min(target, config.get("max_cue_seconds", math.inf))
         missing = target - (cue["end"] - cue["start"])
         if missing <= 0:
             continue
+        gap_index = bisect_right(gap_ends, cue["start"] + 0.0005)
+        floor = gap_ends[gap_index - 1] if gap_index else 0
+        ceiling = skipped_silence[gap_index]["start"] if gap_index < len(gap_ends) else duration
+        if cue["end"] > ceiling + 0.0005:
+            continue  # Keep an explicitly retimed cue as written.
         next_start = adjusted[index + 1]["start"] if index + 1 < len(adjusted) else duration
-        postroll = min(missing, max(0, next_start - cue["end"]), 1.5)
+        postroll = min(missing, max(0, min(next_start, ceiling) - cue["end"]), 1.5)
         cue["end"] = round(cue["end"] + postroll, 3)
         missing -= postroll
         if missing > 0:
             previous_end = adjusted[index - 1]["end"] if index else 0
-            preroll = min(missing, max(0, cue["start"] - previous_end), 0.4)
+            preroll = min(missing, max(0, cue["start"] - max(previous_end, floor)), 0.4)
             cue["start"] = round(cue["start"] - preroll, 3)
     return adjusted
 
@@ -308,7 +358,18 @@ def build(out: Path, config: dict, force_rebuild: bool = False, source_audio=Non
     timing_path = out / "timing_edits.json"
     timing_edits = read_json(timing_path) if timing_path.exists() else {}
     rows = edited_rows(rows, edits, timing_edits, config.get('traditional_chinese', True))
-    cues, issues = cues_from(rows, config, float(manifest["duration"]))
+    duration = float(manifest["duration"])
+    vad_path = out / "vad_regions.json"
+    vad = read_json(vad_path) if vad_path.is_file() else {}
+    splitter = domain_module("pause_splitting")
+    threshold = vad.get("parameters", {}).get("threshold", 0.4)
+    audio, track = None, "not_needed"
+    limit = math.floor(config["max_cue_seconds"] * 1000)
+    if any(row["text"] and round(min(duration, row["end"]) * 1000) - round(max(0, row["start"]) * 1000) > limit for row in rows):
+        audio, track = splitter.analysis_track(source_audio, vad, sha256)
+    pause_rows = []
+    cues, issues = cues_from(rows, config, duration, pause_log=pause_rows,
+                            find_pauses=lambda a, b: splitter.acoustic_pauses(audio, a, b, threshold))
     timing_issue_path = out / 'timing_issues.json'
     if timing_issue_path.exists():
         by_id = {row['id']: row for row in rows}
@@ -316,7 +377,8 @@ def build(out: Path, config: dict, force_rebuild: bool = False, source_audio=Non
             row = by_id[finding['id']]
             issues.append({'id': row['id'], 'reason': 'invalid_word_timeline',
                            'text': row['text'], 'start': row['start'], 'end': row['end']})
-    cues = ease_short_cues(cues, config, float(manifest["duration"]))
+    fixed_ids = {entry["source_id"] for entry in pause_rows}
+    cues = ease_short_cues(cues, config, duration, vad.get("skipped_silence", []), fixed_ids)
     findings = validate(cues, config, float(manifest["duration"]))
     row_by_id = {row["id"]: row for row in rows}
     for finding in findings:
@@ -341,6 +403,9 @@ def build(out: Path, config: dict, force_rebuild: bool = False, source_audio=Non
             old_version.write_bytes(srt_path.read_bytes())
     srt_path.write_text(srt, encoding="utf-8")
     write_json(out / "cues.json", cues)
+    write_json(out / "pause_splits.json", {"audio_track": track, "threshold": threshold,
+               "minimum_pause_ms": splitter.MIN_PAUSE_MS, "max_cue_seconds": config["max_cue_seconds"],
+               "segments": pause_rows})
     packet, capped = review_packet(rows, issues, config)
     write_json(out / "review_packet.json", {
         "purpose": "Only flagged segments; no automatic LLM call", "segments": packet,
@@ -413,6 +478,8 @@ def build(out: Path, config: dict, force_rebuild: bool = False, source_audio=Non
     summary.update(review='review.html', review_table=delivery['table'],
                    transcript=delivery['transcript'], delivery_zip=delivery['archive'],
                    review_segments=len({issue['id'] for issue in issues}))
+    summary.update(pause_split_count=sum(len(r["cuts"]) for r in pause_rows),
+                   pause_retained_count=sum(len(r["retained"]) for r in pause_rows))
     write_json(out / 'summary.json', summary)
     print(f"{decision}: {len(cues)} cues, {len(issues)} review items, "
           f"{len(hard_findings)} hard findings, {len(findings) - len(hard_findings)} review findings")
@@ -435,9 +502,14 @@ def approve(out: Path, config: dict, reviewer: str, reviewed_issues: int, source
     build(out, config, source_audio=source_audio)
 
 
-def human_review():
+@lru_cache(maxsize=2)
+def domain_module(name):
     import importlib.util
-    spec = importlib.util.spec_from_file_location('flow_human_review', Path(__file__).with_name('human_review.py'))
+    spec = importlib.util.spec_from_file_location("flow_" + name, Path(__file__).with_name(name + ".py"))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def human_review():
+    return domain_module("human_review")

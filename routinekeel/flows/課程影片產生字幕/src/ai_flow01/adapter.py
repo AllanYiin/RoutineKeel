@@ -6,7 +6,7 @@ from flow_base.engine import Context, merge
 from flow_base.runtime import FlowError, atomic_json, atomic_bytes, digest, read_json, require_space, sha256, memory_info, event, run_process, inspect_environment
 from flow_base.resources import check_resource, ensure_resource, resource_path
 from .contracts import Workflow, Step, subtitle_workflow
-from .resources import catalogue
+from .resources import SEPARATOR, SEPARATOR_PROFILE, catalogue
 from .subtitles import HANDLERS
 
 def resolve_environment(workflow, environment):
@@ -48,9 +48,9 @@ def ensure_resolved(runtime, workflow):
 
 def configure_profile(runtime, workflow):
     ensure_resolved(runtime, workflow)
-    path = Path(__file__).parent / 'profiles' / workflow.profile
-    runtime.register_profile(workflow.profile, path)
-    runtime.workers[workflow.profile] = Path(__file__).with_name('worker.py')
+    for profile in (workflow.profile, SEPARATOR_PROFILE):
+        runtime.register_profile(profile, Path(__file__).parent / 'profiles' / profile)
+        runtime.workers[profile] = Path(__file__).with_name('worker.py')
 
 def is_speech(workflow):
     return True
@@ -76,6 +76,9 @@ def plan(runtime, workflow, source=None, output=None):
                               "allow_cpu_fallback": workflow.options.allow_cpu_fallback,
                               "initial_prompt": workflow.options.initial_prompt,
                               "initial_prompt_enabled": workflow.options.initial_prompt_enabled},
+              "audio_preprocessing": {"order": ["spectral_denoise", "demucs_vocals", "volume_normalize"],
+                                      "model": SEPARATOR, "profile": SEPARATOR_PROFILE},
+              "vad": {k: v for k, v in workflow.options.model_dump().items() if k.startswith("vad_")},
               "review": {"enabled": False, "llm_calls": 0, "llm_tokens": 0, "human_review_required": True},
               "pipeline": [s.handler for s in workflow.steps], "execution_selection": workflow.execution_selection}
     registry = handlers()
@@ -91,14 +94,21 @@ def plan(runtime, workflow, source=None, output=None):
         _, python = runtime.environment(workflow.profile)
         if not python.is_file():
             result["actions"].append({"action": "prepare_environment", "profile": workflow.profile})
-        status = check_resource(runtime, catalogue()[workflow.model]) if is_speech(workflow) else {"ready": True, "download_bytes": 0}
-        if not status["ready"]:
-            result["actions"].append({"action": "download_resource", **status})
-        estimated = status["download_bytes"] * 2 + workflow.options.min_free_bytes
+        resources = catalogue()
+        download_bytes = 0
+        for model_id in (workflow.model, SEPARATOR):
+            status = check_resource(runtime, resources[model_id])
+            if not status["ready"]:
+                result["actions"].append({"action": "download_resource", **status})
+                download_bytes += status["download_bytes"]
+        estimated = download_bytes * 2 + workflow.options.min_free_bytes
         # Conservative configurable headroom, not a provider/package size guarantee.
         env_allowance = (4 if workflow.profile == "asr-cuda" else 1) * 1024**3 if not python.is_file() else 0
+        if not runtime.environment(SEPARATOR_PROFILE)[1].is_file():
+            result["actions"].append({"action": "prepare_environment", "profile": SEPARATOR_PROFILE})
+            env_allowance += 2 * 1024**3
         estimated += env_allowance
-        result["estimates"] = {"resource_download_bytes": status["download_bytes"], "environment_allowance_bytes": env_allowance,
+        result["estimates"] = {"resource_download_bytes": download_bytes, "environment_allowance_bytes": env_allowance,
                                "model_memory_allowance_bytes": model_memory_bytes(workflow),
                                "home_required_bytes": estimated, "note": "installation peaks and media size vary; runtime rechecks space"}
         if env["free_bytes"]["home"] < estimated:
@@ -131,6 +141,11 @@ def prepare(runtime, workflow, *, offline=False):
         return {"ok": True, "profile": workflow.profile, "python_executable": str(python)}
     event("prepare_model", engine='faster-whisper', model=workflow.model, revision=catalogue()[workflow.model].revision)
     root = ensure_resource(runtime, catalogue()[workflow.model], offline=offline, reserve_bytes=workflow.options.min_free_bytes)
+    event("prepare_environment", profile=SEPARATOR_PROFILE)
+    runtime.prepare_profile(SEPARATOR_PROFILE, offline=offline)
+    separator = catalogue()[SEPARATOR]
+    event("prepare_model", engine="Demucs", model=separator.id, revision=separator.revision)
+    ensure_resource(runtime, separator, offline=offline, reserve_bytes=workflow.options.min_free_bytes)
     return {"ok": True, "profile": workflow.profile, "model_path": str(root)}
 
 
@@ -155,6 +170,11 @@ def verify(runtime, workflow):
                                                "device": device, "allow_cpu_fallback": workflow.options.allow_cpu_fallback,
                               "initial_prompt": workflow.options.initial_prompt,
                               "initial_prompt_enabled": workflow.options.initial_prompt_enabled}, timeout=300)
+    separator = catalogue()[SEPARATOR]
+    if not check_resource(runtime, separator)["ready"]:
+        raise FlowError("RESOURCE_MISSING", "Demucs weights are missing or damaged", resource=SEPARATOR)
+    weights = resource_path(runtime, separator) / separator.files[0].path
+    result["separator"] = runtime.worker(SEPARATOR_PROFILE, {"action": "verify_separator", "weights": str(weights)}, timeout=300)
     result['profile'] = workflow.profile
     result['execution_selection'] = {**workflow.execution_selection, 'backend_verified': True,
                                     'actual_device': result['device'], 'fallback': result.get('fallback')}
@@ -167,7 +187,8 @@ def verify(runtime, workflow):
 def step_settings(workflow, handler, prepared):
     o = workflow.options.model_dump()
     if handler == "media.extract":
-        return {"max_audio_seconds": o["max_audio_seconds"], "profile": workflow.profile}
+        return {"max_audio_seconds": o["max_audio_seconds"], "profile": workflow.profile,
+                "separator": catalogue()[SEPARATOR].model_dump()}
     if handler == 'speech.vad':
         return {k: v for k, v in o.items() if k.startswith('vad_')}
     if handler == "speech.transcribe":
@@ -200,7 +221,7 @@ class Adapter(BaseAdapter):
     handlers = HANDLERS
 
     def step_title(self, step):
-        return {'media.extract':'抽取影片音訊','speech.vad':'偵測並保存語音區段',
+        return {'media.extract':'抽取原音、去噪、Demucs 人聲分離與音量標準化','speech.vad':'偵測語音並跳過長靜音',
                 'speech.transcribe':'逐區辨識與原片時間映射','text.review':'整理本機審閱資料',
                 'subtitle.export':'字幕輸出、品質檢查與疑義原音'}.get(step.handler, step.id)
 
@@ -251,7 +272,8 @@ class Adapter(BaseAdapter):
         if duration is not None and duration > workflow.options.max_audio_seconds:
             raise FlowError('AUDIO_LIMIT', 'Media exceeds configured duration limit', duration=duration)
         duration = duration or workflow.options.max_audio_seconds
-        require_space(runtime.home, int(duration * 16000 * 2) + workflow.options.min_free_bytes)
+        # Original PCM16, temporary vocal float32 and normalized PCM16 can coexist.
+        require_space(runtime.home, int(duration * 16000 * 8) + workflow.options.min_free_bytes)
         available = memory_info()['available']
         required = int(duration * 16000 * 12) + model_memory_bytes(workflow)
         if available is not None and available < required:
@@ -324,6 +346,13 @@ class Adapter(BaseAdapter):
     def artifact_valid(self, runtime, handler, artifact):
         # The host already verifies the primary artifact hash. Only JSON bundles
         # need domain-specific sidecar checks; decoded audio is a binary WAV.
+        if handler == 'media.extract' and artifact.suffix == '.json':
+            from .subtitles import extracted_tracks
+            try:
+                extracted_tracks(artifact)
+                return True
+            except (OSError, KeyError, TypeError, ValueError, FlowError):
+                return False
         if handler not in {'speech.vad', 'subtitle.export'}:
             return True
         try:

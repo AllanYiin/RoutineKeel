@@ -97,5 +97,18 @@
         "size": 1068114
       }
     ]
+  },
+  {
+    "id": "demucs-musdb-plus",
+    "revision": "torchaudio-2.6.0-a004b279",
+    "license": "Official PyTorch Audio pretrained weights. See upstream HDEMUCS_HIGH_MUSDB_PLUS model documentation.",
+    "files": [
+      {
+        "path": "hdemucs_high_trained.pt",
+        "url": "https://download.pytorch.org/torchaudio/models/hdemucs_high_trained.pt",
+        "size": 334697255,
+        "sha256": "a004b2790d73ffeaa535db458a1a79b539dfdbafbccc31f275d07e632ebd7816"
+      }
+    ]
   }
 ]

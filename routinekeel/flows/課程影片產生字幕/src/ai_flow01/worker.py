@@ -13,6 +13,20 @@ import wave
 from pathlib import Path
 
 
+def sibling_module(name):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name(name + ".py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+if __package__:
+    from . import audio_preparation
+else:
+    audio_preparation = sibling_module("audio_preparation")
+
+
 def save(path, data):
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -40,61 +54,24 @@ def configure_cuda_libraries():
 
 
 def extract(req):
-    import av
-    source, dest = req["input"], Path(req["output"])
+    dest = Path(req["output"])
     dest.parent.mkdir(parents=True, exist_ok=True)
     temp = dest.with_name(dest.name + ".part")
-    limit = int(req["max_audio_seconds"] * 16000)
-    written = 0
-    last_progress = 0.0
-    with av.open(source) as container, wave.open(str(temp), "wb") as out:
-        if not container.streams.audio:
-            raise ValueError("NO_AUDIO_STREAM: input contains no audio")
-        stream = container.streams.audio[0]
-        total_seconds = float(container.duration) / 1000000 if container.duration else None
-        origin = float(container.start_time or 0) / 1000000
-        resampler = av.AudioResampler(format="s16", layout="mono", rate=16000)
-        out.setnchannels(1)
-        out.setsampwidth(2)
-        out.setframerate(16000)
-
-        def write_frame(frame):
-            nonlocal written, last_progress
-            # Audio PTS are mapped onto the media timeline; gaps remain silence.
-            position = written if frame.pts is None else max(0, round((float(frame.pts * frame.time_base) - origin) * 16000))
-            data = frame.to_ndarray().tobytes()
-            samples = len(data) // 2
-            if position + samples > limit:
-                raise ValueError("AUDIO_LIMIT: maximum audio duration exceeded")
-            if position > written:
-                gap = position - written
-                while gap:
-                    n = min(gap, 16000)
-                    out.writeframesraw(b"\x00\x00" * n)
-                    gap -= n
-                written = position
-            elif position < written:
-                trim = min(written - position, samples)
-                data = data[trim * 2:]
-            out.writeframesraw(data)
-            written += len(data) // 2
-            now = time.monotonic()
-            if total_seconds and written / 16000 <= total_seconds and now-last_progress >= 1:
-                print(json.dumps({'event':'progress','completed':written/16000,'total':total_seconds,
-                                  'unit':'秒音訊','label':'抽取音訊'}),flush=True)
-                last_progress = now
-
-        for frame in container.decode(stream):
-            for converted in resampler.resample(frame):
-                write_frame(converted)
-        for converted in resampler.resample(None):
-            write_frame(converted)
-    if not written:
+    written, last_progress = 0, 0.0
+    try:
+        with wave.open(str(temp), "wb") as out:
+            out.setparams((1, 2, 16000, 0, "NONE", "not compressed"))
+            for pcm, total in audio_preparation.pcm_blocks(req["input"], 16000, "mono", req["max_audio_seconds"]):
+                out.writeframesraw(pcm.tobytes())
+                written += pcm.shape[1]
+                now = time.monotonic()
+                if total and written / 16000 <= total and now - last_progress >= 1:
+                    print(json.dumps({"event": "progress", "completed": written / 16000, "total": total,
+                                      "unit": "秒音訊", "label": "抽取原音"}), flush=True)
+                    last_progress = now
+        temp.replace(dest)
+    finally:
         temp.unlink(missing_ok=True)
-        raise ValueError("EMPTY_AUDIO: no decoded samples")
-    temp.replace(dest)
-    print(json.dumps({'event':'progress','completed':written/16000,'total':written/16000,
-                      'unit':'秒音訊','label':'抽取音訊'}),flush=True)
     return {"audio": str(dest), "duration": written / 16000, "sample_rate": 16000}
 
 
@@ -201,16 +178,42 @@ def read_pcm(path):
         return np.frombuffer(wav.readframes(wav.getnframes()), dtype=np.int16)
 
 
+def pad_speech_regions(detected, length, pad, skip_samples):
+    """Add context on short gaps only; record and fully exclude longer gaps."""
+    regions = [dict(r) for r in detected]
+    skipped = []
+    for index in range(len(regions) + 1):
+        left = detected[index - 1]["end"] if index else 0
+        right = detected[index]["start"] if index < len(regions) else length
+        gap = right - left
+        if gap > skip_samples:
+            skipped.append({"start_sample": left, "end_sample": right,
+                            "start": left / 16000, "end": right / 16000})
+            continue
+        context = min(pad, gap // 2 if 0 < index < len(regions) else gap)
+        if index:
+            regions[index - 1]["end"] += context
+        if index < len(regions):
+            regions[index]["start"] -= context
+    return regions, skipped
+
+
 def vad(req):
     import numpy as np
     from faster_whisper.vad import get_speech_timestamps, VadOptions
     pcm = read_pcm(req['input'])
     audio = pcm.astype(np.float32) / 32768.0
+    threshold = req.get('vad_threshold', 0.3)
+    minimum = req.get('vad_min_speech_ms', 250)
+    split_ms = req.get('vad_min_silence_ms', 2200)
+    skip = req.get('vad_skip_silence_seconds', 3.0)
+    maximum = req.get('vad_max_speech_seconds', 28)
+    pad_ms = min(req.get('vad_speech_pad_ms', 250), maximum * 1000 / 4)
     detected = get_speech_timestamps(audio, VadOptions(
-        threshold=req.get('vad_threshold', 0.4), min_speech_duration_ms=req.get('vad_min_speech_ms', 150),
-        min_silence_duration_ms=req.get('vad_min_silence_ms', 550),
-        speech_pad_ms=req.get('vad_speech_pad_ms', 250), max_speech_duration_s=req.get('vad_max_speech_seconds', 28)))
-    regions = detected
+        threshold=threshold, min_speech_duration_ms=minimum,
+        min_silence_duration_ms=min(split_ms, math.ceil(skip * 1000)),
+        speech_pad_ms=0, max_speech_duration_s=maximum - 2 * pad_ms / 1000))
+    regions, skipped = pad_speech_regions(detected, len(pcm), round(pad_ms * 16), round(skip * 16000))
     target = Path(req['output'])
     folder = target.parent / 'audio'
     folder.mkdir(parents=True, exist_ok=True)
@@ -226,8 +229,11 @@ def vad(req):
         entries.append({'id': index, 'start_sample': region['start'], 'end_sample': region['end'],
                         'start': region['start'] / 16000, 'end': region['end'] / 16000,
                         'audio_file': 'audio/' + name, 'sha256': file_hash(path)})
-    save(target, {'schema_version': 1, 'duration': len(pcm) / 16000, 'sample_rate': 16000,
-                  'source_sha256': file_hash(req['input']), 'regions': entries})
+    save(target, {'schema_version': 2, 'duration': len(pcm) / 16000, 'sample_rate': 16000,
+                  'analysis_audio_sha256': file_hash(req['input']), 'regions': entries, 'skipped_silence': skipped,
+                  'parameters': {'threshold': threshold, 'min_speech_duration_ms': minimum,
+                                 'min_silence_duration_ms': split_ms, 'skip_silence_seconds': skip,
+                                 'speech_pad_ms': pad_ms, 'max_speech_duration_s': maximum}})
     return {'regions': len(entries), 'duration': len(pcm) / 16000}
 
 
@@ -270,10 +276,12 @@ def transcribe(req):
                                              initial_prompt=req.get('prompt') or None)
             items = []
             for segment in segments:
-                if segment.end <= segment.start or not segment.text.strip():
-                    continue
                 offset = region['start']
-                items.append({'start': round(segment.start + offset, 6), 'end': round(segment.end + offset, 6),
+                start = max(0.0, segment.start)
+                end = min(region['end'] - offset, segment.end)
+                if end <= start or not segment.text.strip():
+                    continue
+                items.append({'start': round(start + offset, 6), 'end': round(end + offset, 6),
                               'text': convert(segment.text.strip()), 'recognizer_text': segment.text.strip(),
                               'words': [{'start': round(w.start + offset, 6), 'end': round(w.end + offset, 6), 'word': convert(w.word)}
                                         for w in (segment.words or []) if w.end >= w.start],
@@ -296,16 +304,15 @@ def transcribe(req):
             'duration_after_vad': sum(r['end'] - r['start'] for r in plan['regions']),
             'vad_regions': plan['regions'], 'region_progress': progress, 'device': device, 'fallback': fallback,
             'engine': 'faster-whisper', 'model': req.get('model'), 'model_revision': req.get('model_revision')}
+    if 'preprocessing' in plan:
+        data.update(preprocessing=plan['preprocessing'], skipped_silence=plan['skipped_silence'],
+                    vad_parameters=plan['parameters'], analysis_audio_sha256=plan['analysis_audio_sha256'])
     save(target, data)
     return {'segments': len(rows), 'device': device, 'regions': len(progress)}
 
 
 def domain_core():
-    import importlib.util
-    spec = importlib.util.spec_from_file_location('portable_core', Path(__file__).with_name('portable_core.py'))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return sibling_module("portable_core")
 
 
 def qa_bundle(req):
@@ -325,7 +332,7 @@ def qa_bundle(req):
     save(out / 'asr_details.json', data)
     save(out / 'timing_issues.json', data.get('timing_issues', []))
     save(out / 'review_config.json', config)
-    save(out / 'manifest.json', {'version': 'flow-subtitles-0.3.4', 'source': '', 'source_title': req.get('source_title', '課程影片'),
+    save(out / 'manifest.json', {'version': 'flow-subtitles-0.4.1', 'source': '', 'source_title': req.get('source_title', '課程影片'),
                                 'duration': data['duration'], 'model': data['model'], 'model_revision': data['model_revision'],
                                 'config_sha256': value_hash(config), 'source_sha256': req['source_sha256']})
     # portable-srt hashes JSON with its default ensure_ascii setting.
@@ -334,7 +341,11 @@ def qa_bundle(req):
     manifest['config_sha256'] = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
     save(out / 'manifest.json', manifest)
     save(out / 'flow_context.json', req['flow_context'])
-    save(out / 'vad_regions.json', {'regions': data.get('vad_regions', []), 'sample_rate':16000})
+    vad_result = {'regions': data.get('vad_regions', []), 'sample_rate':16000}
+    if 'preprocessing' in data:
+        vad_result.update(preprocessing=data['preprocessing'], skipped_silence=data['skipped_silence'],
+                          parameters=data['vad_parameters'], analysis_audio_sha256=data['analysis_audio_sha256'])
+    save(out / 'vad_regions.json', vad_result)
     save(out / 'region_progress.json', {'regions': data.get('region_progress', [])})
     core.build(out, config, source_audio=req['source_audio'])
     finish_review_files(out)
@@ -378,7 +389,10 @@ def review_operation(req):
 def main():
     req = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
     action = req["action"]
-    handlers = {"extract": extract, "probe": probe, "verify": verify, "transcribe": transcribe, "dependencies": dependencies, "vad": vad, "qa_bundle": qa_bundle, "review_operation": review_operation}
+    handlers = {"extract": extract, "prepare_audio": audio_preparation.prepare_audio,
+                "verify_separator": audio_preparation.verify_separator,
+                "probe": probe, "verify": verify, "transcribe": transcribe, "dependencies": dependencies,
+                "vad": vad, "qa_bundle": qa_bundle, "review_operation": review_operation}
     if action not in handlers:
         raise ValueError("unknown worker action")
     result = handlers[action](req)

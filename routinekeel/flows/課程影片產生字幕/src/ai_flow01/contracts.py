@@ -16,9 +16,10 @@ class Options(Contract):
     device: Literal["cpu", "cuda", "auto"] = "auto"
     allow_cpu_fallback: bool = False
     beam_size: int = Field(default=5, ge=1, le=10)
-    vad_threshold: float = Field(default=0.4, gt=0, lt=1)
-    vad_min_speech_ms: int = Field(default=150, ge=0, le=5000)
-    vad_min_silence_ms: int = Field(default=550, ge=100, le=5000)
+    vad_threshold: float = Field(default=0.3, gt=0, lt=1)
+    vad_min_speech_ms: int = Field(default=250, ge=0, le=5000)
+    vad_min_silence_ms: int = Field(default=2200, ge=100, le=5000)
+    vad_skip_silence_seconds: float = Field(default=3.0, gt=0, allow_inf_nan=False)
     vad_speech_pad_ms: int = Field(default=250, ge=0, le=2000)
     vad_max_speech_seconds: float = Field(default=28, gt=0, le=30)
     max_line_chars: int = Field(default=30, ge=8, le=80)

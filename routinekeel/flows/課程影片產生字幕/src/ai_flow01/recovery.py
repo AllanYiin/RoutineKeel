@@ -26,6 +26,11 @@ def verify_raw(path, vad, workflow, prepared):
     if (raw.get('vad_regions') != vad['regions'] or raw.get('duration') != vad['duration']
             or raw.get('model') != workflow.model or raw.get('model_revision') != resource.revision):
         raise FlowError('RECOVERY_MISMATCH', 'ASR 與原 VAD／模型不符')
+    if vad.get('preprocessing') and (raw.get('preprocessing') != vad['preprocessing']
+            or raw.get('skipped_silence') != vad['skipped_silence']
+            or raw.get('vad_parameters') != vad['parameters']
+            or raw.get('analysis_audio_sha256') != vad['analysis_audio_sha256']):
+        raise FlowError('RECOVERY_MISMATCH', 'ASR 與人聲前處理或長靜音區間不符')
     options = workflow.options
     settings = {'model': workflow.model, 'model_revision': resource.revision, 'device': prepared['device'],
                 'language': options.language, 'beam_size': options.beam_size,
@@ -100,10 +105,14 @@ def recover(runtime, adapter, output=None, raw_asr=None):
         if 'speech.vad' not in completed or 'media.extract' not in completed:
             raise FlowError('RECOVERY_INCOMPLETE', '沒有可驗證的抽音訊／VAD 完成紀錄')
         vad_path = runtime.cached(completed['speech.vad']['cache_key'])
-        audio = runtime.cached(completed['media.extract']['cache_key'])
-        if not vad_path or not audio or not adapter.artifact_valid(runtime, 'speech.vad', vad_path):
+        extracted = runtime.cached(completed['media.extract']['cache_key'])
+        if not vad_path or not extracted or not adapter.artifact_valid(runtime, 'speech.vad', vad_path):
             raise FlowError('RECOVERY_AUDIO', '原音／VAD 快取缺失或損壞')
+        from .subtitles import extracted_tracks
+        audio, analysis, preprocessing = extracted_tracks(extracted)
         vad = read_json(vad_path)
+        if preprocessing and (preprocessing != vad.get('preprocessing') or sha256(analysis) != vad.get('analysis_audio_sha256')):
+            raise FlowError('RECOVERY_AUDIO', 'VAD 與處理後人聲指紋不符')
         if (inside(runtime.home, vad['source_audio']) != audio.resolve()
                 or sha256(audio) != vad['source_audio_sha256'] or vad['source_sha256'] != sha256(audio)):
             raise FlowError('RECOVERY_AUDIO', 'VAD 與抽取原音指紋不符')

@@ -36,4 +36,4 @@ uv run --locked --python 3.12 --project routinekeel/flow_base flow_base --worksp
 5. 在輸入欄改填不存在的檔案，按「預先檢查」；畫面應說明問題、不能按「開始」。這是**尚未建立 Run** 的輸入錯誤，沒有 `error_id` 也合理。接著重新選取 `測試.txt`，再按「預先檢查」及「開始」，確認新 Run 變成 `succeeded` 且成果內容仍與原檔相同，完成錯誤後的復原。若另有已失敗的 Run，點選歷史項目應可見階段、確定程度、下一步與 `error_id`；選擇新檔名並確認後才會匯出已遮罩診斷。
 6. 若要驗收 MCP 佇列，另開 `flow_base/queue_worker.*`，由已設定的 MCP Client 提交同一個測試檔案；記下 `execution_id`。關閉 Client 後重開，用該 ID 查狀態與成果。Worker 沒開時只應顯示 `queued`。
 
-請記下操作系統、ZIP 版號、每步是否符合預期，以及任何看不懂的文字或無法開啟的視窗。macOS Finder、Tk 視窗與真人理解度不能由 headless CI 代替；未執行走查時應在發行檢核中保留「未驗證」。
+請記下操作系統、ZIP 版號、每步是否符合預期，以及任何看不懂的文字或無法開啟的視窗。真人理解度不能由 headless CI 代替；未執行走查時應在發行檢核中保留「未驗證」。macOS Finder／Tk 實機操作已依使用者決定延後，仍須在後續補測。

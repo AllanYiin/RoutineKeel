@@ -19,6 +19,10 @@
     "max_cps": 15,
     "min_cue_seconds": 0.5,
     "initial_prompt": "繁體中文",
-    "initial_prompt_enabled": true
+    "initial_prompt_enabled": true,
+    "vad_threshold": 0.3,
+    "vad_min_speech_ms": 250,
+    "vad_min_silence_ms": 2200,
+    "vad_skip_silence_seconds": 3.0
   }
 }

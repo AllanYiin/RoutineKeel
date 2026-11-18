@@ -29,4 +29,6 @@ jobs:
       - name: Build release ZIPs
         run: python tools/release.py
       - name: Run complete source and package tests with optional MCP
-        run: uv run --locked --python 3.12 --project routinekeel/flow_base --extra mcp --group dev pytest tests routinekeel/flows --ignore=tests/studio -q --tb=short
+        run: |
+          uv export --frozen --project "routinekeel/flows/課程影片產生字幕/src/ai_flow01/profiles/asr-cpu" --no-dev --no-emit-project --output-file dist/subtitle-test-requirements.txt --quiet
+          uv run --locked --python 3.12 --project routinekeel/flow_base --extra mcp --group dev --with-requirements dist/subtitle-test-requirements.txt python -m pytest tests routinekeel/flows --ignore=tests/studio -q --tb=short
