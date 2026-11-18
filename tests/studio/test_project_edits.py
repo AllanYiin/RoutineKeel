@@ -20,6 +20,25 @@ class Variable:
         self.value = value
 
 
+def test_partial_goal_can_be_saved_reopened_and_completed(tmp_path):
+    model = StudioUIModel(tmp_path)
+    draft = model.create_project("Draft", "", "")
+    reopened = StudioUIModel(tmp_path)
+    reopened.select_project(draft.project_id)
+    assert reopened.project().goal == {"description": "", "success_criteria": []}
+    partial = reopened.update_project("Draft", "copy text", "", draft.version)
+    reopened = StudioUIModel(tmp_path)
+    reopened.select_project(draft.project_id)
+    assert reopened.project().goal == {"description": "copy text", "success_criteria": []}
+    source = reopened.import_text("synthetic source")
+    assert source.source_id
+    complete = reopened.update_project(
+        "Draft", "copy text", "identical output", reopened.project().version
+    )
+    assert complete.version > partial.version
+    assert complete.goal["success_criteria"] == ["identical output"]
+
+
 class ListView:
     def __init__(self):
         self.rows, self.selected = {}, []

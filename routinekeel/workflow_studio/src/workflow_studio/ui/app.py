@@ -182,6 +182,7 @@ class StudioApp:
         )
         workflow = active and self.display_ir is not None
         provider_ready = self.model.provider_ready
+        goal_ready = bool(self.goal_var.get().strip() and self.success_var.get().strip())
         verified = bool(
             self.last_report
             and self.model.build_id is not None
@@ -194,13 +195,13 @@ class StudioApp:
             "project": project is not None,
             "active": active,
             "editable": editable,
-            "new": project is None
-            and all(v.get().strip() for v in (self.name_var, self.goal_var, self.success_var)),
+            "new": project is None and bool(self.name_var.get().strip()),
             "archived": project is not None and project.status == "archived",
             "source": source,
             "single_source": source and source_count == 1,
-            "analysis": source and provider_ready,
+            "analysis": source and provider_ready and goal_ready,
             "candidate": active
+            and goal_ready
             and bool(self.model.candidates)
             and self.candidate_choice.current() >= 0,
             "node": workflow and self.selected_node is not None,
@@ -211,11 +212,12 @@ class StudioApp:
                 n["id"] == self.selected_node and "program" in n["parameters"]
                 for n in self.display_ir["nodes"]
             ),
-            "initialize": active and bool(self.source_rows) and not workflow,
+            "initialize": active and goal_ready and bool(self.source_rows) and not workflow,
             "cases": active and self.case_count > 0,
             "case_history": active and self.case_history_count > 0,
-            "verify": workflow and self.case_count > 0,
+            "verify": workflow and goal_ready and self.case_count > 0,
             "repair": active
+            and goal_ready
             and provider_ready
             and not self.build_review_blocked
             and bool(
@@ -226,6 +228,7 @@ class StudioApp:
                 and self.last_report.get("build_id") == self.model.build_id
             ),
             "publish": active
+            and goal_ready
             and verified
             and self.reviewed.get()
             and bool(self.actor_var.get().strip()),
@@ -270,7 +273,7 @@ class StudioApp:
         context["folder_needs_more"] = getattr(self, "last_empty_folder", None) in {
             (s.source_id, getattr(s, "version", None)) for s in selected_owners.values()
         }
-        enabled["folder"] = source and context["single_folder"]
+        enabled["folder"] = source and goal_ready and context["single_folder"]
         self.button_blockers = {}
         for button, rule in self.button_rules.items():
             allowed = not self.busy and enabled.get(rule, False)

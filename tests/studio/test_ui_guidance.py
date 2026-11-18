@@ -54,10 +54,12 @@ def test_inherited_empty_label_wrap_does_not_break_window_construction(monkeypat
     "state, action",
     [
         ({}, "focus_name"),
-        ({"name": "test"}, "focus_goal"),
-        ({"name": "test", "goal": "copy"}, "focus_success"),
+        ({"name": "test"}, "create_project"),
+        ({"name": "test", "goal": "copy"}, "create_project"),
         ({"name": "test", "goal": "copy", "success": "equal"}, "create_project"),
         (ready(), "paste_source"),
+        (ready(goal=""), "focus_goal"),
+        (ready(success=""), "focus_success"),
         (ready(has_sources=True), "focus_sources"),
         (ready(has_sources=True, selected=True, single_folder=True), "find_folder_candidates"),
         (ready(has_sources=True, selected=True), "configure_model"),
@@ -87,7 +89,7 @@ def test_inherited_empty_label_wrap_does_not_break_window_construction(monkeypat
             "release_history",
         ),
         (ready(dirty=True), "save_project"),
-        (ready(dirty=True, goal=""), "focus_goal"),
+        (ready(dirty=True, goal=""), "save_project"),
         (ready(dirty=True, conflict=True), "compare_project_updates"),
         (ready(archived=True), "restore_project"),
         (ready(busy=True), None),
@@ -231,10 +233,26 @@ def test_headless_guidance_disabled_feedback_and_progressive_disclosure(tmp_path
         assert "建立專案" in app.guidance_feedback.get()
         assert app.model.project_id is None
         app.name_var.set("引導測試")
-        app.goal_var.set("完整複製文字")
-        app.success_var.set("內容相同")
         root.update()
         assert app.current_guidance.action == "create_project"
+        app.next_button.invoke()
+        root.update()
+        assert not errors, errors
+        assert app.current_guidance.action == "focus_goal"
+        assert app.current_project.goal["description"] == ""
+        assert not file_button.instate(["disabled"])
+        for button, rule in app.button_rules.items():
+            if rule in {"analysis", "initialize", "verify", "publish"}:
+                assert button.instate(["disabled"])
+                assert "草稿" in app.button_blockers[button]
+        app.goal_var.set("完整複製文字")
+        root.update()
+        assert app.current_guidance.action == "save_project"
+        app.next_button.invoke()
+        root.update()
+        assert app.current_guidance.action == "focus_success"
+        app.success_var.set("內容相同")
+        root.update()
         app.next_button.invoke()
         root.update()
         assert not errors, errors

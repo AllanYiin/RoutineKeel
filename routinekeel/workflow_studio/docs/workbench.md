@@ -7,7 +7,8 @@ Windows 在原始碼工作區雙擊 `routinekeel/workflow_studio/open_studio.bat
 uv run --project routinekeel/workflow_studio --group dev python -m workflow_studio --workspace . ui
 ```
 
-先填專案名稱、工作目標及成功條件，按「建立專案」。選取文字、Mermaid 或成功案例資料夾，
+先填專案名稱，按「建立專案」保存草稿；工作目標與成功條件可稍後補充，未填完也能儲存與匯入來源。
+整理、試做或發布前，畫面會引導補齊目標與成功條件。選取文字、Mermaid 或成功案例資料夾，
 在右側預覽實際內容。來源替換與移除會保留版本及原始檔，不會直接刪除使用者資料。
 上方「下一步」會指出目前應填的欄位或下一個可做動作；灰色按鈕點一下會說明原因，仍不會執行被阻擋的操作。
 不常用的版本、證據、工具及來源管理功能，透過右上「顯示進階操作」展開。

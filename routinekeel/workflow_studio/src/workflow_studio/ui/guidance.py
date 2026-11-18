@@ -16,14 +16,20 @@ def next_step(state):
             "正在處理", "請等待目前操作結束；分析中可使用「停止分析」。", "處理中", None
         )
     if not state.get("project"):
-        for field, label in (("name", "專案名稱"), ("goal", "工作目標"), ("success", "成功條件")):
-            if not state.get(field):
-                return NextStep(
-                    "1 · 說清楚要完成的工作",
-                    f"先填寫「{label}」，再建立專案。",
-                    f"填寫{label}",
-                    "focus_" + field,
-                )
+        if not state.get("name"):
+            return NextStep(
+                "1 · 開始一個專案",
+                "先填專案名稱；尚未想完整的目標與成功條件可以之後補充。",
+                "填寫專案名稱",
+                "focus_name",
+            )
+        if not state.get("goal") or not state.get("success"):
+            return NextStep(
+                "1 · 先保存專案草稿",
+                "條件還不完整也可以先保存。之後再補充目標與成功條件，現在不會生成或發布流程。",
+                "建立草稿，繼續補充",
+                "create_project",
+            )
         return NextStep(
             "1 · 建立專案",
             "你的目標已填好。先保存專案，才能加入說明與案例。",
@@ -42,20 +48,27 @@ def next_step(state):
             "此專案已封存", "仍可查看歷史；恢復後才能繼續編輯。", "恢復專案", "restore_project"
         )
     if state.get("dirty"):
-        for field, label in (("name", "專案名稱"), ("goal", "工作目標"), ("success", "成功條件")):
-            if not state.get(field):
-                return NextStep(
-                    "先完成修改",
-                    f"請補上「{label}」，再儲存目前目標。",
-                    f"填寫{label}",
-                    "focus_" + field,
-                )
+        if not state.get("name"):
+            return NextStep(
+                "先完成修改",
+                "請補上「專案名稱」，再儲存目前目標。",
+                "填寫專案名稱",
+                "focus_name",
+            )
         return NextStep(
             "先儲存修改",
-            "目標有尚未儲存的內容。儲存後，來源與流程操作就能繼續。",
+            "先保存目前填寫的內容；尚未完整的目標可留待之後補充，來源資料也能先匯入。",
             "儲存目標並繼續",
             "save_project",
         )
+    for field, label in (("goal", "工作目標"), ("success", "成功條件")):
+        if not state.get(field):
+            return NextStep(
+                "草稿已保存，繼續補充",
+                f"請補上「{label}」後再整理或試做流程；來源資料也可以先匯入。",
+                f"填寫{label}",
+                "focus_" + field,
+            )
     if not state.get("has_sources"):
         return NextStep(
             "2 · 加入工作說明或成功案例",
@@ -182,9 +195,9 @@ def blocked_reason(rule, state):
     if rule == "new":
         if state.get("project"):
             return "已有專案時，請先按「＋ 新專案」。"
-        return "請先填完整的專案名稱、工作目標與成功條件，再建立專案。"
+        return "先填專案名稱即可保存草稿；工作目標與成功條件可以之後補充。"
     if not state.get("project"):
-        return "先填寫目標並按「建立專案」。建立後就能加入來源。"
+        return "先填專案名稱並按「建立專案」。目標未完整也可保存草稿，再加入來源。"
     if rule == "archived":
         return "目前專案未封存，不需要恢復。"
     if state.get("conflict"):
@@ -193,6 +206,16 @@ def blocked_reason(rule, state):
         return "此專案已封存；先恢復專案才能繼續修改或執行。"
     if state.get("dirty"):
         return "目標有尚未儲存的修改；請先按「儲存目標」。"
+    if rule in {
+        "analysis",
+        "candidate",
+        "initialize",
+        "verify",
+        "repair",
+        "publish",
+        "folder",
+    } and (not state.get("goal") or not state.get("success")):
+        return "目前仍是未完成的草稿；請先補充工作目標與成功條件，再整理、試做或發布。"
     if rule in {"source", "single_source", "analysis", "folder"}:
         if not state.get("selected"):
             return "請先點選左側來源；只有匯入、尚未選取時，仍不能執行這項操作。"

@@ -125,3 +125,34 @@ PR head 為 `fb1e8644a818b7c6f323ee5fe2cc1faac401217b`，實際 merge checkout
 
 原始檔與摘要：`dist/posix-repro/*run21.zip`、`run21-summary.json`。
 後續文件／入門案例提交沒有改動這輪被測的 Python；正式打包或任何後續程式變動仍需相應檢查。
+
+## 引導工作臺與完整候選包（83a53ef）
+
+[run 44275449294](https://github.com/AllanYiin/RoutineKeel/actions/runs/44275449294)
+六個測試 job 均成功，publish skipped。PR head 為 `83a53efcca30ae5ba3fb2c0a95a646ceb18a150d`，
+實際測試的 merge commit 為 `868575c95b60190e95f0752faa1f88d5e93eb917`。
+
+| Studio 非桌面套件 | passed | skipped | deselected | 秒 |
+|---|---:|---:|---:|---:|
+| Windows 2025 | 572 | 8 | 3 | 1401.22 |
+| macOS 15 | 573 | 7 | 3 | 140.83 |
+| Ubuntu 24.04 | 573 | 7 | 3 | 229.39 |
+
+三份 JUnit tests=580、failures=errors=0。六個 P2 影片 skip 是缺少 FFmpeg，
+虛擬視窗測試在普通套件中另 skip 一項；Windows 再 skip POSIX symlink 測試。
+三個原生桌面測試仍明確排除。Ubuntu 另以 Xvfb 執行一次真實 Tk 測試，1 passed／0 skipped，3.300 秒。
+
+三平台皆實際建置 Studio ZIP，使用啟動器建立乾淨且分離的環境，再驗證重複啟動、來源案例、
+試做／工程核准／發布／重開、獨立 Runtime 第二輸入及損毀拒絕。source_dirty=false，模型呼叫為 0。
+同一固定 IR 與輸出 hash 在三平台相同；發行 ZIP 與驗收 artifact 的 hash 是不同層次，不混用。
+
+| Artifact | 已核對的 SHA-256 |
+|---|---|
+| Windows 驗收 ZIP | `4201389a939f7863162a61c4de7c7e9cdacee00fb776f2ed33245f33de527bfe` |
+| macOS 驗收 ZIP | `d251390fbeef1c152ebe384945b29135baff24b7687badf85635164e380bde07` |
+| Ubuntu 驗收 ZIP | `cb9602290e2b81d59e72917e9344046eb04db51048cab2e11c6a8dbaee9fc135` |
+
+原始檔、JUnit／安裝摘要及正常／小視窗截圖在 `dist/ui-guidance-evidence/`，
+彙整為 `run27-summary.json`。截圖已檢視，確認下一步、停用說明、來源內容預覽及固定分頁。
+這是 Linux 合成視窗證據，不是 Windows 真人操作，也不計入 16/20 真人驗收。
+後續來源說明入口（031e001 起）仍須其對應的新版本結果。
