@@ -1,6 +1,6 @@
 # RoutineKeel 整合驗收紀錄（Stage 12 三平台 CI 通過）
 
-本報告依 `RoutineKeel_flow_base_spec_v1.2.2.zip` 的 AC-01～08、M1～M8，以及使用者後續核定的 `specs/mcp-queue-v1.md` 修訂，記錄實際證據。Stage 10 已改為持久化 `execution_id` 與另行啟動的 queue-worker；MCP Client 不直接派生執行程序。三平台 CI 已通過；舊版 wheel 回滾已按下述範圍實測，macOS Finder／Tk 與非技術真人操作仍未驗證。
+本報告依 `RoutineKeel_flow_base_spec_v1.2.2.zip` 的 AC-01～08、M1～M8，以及使用者後續核定的 `specs/mcp-queue-v1.md` 修訂，記錄實際證據。Stage 10 已改為持久化 `execution_id` 與另行啟動的 queue-worker；MCP Client 不直接派生執行程序。三平台 CI 已通過；舊版 wheel 回滾已按下述範圍實測。使用者將 macOS Finder／Tk 實機驗證延後；非技術真人操作走查仍未完成。
 
 ## 測試環境與重現命令
 
@@ -26,7 +26,7 @@
 | AC-03 診斷次故障 | 通過 | `test_diagnostics_fallback.py`、`test_event_trace.py` 的磁碟／DB／Reporter 故障測試保留主例外。 |
 | AC-04 多產物快取 | 通過 | `test_artifact_sets.py` 遺失 sidecar 與 hash 錯誤時拒絕 cache hit。 |
 | AC-05 MCP stdio | 三平台 CI 通過 | `test_mcp_stdio.py` 新版／legacy SDK 協商、七工具、路徑限制、Client 關閉重連、Worker 晚啟動與取消通過；`test_integration_mcp_cli.py` 證明 CLI/MCP 的 execution_id、run_id、狀態與成果一致；Windows `netstat` 對 MCP Server PID 無 TCP listening port。 |
-| AC-06 專案續編與預覽 | Windows UI 測試通過，macOS GUI 未覆蓋 | `test_ui_contract.py` 以 Tk 按鈕完成範例、重開與複製專案後查舊成果；PNG/GIF、UTF-8 預覽與等比縮放；不支援格式明示原因。macOS headless runner 的 Finder／Tk 視窗操作未覆蓋。 |
+| AC-06 專案續編與預覽 | Windows UI 測試通過，macOS GUI 延後 | `test_ui_contract.py` 以 Tk 按鈕完成範例、重開與複製專案後查舊成果；PNG/GIF、UTF-8 預覽與等比縮放；不支援格式明示原因。macOS headless runner 的 Finder／Tk 視窗操作未覆蓋，依使用者決定延後實機驗證。 |
 | AC-07 敏感資訊 | 通過（本機匯出） | `test_security_diagnostics.py` 同時注入 API key、Authorization、prompt、文件內容四類標記，分享包零洩漏，保留 `error_id`／錯誤碼；外部目標未授權時拒絕。 |
 | AC-08 LLM Streaming | 未啟用 | 本機診斷與 UI 不提供可選 LLM 說明；普通工作流不依賴 LLM。未宣稱已實作 Streaming 說明。 |
 
@@ -47,4 +47,4 @@
 
 `.github/workflows/packages.yml` 的 Ubuntu 24.04、`windows-2025`、`macos-15` 三平台 Gate 在 PR 最後 head 與合併後 run 均 success。合併後自動發布揭露原工作流缺少真人 Gate；[PR #5](https://github.com/AllanYiin/RoutineKeel/pull/5) 已合併至 `main`，後續只有在 `main` 上手動觸發且明確勾選 `publish_release` 時才執行 publish，並仍等待三平台 job。另有只手動觸發的 `.github/workflows/platform-checks.yml`；它尚未單獨執行。macOS Finder／Tk GUI 與官方 MCP Inspector 尚未執行。
 
-下一步：完成發行包使用手冊的非技術真人走查與 macOS Finder／Tk 實機驗證。使用者已選擇保留先前自動發布的 Release；發行控制修訂的三平台 CI 已通過且 PR #5 已合併。人工 Gate 在取得走查證據前維持未通過。
+下一步：完成發行包使用手冊的非技術真人走查。macOS Finder／Tk 實機驗證依使用者 2026-11-18 決定延後，不計本輪開發迴圈結束條件，但仍保持未驗證。使用者已選擇保留先前自動發布的 Release；發行控制修訂的三平台 CI 已通過且 PR #5 已合併。Stage 13 人工 Gate 在取得走查證據前維持未通過。
