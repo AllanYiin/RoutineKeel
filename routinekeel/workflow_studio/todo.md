@@ -38,6 +38,8 @@ IR 20 節點靜態檢查 p95 <500 ms；100 個來源清單不得觸發 LLM。
   詳見 docs/folder-review.md；新視窗實機驗收仍待。
 - 固定 Runtime 試做可加入為機器 verified 證據，重新核對原套件、案例及實際產物；
   流程內容改變後原驗證狀態失效，詳見 docs/machine-evidence.md。真實模型及完整使用者 Gate 仍待。
+- 靜態手繪圖片已接入一般 Discovery，保留完整解析度、移除 metadata、明確預覽送出範圍與圖片用量預留；
+  未知問題保存待確認草稿，詳見 docs/image-discovery.md。真實辨識品質與新增介面仍未驗收。
 
 ## 回滾
 

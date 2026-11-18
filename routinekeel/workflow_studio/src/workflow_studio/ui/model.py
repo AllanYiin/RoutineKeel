@@ -1165,9 +1165,16 @@ class StudioUIModel:
         *,
         runtime_enabled=False,
         runtime_budget_usd=0.0,
+        image_input_token_bound=65536,
         persist=True,
     ):
         import hashlib
+
+        if (
+            type(image_input_token_bound) is not int
+            or not 1 <= image_input_token_bound <= 10_000_000
+        ):
+            raise StudioError("INPUT_INVALID", "圖片用量預留必須是 1–10,000,000 的整數。")
 
         key_env = (
             "WORKFLOW_STUDIO_SESSION_KEY_"
@@ -1189,6 +1196,7 @@ class StudioUIModel:
             "output_rate": output_rate,
             "runtime_enabled": runtime_enabled,
             "runtime_budget_usd": runtime_budget_usd,
+            "image_input_token_bound": image_input_token_bound,
         }
         if runtime_enabled and runtime_budget_usd <= 0:
             raise StudioError("INPUT_INVALID", "啟用執行期模型前，請設定正數預算。")
@@ -1223,6 +1231,47 @@ class StudioUIModel:
             ):
                 callback(event)
         self.build_id = self.approval_id = None
+
+    def analysis_disclosure(self, prepared):
+        from ..discovery.images import (
+            DEFAULT_IMAGE_INPUT_TOKENS,
+            context_from_messages,
+            input_reservation,
+        )
+
+        messages = json.loads(prepared.messages_json)
+        context = context_from_messages(messages)
+        image_tokens = context.get("image_policy", {}).get(
+            "input_tokens_reserved_per_image", DEFAULT_IMAGE_INPUT_TOKENS
+        )
+        return {
+            "sources": context["sources"],
+            "image_tokens": image_tokens,
+            "reserved_micro_usd": self.budget.cost(
+                input_reservation(messages, image_tokens), self.budget.max_output_tokens
+            ),
+        }
+
+    def analysis_asset(self, prepared, index):
+        import base64
+
+        from ..discovery.images import context_from_messages
+
+        messages = json.loads(prepared.messages_json)
+        item = context_from_messages(messages)["sources"][index]
+        if item.get("kind") == "image":
+            part = messages[1]["content"][item["image_index"]]
+            content = base64.b64decode(part["image_url"]["url"].split(",", 1)[1], validate=True)
+            return {
+                "name": item["path"],
+                "content": content,
+                "preview": {"kind": "image", **item["transmission"]},
+            }
+        return {
+            "name": item["path"],
+            "content": item["content"].encode(),
+            "preview": {"kind": "text"},
+        }
 
 
 def analysis_text(raw):

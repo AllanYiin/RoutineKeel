@@ -125,12 +125,17 @@ class ProjectService:
 
     def update_settings(self, project_id, expected_version, settings):
         allowed = {"endpoint", "model", "budget_usd", "input_rate", "output_rate"}
-        optional = {"runtime_enabled", "runtime_budget_usd"}
+        optional = {"runtime_enabled", "runtime_budget_usd", "image_input_token_bound"}
         if not isinstance(settings, dict) or (
             settings and (not allowed <= set(settings) or set(settings) - allowed - optional)
         ):
             raise StudioError("INPUT_INVALID", "專案設定只保存模型、端點、費率與預算，不保存金鑰。")
         if settings:
+            if (
+                type(settings.get("image_input_token_bound", 65536)) is not int
+                or not 1 <= settings.get("image_input_token_bound", 65536) <= 10_000_000
+            ):
+                raise StudioError("INPUT_INVALID", "圖片用量預留必須是 1–10,000,000 的整數。")
             if (
                 type(settings.get("runtime_enabled", False)) is not bool
                 or type(settings.get("runtime_budget_usd", 0.0)) not in {int, float}

@@ -8,7 +8,7 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from PIL import Image, ImageTk
+from PIL import Image, ImageOps, ImageTk
 
 from ..contracts import StudioError
 from ..ingestion.preview import fit_size
@@ -361,6 +361,7 @@ class StudioApp:
             with Image.open(
                 io.BytesIO(self.model.content(source.source_id, record["path"]))
             ) as image:
+                image = ImageOps.exif_transpose(image)
                 size = fit_size(
                     image.width, image.height, max(260, self.image_label.winfo_width()), 300
                 )
@@ -368,7 +369,7 @@ class StudioApp:
             self.image_label.configure(image=self.display_image)
             self._set_text(
                 self.preview_text,
-                f"{record['preview']['width']} × {record['preview']['height']} 像素",
+                f"{image.width} × {image.height} 像素（依圖片方向顯示）",
             )
         else:
             self._set_text(
@@ -907,6 +908,11 @@ class StudioApp:
         window = tk.Toplevel(self.root)
         self.prepare_dialog(window)
         window.title("模型與用量設定（金鑰只保留於本次工作台）")
+        tabs = ttk.Notebook(window)
+        tabs.pack(fill="both", expand=True, padx=12, pady=8)
+        basic, advanced = ttk.Frame(tabs, padding=6), ttk.Frame(tabs, padding=6)
+        tabs.add(basic, text="連線與設計期")
+        tabs.add(advanced, text="圖片與執行期")
         values = {}
         saved = self.model.session_config
         fields = [
@@ -921,24 +927,35 @@ class StudioApp:
             ("input", "每百萬輸入 token 費率 USD", saved.get("input_rate", "")),
             ("output", "每百萬輸出 token 費率 USD", saved.get("output_rate", "")),
             (
+                "image_tokens",
+                "每張圖片預留輸入 Tokens",
+                saved.get("image_input_token_bound", 65536),
+            ),
+            (
                 "runtime_budget",
                 "每次流程執行的模型預算上限 USD",
                 saved.get("runtime_budget_usd", "0.25"),
             ),
         ]
         for name, label, default in fields:
-            ttk.Label(window, text=label).pack(anchor="w", padx=12, pady=(8, 0))
+            parent = advanced if name in {"runtime_budget", "image_tokens"} else basic
+            ttk.Label(parent, text=label).pack(anchor="w", padx=12, pady=(8, 0))
             variable = tk.StringVar(value=default)
             values[name] = variable
             ttk.Entry(
-                window, textvariable=variable, width=65, show="•" if name == "key" else ""
+                parent, textvariable=variable, width=65, show="•" if name == "key" else ""
             ).pack(padx=12)
         runtime_enabled = tk.BooleanVar(
             value=self.model.session_config.get("runtime_enabled", False)
         )
         ttk.Checkbutton(
-            window, text="允許含執行期 AI 的候選流程（試做前仍需確認）", variable=runtime_enabled
+            advanced, text="允許含執行期 AI 的候選流程（試做前仍需確認）", variable=runtime_enabled
         ).pack(anchor="w", padx=12, pady=8)
+        ttk.Label(
+            advanced,
+            text="圖片須選用支援看圖的模型。圖片預留量請依服務計價調整；預留是本機估算，實際帳單以服務回報為準。",
+            wraplength=500,
+        ).pack(padx=12, pady=8)
 
         def save():
             try:
@@ -961,6 +978,7 @@ class StudioApp:
                     amounts["output"],
                     runtime_enabled=runtime_enabled.get(),
                     runtime_budget_usd=amounts["runtime_budget"],
+                    image_input_token_bound=int(values["image_tokens"].get()),
                 )
                 if values["key"].get():
                     os.environ[self.model.provider.api_key_env] = values["key"].get()
@@ -986,13 +1004,21 @@ class StudioApp:
     def analyze(self):
         if not self.selected_source:
             raise StudioError("SOURCE_NOT_FOUND", "請先選擇要分析的來源。")
-        prepared = self.model.prepare_analysis([self.selected_source])
-        if self.model.provider.external and not messagebox.askyesno(
-            "確認模型資料範圍",
-            f"目的端：{prepared.destination}\n模型：{prepared.model}\n將傳送選取來源的文字、目標與工具契約，並可在同一範圍內修正最多 {prepared.repair_limit} 輪。\n設計期總預算上限：USD {self.model.budget.budget_micro_usd / 1_000_000:.2f}\n繼續傳送？",
-            parent=self.root,
-        ):
+        selected = self.selected_source
+        self.status.set("正在本機準備來源與圖片預覽，尚未傳送給模型……")
+        self._background(lambda: self.model.prepare_analysis([selected]), self.offer_analysis)
+
+    def offer_analysis(self, prepared):
+        if self.close_requested:
             return
+        if self.model.provider.external:
+            from .analysis_disclosure import open_disclosure
+
+            open_disclosure(self, prepared)
+            return
+        self.start_analysis(prepared)
+
+    def start_analysis(self, prepared):
         self.raw_analysis = ""
         self._set_text(self.analysis, "")
         self.tabs.select(1)
