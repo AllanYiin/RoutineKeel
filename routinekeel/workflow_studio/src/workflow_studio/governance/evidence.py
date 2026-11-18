@@ -191,6 +191,11 @@ class EvidenceRules:
             item = next((e for e in payload["evidence"] if e["id"] == evidence_id), None)
             if item is None:
                 raise StudioError("EVIDENCE_INSUFFICIENT", "找不到要確認的規則。")
+            if item["confidence_label"] == "verified":
+                raise StudioError(
+                    "INPUT_INVALID",
+                    "這是固定試做的機器證據；如需業務判斷，請另建規則或修改為待確認版本。",
+                )
             if revoke and item["confidence_label"] != "human_confirmed":
                 raise StudioError("INPUT_INVALID", "這項規則沒有可撤回的人工確認。")
             if not revoke and item["confidence_label"] == "human_confirmed":

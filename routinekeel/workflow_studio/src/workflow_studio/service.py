@@ -105,10 +105,11 @@ class StudioService:
 
     def confirmed_evidence(self, project_id, payload):
         from .governance.evidence import EvidenceRecords
+        from .governance.machine_evidence import MachineEvidence
 
         return EvidenceRecords(self.repository).confirmed_ids(
             project_id, payload.get("evidence", [])
-        )
+        ) | MachineEvidence(self.repository).valid_ids(project_id, payload)
 
     def status(self) -> dict:
         return {"version": __version__, "schema_version": self.repository.schema_version}

@@ -56,6 +56,30 @@ def open_reviews(app):
     summary = text_area(overview)
     report_choice = ttk.Combobox(reports, state="readonly")
     report_choice.pack(fill="x", pady=(0, 6))
+
+    def attach_evidence():
+        item = state["details"]
+        if not editable or not item or report_choice.current() < 0:
+            return
+        selected_report = item["reports"][report_choice.current()]
+        if not messagebox.askyesno(
+            "加入固定試做證據",
+            "將重新核對此報告的套件、案例及實際成果，另存目前流程版本。這不代表所有輸入皆正確，仍需重新建置、試做與核准。",
+            parent=window,
+        ):
+            return
+        model.attach_machine_evidence(project.version, selected_report["report_id"])
+        window.destroy()
+        app.refresh_project()
+        app.status.set("已加入固定案例的機器驗證依據；新版本仍需試做與核准。")
+
+    machine_button = ttk.Button(
+        reports,
+        text="將這份報告加入目前流程的驗證依據",
+        command=lambda: app.guard(attach_evidence),
+        state="disabled",
+    )
+    machine_button.pack(fill="x", pady=(0, 6))
     report_text = text_area(reports)
     file_choice = ttk.Combobox(files, state="readonly")
     file_choice.pack(fill="x", pady=(0, 6))
@@ -124,6 +148,9 @@ def open_reviews(app):
         item = state["details"]
         if item and report_choice.current() >= 0:
             report = item["reports"][report_choice.current()]
+            machine_button.configure(
+                state="normal" if editable and report["status"] == "passed" else "disabled"
+            )
             lines = [
                 "試做通過" if report["status"] == "passed" else "試做未通過",
                 report["created_at"],
@@ -139,6 +166,8 @@ def open_reviews(app):
                     )
             lines += ["完整報告（保留原始證據）", json.dumps(report, ensure_ascii=False, indent=2)]
             app._set_text(report_text, "\n\n".join(lines))
+        else:
+            machine_button.configure(state="disabled")
 
     def file_selected(_event=None):
         if state["selected"] and file_choice.get():

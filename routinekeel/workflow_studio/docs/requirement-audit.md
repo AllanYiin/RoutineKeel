@@ -11,7 +11,7 @@
 | FR-01 專案 CRUD／續編 | project/service.py；test_projects.py、test_ui_workflow.py | 確認 UI 軟刪除、第三版草稿續編及正式歷史保留的完整使用者路徑 |
 | FR-02 來源 CRUD／預覽 | ingestion/service.py、preview 與 folder 模組；來源相關測試 | UI 說明修改；所有已接受格式的最終視覺矩陣 |
 | FR-03 草稿版本與差異 | project/history.py、版本與差異 UI、test_history_editing.py | 續編新版本／明確還原目標／捨棄保護已驗；新視窗實機走查待驗 |
-| FR-04 業務規則 CRUD | governance/evidence.py、v010、規則／步驟／資料夾關係表單；test_evidence_decisions.py、test_manual_and_settings.py、test_folder_review.py | 資料夾角色、關係決策、版本預覽及採用時人工證據綁定已補；機器 verified 證據整合與實機走查仍待 |
+| FR-04 業務規則 CRUD | governance/evidence.py、machine_evidence.py、規則／步驟／資料夾關係表單；test_evidence_decisions.py、test_machine_evidence.py、test_folder_review.py | 人工與固定試做機器證據已分開綁定，修改處理內容使舊機器狀態失效；完整實機走查仍待 |
 | FR-05 工具註冊及政策 | registry/catalog.py、handlers.py、policy.py、available、v011–v012、工具管理 UI | 描述管理與同工作區 Handler 跨專案重用已實測；第三方適配覆蓋及新視窗實機驗收仍待，模板庫目前以同工作區為範圍 |
 | FR-06 節點 CRUD | ir/editor.py 原子編輯；GraphDraft／手動起案／步驟設定表單；test_graph_editing.py、test_manual_and_settings.py | 手動起案、基本動作／分支／模型新增、來源／依賴／交付物／條件／模型政策已補；新增表單實機與完整工具型別覆蓋仍待驗 |
 | FR-07 案例 CRUD／預期實際 | GoldenCases.save/get/archive/history；案例編輯、文字與圖片歷史預覽；test_case_editing.py | 版本化修改、替換、封存後重開及核准失效已驗；新圖片預覽與視窗走查待驗 |

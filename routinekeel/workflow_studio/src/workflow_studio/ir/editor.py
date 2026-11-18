@@ -101,6 +101,7 @@ class FlowEditor:
         with self.studio.repository.transaction() as db:
             project = self.studio.projects._editable(db, project_id, expected_version)
             payload = copy.deepcopy(self.current(project_id))
+            previous = copy.deepcopy(payload)
             nodes = {node["id"]: node for node in payload["nodes"]}
             if not isinstance(upsert_nodes, (list, tuple)) or not isinstance(
                 delete_nodes, (list, tuple)
@@ -135,6 +136,9 @@ class FlowEditor:
             payload["revision"] = max(ordinals, default=0) + 1
             tools = self.studio.tools.allowed(self.policy)
             payload = self.studio.handlers.resolve_ir(payload, tools)
+            from ..governance.machine_evidence import MachineEvidence
+
+            MachineEvidence.downgrade_changed(previous, payload)
             validated = validate_ir(
                 payload,
                 {k: t.signature() for k, t in tools.items()},

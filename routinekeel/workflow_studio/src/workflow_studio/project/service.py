@@ -191,6 +191,9 @@ class ProjectService:
         records = EvidenceRecords(self.repository).confirmed_ids(
             project_id, payload.get("evidence", [])
         )
+        from ..governance.machine_evidence import MachineEvidence
+
+        records |= MachineEvidence(self.repository).valid_ids(project_id, payload)
         validated = validate_ir(payload, tools, source_versions=versions, verified_records=records)
         return self._commit_revision(
             project_id, expected_version, validated.model_dump(), "ir_ready"

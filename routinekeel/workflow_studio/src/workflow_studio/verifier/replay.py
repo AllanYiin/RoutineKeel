@@ -5,6 +5,7 @@ from pathlib import Path
 
 from ..compiler.package import digest
 from ..contracts import StudioError
+from ..ingestion.security import read_file, reject_links, safe_relative
 
 ENV_NAMES = {
     "SYSTEMROOT",
@@ -55,12 +56,23 @@ def replay(package, root, source, runtime_python, *, timeout=60, runtime_env=Non
     return report
 
 
+def evidence_file(root, relative, *, limit=10 * 1024 * 1024):
+    safe_relative(relative)
+    path = root / relative
+    for part in (path, *path.parents):
+        reject_links(part)
+        if part == root:
+            break
+    return read_file(path, root, limit)
+
+
 def output_bytes(root, report, output_name, ir):
     node_id = ir["outputs"][output_name].split("//", 1)[1].split("/", 1)[0]
     node = next(n for n in ir["nodes"] if n["id"] == node_id)
     relative = node["outputs"]["result"]["path"]
-    primary = root / "output" / report["named_outputs"][output_name]["primary"]
-    record = json.loads(primary.read_text(encoding="utf-8"))["result"]
+    primary_relative = report["named_outputs"][output_name]["primary"]
+    primary = root / "output" / primary_relative
+    record = json.loads(evidence_file(root / "output", primary_relative, limit=1_000_000))["result"]
     path = primary.parent / relative
     if (
         record["path"] != relative
@@ -68,7 +80,7 @@ def output_bytes(root, report, output_name, ir):
         or not path.resolve().is_relative_to((root / "output").resolve())
     ):
         raise StudioError("TEST_FAILED", "交付路徑與契約不符。")
-    content = path.read_bytes()
+    content = evidence_file(root / "output", path.relative_to(root / "output").as_posix())
     if digest(content) != record["sha256"]:
         raise StudioError("TEST_FAILED", "交付產物指紋不符。")
     return content

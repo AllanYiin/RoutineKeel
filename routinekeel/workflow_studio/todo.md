@@ -35,7 +35,9 @@ IR 20 節點靜態檢查 p95 <500 ms；100 個來源清單不得觸發 LLM。
 - 發布中斷核對與結束未生效準備已接線，涵蓋發布／停用／舊準備被取代及檔案保留；
   服務與 UI model 驗證見 docs/test-report.md，新核對視窗仍待實機驗收。
 - 資料夾角色／關係決策及歷史預覽已接線；採用前重核版本與內容，人工確認與流程／案例同交易保存。
-  詳見 docs/folder-review.md；機器 verified 證據及新視窗實機驗收仍待。
+  詳見 docs/folder-review.md；新視窗實機驗收仍待。
+- 固定 Runtime 試做可加入為機器 verified 證據，重新核對原套件、案例及實際產物；
+  流程內容改變後原驗證狀態失效，詳見 docs/machine-evidence.md。真實模型及完整使用者 Gate 仍待。
 
 ## 回滾
 

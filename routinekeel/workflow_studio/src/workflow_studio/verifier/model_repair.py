@@ -205,10 +205,8 @@ class ModelRepair:
             raise StudioError("EVIDENCE_INSUFFICIENT", "修復仍需要補充業務規則，已保存模型說明。")
         proposal = result.ir.model_dump()
         if (
-            any(
-                proposal[k] != original[k]
-                for k in ("goal", "workflow_id", "inputs", "secrets", "evidence")
-            )
+            any(proposal[k] != original[k] for k in ("goal", "workflow_id", "inputs", "secrets"))
+            or proposal["evidence"] != current["evidence"]
             or set(proposal["outputs"]) != set(original["outputs"])
             or runtime_scope(proposal) != runtime_scope(original)
         ):
@@ -217,6 +215,9 @@ class ModelRepair:
             )
         tools = self.studio.tools.available(self.policy)
         proposal = self.studio.handlers.resolve_ir(proposal, tools)
+        from ..governance.machine_evidence import MachineEvidence
+
+        MachineEvidence.downgrade_changed(current, proposal)
         proposal["revision"] = current["revision"] + 1
         validated = validate_ir(
             proposal,

@@ -41,5 +41,8 @@ class RepairLoop:
                 if r.ir.get("ir_version") == "1.0" and r.status != "draft"
             ]
             proposal["revision"] = max(accepted, default=0) + 1
+            from ..governance.machine_evidence import MachineEvidence
+
+            MachineEvidence.downgrade_changed(current, proposal)
             revision = self.studio.save_ir(project_id, project.version, proposal, policy)
             build = self.studio.compile(project_id, revision.revision_id, policy)

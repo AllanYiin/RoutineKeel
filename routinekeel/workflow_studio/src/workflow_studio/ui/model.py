@@ -629,6 +629,25 @@ class StudioUIModel:
         with self.service() as studio:
             return studio.evidence(self.policy).records.list(self.project_id)
 
+    def attach_machine_evidence(self, expected_version, report_id):
+        from ..governance.machine_evidence import MachineEvidence
+
+        with self.service() as studio:
+            result = MachineEvidence(studio.repository).attach(
+                studio, self.project_id, expected_version, report_id, self.policy
+            )
+        self.build_id = self.approval_id = None
+        self.candidates = []
+        return result
+
+    def machine_evidence_details(self, identity):
+        from ..governance.machine_evidence import MachineEvidence
+
+        with self.service() as studio:
+            return MachineEvidence(studio.repository).inspect(
+                self.project_id, identity, self.revision().ir
+            )
+
     def evidence_content(self, source_id, version, path):
         with self.service() as studio:
             return studio.sources.content(self.project_id, source_id, path, version=version)

@@ -42,7 +42,14 @@ def open_evidence(app):
     for item in evidence:
         listing.insert(
             "end",
-            item["id"] + (" · 已人工確認" if item["confidence_label"] == "human_confirmed" else ""),
+            item["id"]
+            + (
+                " · 已人工確認"
+                if item["confidence_label"] == "human_confirmed"
+                else " · 試做已驗證"
+                if item["confidence_label"] == "verified"
+                else ""
+            ),
         )
     fields = ttk.Frame(window, padding=6)
     fields.grid(row=1, column=1, sticky="nsew")
@@ -115,17 +122,20 @@ def open_evidence(app):
         item = state["item"]
         changed = snapshot() != state["saved"]
         confirmed = bool(item and item["confidence_label"] == "human_confirmed")
+        machine = bool(item and item["confidence_label"] == "verified")
         ready = bool(item and not changed and actor.get().strip() and reason.get().strip())
         allowed = {
             "save": bool(claim.get().strip() and source_choice.get() and (changed or item is None)),
-            "confirm": ready and not confirmed,
+            "confirm": ready and not confirmed and not machine,
             "revoke": ready and confirmed,
             "remove": bool(item and not any(item["id"] in n["evidence_refs"] for n in nodes)),
         }
         for action, button in actions.items():
             button.configure(state="normal" if allowed[action] else "disabled")
         status.set(
-            "此規則已人工確認；修改後儲存會建立待確認的新版本。"
+            "此為固定試做的機器驗證；修改後儲存會改為待確認，不能沿用原驗證狀態。"
+            if machine
+            else "此規則已人工確認；修改後儲存會建立待確認的新版本。"
             if confirmed
             else "請先保存規則，再填寫確認者與理由。"
         )
@@ -167,6 +177,8 @@ def open_evidence(app):
                     (k for k, v in LABELS.items() if v == item["confidence_label"]), "推論／待確認"
                 )
             )
+            if item["confidence_label"] == "verified":
+                label.set("機器驗證（修改後需重測）")
         else:
             existing = {e["id"] for e in evidence}
             identity.set(next(f"rule_{i}" for i in range(1, 1000) if f"rule_{i}" not in existing))
@@ -189,6 +201,14 @@ def open_evidence(app):
                 f"{record['actor']}：{record['reason']}\n規則：{basis['claim']}\n來源：{basis['evidence_locator']}（第 {basis['source_version']} 版）"
             )
         app._set_text(history, "\n\n".join(lines) or "此規則尚無人工決策紀錄。")
+        if item and item["confidence_label"] == "verified":
+            try:
+                proof = model.machine_evidence_details(item["verified_by"])
+                result = proof["case"]
+                shown = f"已重新核對保存的試做產物。\n報告：{proof['report_id']}\n案例：{proof['specification']['name']} 第 {result['version']} 版\n執行：{result['run_id']}\n比較：{result['comparison']}\n實際成果指紋：{result['actual_sha256']}\n\n{item['claim']}"
+            except StudioError as exc:
+                shown = f"目前無法查核原試做證據：{exc}\n可移除這項依據或另存為待確認後重新試做；歷史報告保留。"
+            app._set_text(history, shown)
         state["saved"] = snapshot()
         refresh_actions()
 
@@ -224,7 +244,7 @@ def open_evidence(app):
                     "source_version": source["version"],
                     "evidence_locator": locator.get(),
                     "claim": claim.get(),
-                    "confidence_label": LABELS[label.get()],
+                    "confidence_label": LABELS.get(label.get(), "inferred"),
                     "verified_by": None,
                 }
                 model.edit_evidence(
