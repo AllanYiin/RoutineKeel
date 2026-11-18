@@ -200,6 +200,17 @@ class StudioUIModel:
         with self.service() as studio:
             return studio.projects.get(self.project_id)
 
+    @property
+    def provider_ready(self):
+        """Expose readiness, never the session credential itself."""
+        if self.provider is None:
+            return False
+        if isinstance(self.provider, ChatCompletionsProvider):
+            import os
+
+            return bool(os.environ.get(self.provider.api_key_env))
+        return True
+
     def create_project(self, name, goal, success):
         with self.service() as studio:
             p = studio.projects.create(

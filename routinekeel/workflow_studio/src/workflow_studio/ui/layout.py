@@ -3,7 +3,7 @@
 import tkinter as tk
 from tkinter import ttk
 
-from .widgets import BoundText
+from .widgets import BoundText, ScrollColumn
 
 
 def build_workbench(app):
@@ -73,14 +73,55 @@ def build_workbench(app):
     ttk.Label(header, text="工作流程製作工作台", font=(family, 12), style="Header.TLabel").pack(
         side="left", padx=s(16)
     )
+    app.advanced_var = tk.BooleanVar(value=False)
+    ttk.Checkbutton(
+        header, text="顯示進階操作", variable=app.advanced_var, command=app.refresh_actions
+    ).pack(side="right", padx=s(8))
     app.button(header, "模型設定", app.configure_model, side="right")
-    app.button(header, "工具管理", app.manage_tools, side="right", padx=s(6))
+    app.button(header, "工具管理", app.manage_tools, side="right", padx=s(6), advanced=True)
     app.button(header, "切換工作區", app.choose_workspace, side="right", padx=s(6))
     app.status = tk.StringVar(value="先建立工作專案，再提供工作說明或成功案例。資料預設留在本機。")
     app.status_label = ttk.Label(
         root, textvariable=app.status, style="Header.TLabel", padding=(s(18), 0, s(18), s(12))
     )
     app.status_label.pack(fill="x")
+    guidance = ttk.Frame(root, padding=(s(18), 0, s(18), s(10)), style="Header.TFrame")
+    guidance.pack(fill="x")
+    app.guidance_title, app.guidance_detail, app.guidance_feedback = (
+        tk.StringVar(),
+        tk.StringVar(),
+        tk.StringVar(),
+    )
+    app.next_button = app.button(
+        guidance, "開始", app.advance, style="Primary.TButton", side="right", padx=(s(12), 0)
+    )
+    explanation = ttk.Frame(guidance, style="Header.TFrame")
+    explanation.pack(side="left", fill="both", expand=True)
+    ttk.Label(
+        explanation,
+        textvariable=app.guidance_title,
+        style="Header.TLabel",
+        font=(family, 12, "bold"),
+    ).pack(anchor="w")
+    detail = ttk.Label(
+        explanation, textvariable=app.guidance_detail, style="Header.TLabel", wraplength=s(750)
+    )
+    detail.pack(anchor="w", fill="x", pady=(s(3), 0))
+    feedback = ttk.Label(
+        explanation,
+        textvariable=app.guidance_feedback,
+        style="Header.TLabel",
+        foreground="#92400E",
+        wraplength=s(750),
+    )
+    feedback.pack(anchor="w", fill="x")
+    explanation.bind(
+        "<Configure>",
+        lambda event: (
+            detail.configure(wraplength=max(s(250), event.width)),
+            feedback.configure(wraplength=max(s(250), event.width)),
+        ),
+    )
     app.workspace_label = ttk.Label(
         root,
         text=f"工作區：{app.model.workspace}",
@@ -91,9 +132,10 @@ def build_workbench(app):
     app.workspace_label.pack(side="bottom", fill="x")
     app.panes = ttk.Panedwindow(root, orient="horizontal")
     app.panes.pack(fill="both", expand=True, padx=s(14), pady=(0, s(14)))
-    left, center, right = [ttk.Frame(app.panes, padding=s(12)) for _ in range(3)]
-    for frame, weight in zip((left, center, right), (3, 5, 4)):
-        app.panes.add(frame, weight=weight)
+    app.columns = [ScrollColumn(app.panes, padding=s(12)) for _ in range(3)]
+    for column, weight in zip(app.columns, (3, 5, 4)):
+        app.panes.add(column, weight=weight)
+    left, center, right = [column.body for column in app.columns]
 
     left.columnconfigure(0, weight=1)
     left.rowconfigure(4, weight=1)
@@ -117,6 +159,7 @@ def build_workbench(app):
     app.project_list.bind("<<ListboxSelect>>", app._select_project)
     project_controls = ttk.Frame(left)
     project_controls.grid(row=2, column=0, sticky="ew")
+    app.defer_widget(project_controls, advanced=True)
     app.archived = tk.BooleanVar(value=False)
     ttk.Checkbutton(
         project_controls, text="顯示已封存", variable=app.archived, command=app.refresh_projects
@@ -175,6 +218,7 @@ def build_workbench(app):
     actions.grid(row=5, column=0, sticky="ew", pady=(s(7), 0))
     row = ttk.Frame(actions)
     row.pack(fill="x")
+    app.defer_widget(row, advanced=True, show_when="sources")
     app.button(
         row,
         "替換來源",
@@ -198,9 +242,10 @@ def build_workbench(app):
         actions,
         "從成功案例找流程",
         app.find_folder_candidates,
-        requires="single_source",
+        requires="folder",
         fill="x",
         pady=(s(10), s(5)),
+        show_when="folder",
     )
     app.button(
         actions,
@@ -209,20 +254,21 @@ def build_workbench(app):
         requires="active",
         fill="x",
         pady=(0, s(5)),
+        advanced=True,
+        show_when="folder",
     )
     app.button(
         actions,
         "AI 整理選取來源",
         app.analyze,
         requires="analysis",
-        style="Primary.TButton",
         fill="x",
+        show_when="sources",
     )
     app.stop_button = ttk.Button(actions, text="停止分析", command=app.stop, state="disabled")
-    app.stop_button.pack(fill="x", pady=s(5))
     ttk.Label(
         actions,
-        text="可按 Ctrl／Command 多選來源一起分析；單一資料夾會包含其全部檔案。案例比對不需模型。",
+        text="可按 Ctrl／Command 多選來源。灰色按鈕點一下會說明原因；更多管理功能在「顯示進階操作」。",
         wraplength=s(270),
         foreground="#64748B",
         font=(family, 10),
@@ -257,13 +303,19 @@ def build_workbench(app):
         setattr(app, attr, field)
     row = ttk.Frame(goal)
     row.pack(fill="x")
-    app.new_button = app.button(
-        row, "建立專案", app.create_project, requires="new", style="Primary.TButton", side="left"
-    )
+    app.new_button = app.button(row, "建立專案", app.create_project, requires="new", side="left")
     app.button(row, "儲存目標", app.save_project, requires="editable", side="left", padx=s(6))
     history_row = ttk.Frame(goal)
     history_row.pack(fill="x", pady=(s(6), 0))
-    app.button(history_row, "版本與差異", app.version_history, requires="project", side="left")
+    app.button(
+        history_row,
+        "版本與差異",
+        app.version_history,
+        requires="project",
+        side="left",
+        advanced=True,
+        show_when="project",
+    )
     app.button(
         history_row,
         "比較更新",
@@ -271,6 +323,8 @@ def build_workbench(app):
         requires="project",
         side="left",
         padx=s(6),
+        advanced=True,
+        show_when="project",
     )
     app.save_state = tk.StringVar()
     ttk.Label(
@@ -280,9 +334,16 @@ def build_workbench(app):
     flow.pack(fill="both", expand=True, pady=(s(12), 0))
     app.candidate_choice = ttk.Combobox(flow, state="readonly", width=1)
     app.candidate_choice.pack(fill="x")
+    app.defer_widget(app.candidate_choice, show_when="candidate")
     app.candidate_choice.bind("<<ComboboxSelected>>", lambda _e: app.refresh_actions())
     app.button(
-        flow, "採用選取的候選流程", app.accept_candidate, requires="candidate", fill="x", pady=s(6)
+        flow,
+        "採用選取的候選流程",
+        app.accept_candidate,
+        requires="candidate",
+        fill="x",
+        pady=s(6),
+        show_when="candidate",
     )
     app.button(
         flow,
@@ -291,6 +352,7 @@ def build_workbench(app):
         requires="initialize",
         fill="x",
         pady=(0, s(6)),
+        show_when="manual",
     )
     app.button(
         flow,
@@ -299,9 +361,17 @@ def build_workbench(app):
         requires="workflow",
         fill="x",
         pady=(0, s(6)),
+        show_when="workflow",
     )
     app.button(
-        flow, "業務規則／證據確認", app.edit_evidence, requires="workflow", fill="x", pady=(0, s(6))
+        flow,
+        "業務規則／證據確認",
+        app.edit_evidence,
+        requires="workflow",
+        fill="x",
+        pady=(0, s(6)),
+        advanced=True,
+        show_when="workflow",
     )
     diagram = ttk.Frame(flow)
     diagram.pack(fill="both", expand=True)
@@ -322,6 +392,7 @@ def build_workbench(app):
     app.canvas.bind("<Configure>", lambda _e: app.draw_workflow(refresh=False))
     row = ttk.Frame(flow)
     row.pack(fill="x", pady=s(6))
+    app.defer_widget(row, show_when="workflow")
     app.button(row, "調整步驟", app.edit_node, requires="node", side="left", expand=True, fill="x")
     app.button(
         row,
@@ -341,10 +412,14 @@ def build_workbench(app):
         requires="save_handler",
         fill="x",
         pady=(0, s(6)),
+        advanced=True,
+        show_when="workflow",
     )
-    ttk.Label(
+    node_help = ttk.Label(
         flow, textvariable=app.node_info, wraplength=s(390), foreground="#64748B", font=(family, 10)
-    ).pack(fill="x")
+    )
+    node_help.pack(fill="x")
+    app.defer_widget(node_help, show_when="workflow")
 
     app.tabs = ttk.Notebook(right)
     app.tabs.pack(fill="both", expand=True)
@@ -395,38 +470,53 @@ def build_workbench(app):
         requires="case_history",
         fill="x",
         pady=s(3),
+        advanced=True,
+        show_when="case_history",
     )
     app.button(
-        result, "建置歷史／審核／報告", app.manage_builds, requires="project", fill="x", pady=s(3)
+        result,
+        "建置歷史／審核／報告",
+        app.manage_builds,
+        requires="project",
+        fill="x",
+        pady=s(3),
+        advanced=True,
+        show_when="project",
     )
     app.verify_button = app.button(
         result,
         "建立候選包並試做",
         app.verify,
         requires="verify",
-        style="Primary.TButton",
         fill="x",
         pady=s(6),
     )
     app.report_text = text_area(result, height=5)
     app.button(
-        result, "根據試做差異修復（最多兩輪）", app.repair, requires="repair", fill="x", pady=s(3)
+        result,
+        "根據試做差異修復（最多兩輪）",
+        app.repair,
+        requires="repair",
+        fill="x",
+        pady=s(3),
+        show_when="failed_report",
     )
     approval = ttk.Frame(result)
     approval.pack(fill="x", pady=(s(8), 0))
     app.actor_var = tk.StringVar()
     ttk.Label(approval, text="核准者姓名").pack(anchor="w")
-    ttk.Entry(approval, textvariable=app.actor_var).pack(fill="x", pady=s(4))
+    app.actor_entry = ttk.Entry(approval, textvariable=app.actor_var)
+    app.actor_entry.pack(fill="x", pady=s(4))
     app.reviewed = tk.BooleanVar(value=False)
-    ttk.Checkbutton(approval, text="已核對試做成果與工作目標", variable=app.reviewed).pack(
-        anchor="w", pady=s(5)
+    app.review_checkbox = ttk.Checkbutton(
+        approval, text="已核對試做成果與工作目標", variable=app.reviewed
     )
+    app.review_checkbox.pack(anchor="w", pady=s(5))
     app.button(
         approval,
         "確認並發布到本機工作區",
         app.publish,
         requires="publish",
-        style="Primary.TButton",
         fill="x",
     )
     app.button(
@@ -436,6 +526,8 @@ def build_workbench(app):
         requires="project",
         fill="x",
         pady=(s(5), 0),
+        advanced=True,
+        show_when="project",
     )
     app.actor_var.trace_add("write", lambda *_a: app.refresh_actions())
     app.reviewed.trace_add("write", lambda *_a: app.refresh_actions())
@@ -450,3 +542,15 @@ def build_workbench(app):
         app.report_text,
         "先採用流程並提供正確成果樣本，再進行試做。\n\n只有驗證通過的版本才能核准發布。",
     )
+
+    def fit_wrapped_labels(parent):
+        for widget in parent.winfo_children():
+            if isinstance(widget, ttk.Label) and widget.winfo_pixels(widget.cget("wraplength")) > 0:
+                widget.bind(
+                    "<Configure>",
+                    lambda event, label=widget: label.configure(wraplength=max(s(80), event.width)),
+                    add=True,
+                )
+            fit_wrapped_labels(widget)
+
+    fit_wrapped_labels(root)

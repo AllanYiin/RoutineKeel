@@ -519,3 +519,15 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
   **20 passed、19 平台條件 skipped，26.20 秒**，原有三 ZIP 皆建立成功。
 - Ruff check／format **178 檔**、YAML 解析及 39 份文件連結／fence 檢查通過。
   新三平台 CI 加入真正 ZIP 安裝／反覆啟動／損毀拒絕驗證；原生 UI、真人、真實模型與最終交付仍未完成。
+
+## 停用回饋與下一步操作引導
+
+- 依使用者「不直覺、做一下就卡住」的回饋，新增共用下一步／原因對照與唯一主要動作。
+  原前置條件、資料外傳範圍、驗證與核准不放寬；被阻擋的點擊只說明原因，不呼叫服務。
+- 修正檔案／貼上文字後未選取來源，以及資料夾替換用錯選擇器、來源動作使用過期預覽 ID 的問題。
+  無候選、未保存、外部衝突、缺本次金鑰、案例不足、試做失敗與審核阻擋各有可理解的方向。
+- ui_guidance／source_selection／project_edits／ui_workflow／manual_and_settings／folder_review／ui_readability：
+  **83 passed、1 virtual-display gate skipped、3 native GUI deselected，13.63 秒**。
+  這是控制器／模型證據；新捲動容器與實際 disabled 滑鼠事件仍須 CI 虛擬顯示器驗證。
+- CI 新增 Linux 獨立 Xvfb／CJK 字型環境，檢查灰色按鈕的實際事件、匯入預覽、進階收合、Tab 焦點、
+  小視窗捲動及主要按鈕可見性，並保存合成畫面截圖。未重新控制使用者目前的 Windows 視窗。

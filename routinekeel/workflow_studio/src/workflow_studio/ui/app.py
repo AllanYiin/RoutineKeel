@@ -13,6 +13,7 @@ from PIL import Image, ImageOps, ImageTk
 from ..contracts import StudioError
 from ..ingestion.preview import fit_size
 from .display import configure_display, enable_high_dpi
+from .guidance import blocked_reason, next_step
 from .model import StudioUIModel, analysis_text
 from .project_edits import ProjectEdits, entered_values
 
@@ -44,11 +45,14 @@ class StudioApp:
         self.raw_analysis = ""
         self.buttons = []
         self.button_rules = {}
+        self.button_blockers = {}
+        self.optional_widgets = {}
         self.display_ir = None
         self.case_count = 0
         self.case_history_count = 0
         self.last_report = None
         self.build_review_blocked = False
+        self.last_empty_folder = None
         self._build()
         self.refresh_projects()
         self.root.update_idletasks()
@@ -60,14 +64,110 @@ class StudioApp:
         self.root.protocol("WM_DELETE_WINDOW", self.close)
         self.root.after(100, self._drain)
 
-    def button(self, parent, text, command, *, requires=None, style="TButton", **pack):
+    def button(
+        self,
+        parent,
+        text,
+        command,
+        *,
+        requires=None,
+        style="TButton",
+        advanced=False,
+        show_when=None,
+        **pack,
+    ):
         widget = ttk.Button(
-            parent, text=text, command=lambda: self.guard(command), style=style, width=0
+            parent,
+            text=text,
+            command=lambda: self.invoke_button(widget, command),
+            style=style,
+            width=0,
         )
         widget.pack(**pack)
         self.buttons.append(widget)
         self.button_rules[widget] = requires
+        widget.bind("<Button-1>", lambda _event: self.explain_blocked_button(widget))
+        if advanced or show_when:
+            self.defer_widget(widget, advanced=advanced, show_when=show_when)
         return widget
+
+    def invoke_button(self, widget, command):
+        self.refresh_actions()
+        if self.explain_blocked_button(widget) != "break":
+            self.guard(command)
+
+    def explain_blocked_button(self, widget):
+        reason = getattr(self, "button_blockers", {}).get(widget)
+        if reason:
+            if hasattr(self, "guidance_feedback"):
+                self.guidance_feedback.set(reason)
+            else:
+                self.status.set(reason)
+            return "break"
+        return None
+
+    def defer_widget(self, widget, *, advanced=False, show_when=None):
+        manager = widget.winfo_manager()
+        self.optional_widgets[widget] = {
+            "advanced": advanced,
+            "condition": show_when,
+            "manager": manager,
+            "pack": {k: v for k, v in widget.pack_info().items() if k != "in"}
+            if manager == "pack"
+            else {},
+            "following": [],
+            "shown": True,
+        }
+
+    def refresh_optional(self, conditions):
+        expanded = hasattr(self, "advanced_var") and self.advanced_var.get()
+        for widget, options in getattr(self, "optional_widgets", {}).items():
+            visible = (expanded or not options["advanced"]) and (
+                not options["condition"] or conditions.get(options["condition"], False)
+            )
+            if visible == options["shown"]:
+                continue
+            if options["manager"] == "grid":
+                widget.grid() if visible else widget.grid_remove()
+            elif visible:
+                following = next(
+                    (w for w in options["following"] if w.winfo_manager() == "pack"), None
+                )
+                widget.pack(**options["pack"], **({"before": following} if following else {}))
+            else:
+                siblings = widget.master.pack_slaves()
+                options["following"] = (
+                    siblings[siblings.index(widget) + 1 :] if widget in siblings else []
+                )
+                widget.pack_forget()
+            options["shown"] = bool(visible)
+
+    def advance(self):
+        self.refresh_actions()
+        action = self.current_guidance.action
+        if action is None:
+            return
+        fields = {
+            "name": "name_entry",
+            "goal": "goal_input",
+            "success": "success_input",
+            "sources": "source_tree",
+            "candidate": "candidate_choice",
+            "actor": "actor_entry",
+            "review": "review_checkbox",
+        }
+        if action.startswith("focus_"):
+            field = action.removeprefix("focus_")
+            if field in {"actor", "review"}:
+                self.tabs.select(2)
+            getattr(self, fields[field]).focus_set()
+        elif action == "show_results":
+            self.tabs.select(2)
+            self.report_text.focus_set()
+        elif action == "restore_project":
+            self._archive(True)
+        else:
+            getattr(self, action)()
 
     def refresh_actions(self):
         project = self.current_project
@@ -80,8 +180,10 @@ class StudioApp:
             {self.source_rows[key][0].source_id for key in selection if key in self.source_rows}
         )
         workflow = active and self.display_ir is not None
+        provider_ready = self.model.provider_ready
         verified = bool(
             self.last_report
+            and self.model.build_id is not None
             and self.last_report.get("status") == "passed"
             and self.last_report.get("build_id") == self.model.build_id
             and not self.build_review_blocked
@@ -91,11 +193,12 @@ class StudioApp:
             "project": project is not None,
             "active": active,
             "editable": editable,
-            "new": project is None and bool(self.name_var.get().strip()),
+            "new": project is None
+            and all(v.get().strip() for v in (self.name_var, self.goal_var, self.success_var)),
             "archived": project is not None and project.status == "archived",
             "source": source,
             "single_source": source and source_count == 1,
-            "analysis": source and self.model.provider is not None,
+            "analysis": source and provider_ready,
             "candidate": active
             and bool(self.model.candidates)
             and self.candidate_choice.current() >= 0,
@@ -112,7 +215,8 @@ class StudioApp:
             "case_history": active and self.case_history_count > 0,
             "verify": workflow and self.case_count > 0,
             "repair": active
-            and self.model.provider is not None
+            and provider_ready
+            and not self.build_review_blocked
             and bool(
                 self.last_report
                 and self.last_report.get("status") == "failed"
@@ -125,10 +229,53 @@ class StudioApp:
             and self.reviewed.get()
             and bool(self.actor_var.get().strip()),
         }
+        selected_owners = {
+            self.source_rows[key][0].source_id: self.source_rows[key][0]
+            for key in selection
+            if key in self.source_rows
+        }
+        context = {
+            "busy": self.busy,
+            "project": project is not None,
+            "archived": bool(project and project.status == "archived"),
+            "dirty": dirty,
+            "conflict": self.project_edits.conflict,
+            "name": self.name_var.get().strip(),
+            "goal": self.goal_var.get().strip(),
+            "success": self.success_var.get().strip(),
+            "has_sources": bool(self.source_rows),
+            "selected": bool(source),
+            "selected_count": source_count,
+            "single_folder": source_count == 1
+            and all(getattr(s, "kind", "") in {"folder", "zip"} for s in selected_owners.values()),
+            "provider": provider_ready,
+            "provider_configured": self.model.provider is not None,
+            "candidates": bool(self.model.candidates),
+            "candidate_selected": self.candidate_choice.current() >= 0,
+            "workflow": self.display_ir is not None,
+            "cases": self.case_count,
+            "verified": verified,
+            "review_blocked": self.build_review_blocked,
+            "report_failed": bool(
+                self.last_report
+                and self.last_report.get("status") == "failed"
+                and self.last_report.get("build_id") == self.model.build_id
+            ),
+            "reviewed": self.reviewed.get(),
+            "actor": self.actor_var.get().strip() if hasattr(self, "actor_var") else "",
+            "published": bool(getattr(self.model, "approval_id", None)),
+            "repairable": bool(enabled["repair"]),
+        }
+        context["folder_needs_more"] = getattr(self, "last_empty_folder", None) in {
+            (s.source_id, getattr(s, "version", None)) for s in selected_owners.values()
+        }
+        enabled["folder"] = source and context["single_folder"]
+        self.button_blockers = {}
         for button, rule in self.button_rules.items():
-            button.configure(
-                state="normal" if not self.busy and enabled.get(rule, False) else "disabled"
-            )
+            allowed = not self.busy and enabled.get(rule, False)
+            button.configure(state="normal" if allowed else "disabled")
+            if not allowed:
+                self.button_blockers[button] = blocked_reason(rule, context)
         self.candidate_choice.configure(
             state="readonly" if not self.busy and active and self.model.candidates else "disabled"
         )
@@ -140,6 +287,25 @@ class StudioApp:
                 if dirty
                 else ("已儲存" if project else "")
             )
+        self.current_guidance = next_step(context)
+        if hasattr(self, "guidance_title"):
+            self.guidance_title.set("下一步：" + self.current_guidance.title)
+            self.guidance_detail.set(self.current_guidance.detail)
+            self.guidance_feedback.set("")
+            self.next_button.configure(text=self.current_guidance.label)
+        self.refresh_optional(
+            {
+                "project": project is not None,
+                "sources": bool(self.source_rows),
+                "workflow": self.display_ir is not None,
+                "candidate": bool(self.model.candidates),
+                "folder": context["single_folder"],
+                "conflict": self.project_edits.conflict,
+                "manual": bool(self.source_rows) and self.display_ir is None,
+                "failed_report": context["report_failed"],
+                "case_history": self.case_history_count > 0,
+            }
+        )
 
     def entered_project_values(self):
         return entered_values(self.name_var.get(), self.goal_var.get(), self.success_var.get())
@@ -369,16 +535,38 @@ class StudioApp:
     def import_file(self):
         path = filedialog.askopenfilename(title="選擇來源檔案", parent=self.root)
         if path:
-            self.model.import_path(path)
+            source = self.model.import_path(path)
             self.refresh_project()
+            self.focus_imported_source(source.source_id)
+
+    def focus_imported_source(self, source_id):
+        self.source_tree.selection_set(source_id)
+        self.source_tree.focus(source_id)
+        self.source_tree.see(source_id)
+        self._source_selected()
+
+    def selected_source_ids(self):
+        keys = self.source_tree.selection()
+        if not keys or any(key not in self.source_rows for key in keys):
+            raise StudioError("SOURCE_NOT_FOUND", "請先從目前清單選取來源。")
+        return list(dict.fromkeys(self.source_rows[key][0].source_id for key in keys))
+
+    def single_source(self):
+        identities = self.selected_source_ids()
+        if len(identities) != 1:
+            raise StudioError("SOURCE_NOT_FOUND", "這項操作一次只能選取一個來源。")
+        return next(
+            source
+            for source, _record in self.source_rows.values()
+            if source.source_id == identities[0]
+        )
 
     def import_folder(self):
         path = filedialog.askdirectory(title="選擇已成功完成工作的資料夾", parent=self.root)
         if path:
             source = self.model.import_path(path)
             self.refresh_project()
-            self.source_tree.selection_set(source.source_id)
-            self._source_selected()
+            self.focus_imported_source(source.source_id)
 
     def paste_source(self):
         window = tk.Toplevel(self.root)
@@ -386,6 +574,11 @@ class StudioApp:
         window.title("貼上工作說明或 Mermaid")
         text = tk.Text(window, width=70, height=18)
         text.pack(padx=12, pady=12)
+        if not self.source_rows and self.current_project:
+            text.insert(
+                "1.0",
+                f"工作目標：{self.goal_var.get()}\n成功條件：{self.success_var.get()}\n\n輸入資料：\n希望得到的成果：\n步驟或規則：\n",
+            )
         mermaid = tk.BooleanVar(value=False)
         ttk.Checkbutton(window, text="這是 Mermaid 流程圖", variable=mermaid).pack(
             anchor="w", padx=12
@@ -393,11 +586,12 @@ class StudioApp:
 
         def save():
             try:
-                self.model.import_text(
+                source = self.model.import_text(
                     text.get("1.0", "end-1c"), "流程.mmd" if mermaid.get() else "工作說明.txt"
                 )
                 window.destroy()
                 self.refresh_project()
+                self.focus_imported_source(source.source_id)
             except Exception as exc:
                 self.error(exc)
 
@@ -458,18 +652,23 @@ class StudioApp:
         self.refresh_actions()
 
     def replace_source(self):
-        if not self.selected_source:
-            raise StudioError("SOURCE_NOT_FOUND", "請先選擇來源。")
-        path = filedialog.askopenfilename(title="選擇替換來源", parent=self.root)
+        source = self.single_source()
+        chooser = filedialog.askdirectory if source.kind == "folder" else filedialog.askopenfilename
+        path = chooser(
+            title="選擇替換的整個來源資料夾" if source.kind == "folder" else "選擇替換來源檔案",
+            parent=self.root,
+        )
         if path:
-            self.model.import_path(path, self.selected_source)
+            self.model.import_path(path, source.source_id)
             self.refresh_project()
+            self.focus_imported_source(source.source_id)
 
     def remove_source(self):
-        if self.selected_source and messagebox.askyesno(
+        source = self.single_source()
+        if messagebox.askyesno(
             "移除參照", "只移除 Studio 參照，保留原始檔與歷史。", parent=self.root
         ):
-            self.model.remove_source(self.selected_source)
+            self.model.remove_source(source.source_id)
             self.refresh_project()
 
     def _background(self, action, done):
@@ -477,6 +676,7 @@ class StudioApp:
         self.cancelled.clear()
         for button in self.buttons:
             button.configure(state="disabled")
+        self.refresh_actions()
 
         def work():
             try:
@@ -519,6 +719,8 @@ class StudioApp:
                     continue
                 self.busy = False
                 self.stop_button.configure(state="disabled")
+                if hasattr(self.stop_button, "pack_forget"):
+                    self.stop_button.pack_forget()
                 if self.close_requested:
                     self.root.destroy()
                     return
@@ -535,16 +737,18 @@ class StudioApp:
         self.root.after(100, self._drain)
 
     def find_folder_candidates(self):
-        if not self.selected_source:
-            raise StudioError("SOURCE_NOT_FOUND", "請先選擇成功案例資料夾。")
+        source = self.single_source()
+        reference = (source.source_id, source.version)
         self.status.set("正在比對本機樣本，尋找有證據的處理方式……")
 
         self._background(
-            lambda: self.model.folder_candidates(self.selected_source), self.show_folder_candidates
+            lambda: self.model.folder_candidates(reference[0]),
+            lambda result: self.show_folder_candidates(result, reference),
         )
 
-    def show_folder_candidates(self, result):
+    def show_folder_candidates(self, result, reference=None):
         candidates, unknowns = result
+        self.last_empty_folder = reference if not candidates else None
         self.candidate_choice.set("")
         self.candidate_choice["values"] = [
             f"候選 {i + 1} · " + " → ".join(self.tool_title(n) for n in c["ir"]["nodes"])
@@ -587,7 +791,7 @@ class StudioApp:
             self.canvas.create_text(
                 width / 2,
                 round(70 * scale),
-                text="先建立專案，再提供工作說明或成功案例。\n整理出的工作步驟會顯示在這裡。",
+                text="整理出的流程會顯示在這裡。\n請依上方的「下一步」繼續。",
                 fill=COLORS["muted"],
                 width=width - round(40 * scale),
                 font=(self.display["font_family"], 11),
@@ -912,6 +1116,7 @@ class StudioApp:
 
         self._background(work, done)
         self.stop_button.configure(state="normal")
+        self.stop_button.pack(fill="x", pady=5)
 
     def release_history(self):
         rows = [r for r in self.model.release_history() if r["status"] == "published"]
@@ -1075,12 +1280,7 @@ class StudioApp:
         ttk.Button(controls, text="取消", command=window.destroy).pack(side="right", padx=8)
 
     def analyze(self):
-        keys = self.source_tree.selection()
-        if not keys:
-            raise StudioError("SOURCE_NOT_FOUND", "請先選擇要分析的來源。")
-        if any(key not in self.source_rows for key in keys):
-            raise StudioError("SOURCE_NOT_FOUND", "來源清單已改變，請重新選取。")
-        selected = list(dict.fromkeys(self.source_rows[key][0].source_id for key in keys))
+        selected = self.selected_source_ids()
         self.status.set("正在本機準備來源與圖片預覽，尚未傳送給模型……")
         self._background(lambda: self.model.prepare_analysis(selected), self.offer_analysis)
 
@@ -1132,6 +1332,7 @@ class StudioApp:
             done,
         )
         self.stop_button.configure(state="normal")
+        self.stop_button.pack(fill="x", pady=5)
 
     def stop(self):
         self.cancelled.set()
