@@ -612,6 +612,12 @@ class StudioApp:
             focused if focused in self.source_tree.selection() else self.source_tree.selection()[0]
         )
         source, record = self.source_rows[key]
+        if (
+            record is None
+            and source.kind not in {"folder", "zip"}
+            and len(source.manifest["files"]) == 1
+        ):
+            record = source.manifest["files"][0]
         self.selected_source = source.source_id
         self.display_image = None
         self.image_label.configure(image="")

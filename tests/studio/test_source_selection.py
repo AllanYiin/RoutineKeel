@@ -65,6 +65,23 @@ def test_deselecting_every_source_clears_the_preview_selection(tmp_path):
     assert app.selected_source is None
 
 
+def test_single_file_parent_previews_content_instead_of_only_its_filename(tmp_path):
+    app, _ = controller(tmp_path)
+    source = app.model.import_text("actual imported content", "note.txt")
+    app.refresh_project()
+    app.busy = False
+    app.source_tree = SimpleNamespace(
+        selection=lambda: (source.source_id,), focus=lambda: source.source_id
+    )
+    app.image_label = app.preview_label = SimpleNamespace(configure=lambda **kwargs: None)
+    app.preview_text = object()
+    app.tabs = SimpleNamespace(select=lambda index: None)
+    seen = []
+    app._set_text = lambda widget, text: seen.append(text)
+    app._source_selected()
+    assert seen == ["actual imported content"]
+
+
 def test_multiselect_enables_analysis_but_blocks_single_source_operations(tmp_path):
     app, _ = controller(tmp_path)
 

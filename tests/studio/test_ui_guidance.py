@@ -294,4 +294,16 @@ def test_headless_guidance_disabled_feedback_and_progressive_disclosure(tmp_path
         if os.environ.get("STUDIO_GATE_REPORT_DIR"):
             ImageGrab.grab().save(output / "guided-workbench-compact.png")
     finally:
+        if os.environ.get("STUDIO_GATE_REPORT_DIR"):
+            try:
+                from pathlib import Path
+
+                from PIL import ImageGrab
+
+                output = Path(os.environ["STUDIO_GATE_REPORT_DIR"])
+                output.mkdir(parents=True, exist_ok=True)
+                root.update_idletasks()
+                ImageGrab.grab().save(output / "guided-workbench-final.png")
+            except Exception as exc:
+                (output / "guided-screenshot-error.txt").write_text(str(exc), encoding="utf-8")
         root.destroy()
