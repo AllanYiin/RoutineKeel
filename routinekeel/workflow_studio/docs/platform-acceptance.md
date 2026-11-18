@@ -101,3 +101,27 @@ artifact ZIP SHA-256 已與 GitHub metadata 核對：
 
 下載的原始 artifacts 及彙整保存在 `dist/posix-repro/`，不提交到 Git。
 此結果只覆蓋該 commit；後續程式修正須另有回歸證據。真人、付費模型及原生視窗 Gate 仍未完成。
+
+## 持久事件版本 CI（fb1e864）
+
+[run 44247339245](https://github.com/AllanYiin/RoutineKeel/actions/runs/44247339245)
+已 completed/success，六個測試 job 均 success，publish skipped。
+PR head 為 `fb1e8644a818b7c6f323ee5fe2cc1faac401217b`，實際 merge checkout
+`93a7b7f258256fa869d32381933156067bd913f7`；以下涵蓋最後六項操作事件測試。
+
+| Studio 非桌面 | passed | skipped | deselected | 秒 | 20 節點 p95 ms |
+|---|---:|---:|---:|---:|---:|
+| Windows 2025 | 529 | 6 | 3 | 1130.54 | 2.203 |
+| macOS 15 | 529 | 6 | 3 | 142.63 | 1.38 |
+| Ubuntu 24.04 | 529 | 6 | 3 | 237.94 | 2.292029 |
+
+三份 JUnit 均為 tests=535、failures=errors=0、skipped=6。三個原生 UI 測試在 collection 後排除，
+不計入 JUnit tests。每平台的 20 故障、3 個 exit(97) 程序中止與 100 次隔離執行均已逐份核對；
+固定 IR／實際輸出指紋與前輪一致，三平台都已真實執行。下載 ZIP SHA-256 與 GitHub artifact metadata 相符：
+
+- Windows：`3535803e0fa1c88f7cdbd9938f387597dc0bb93efc2653b9d90ee5afb47b57b5`
+- macOS：`6543277b79e6fd46572e8ae448bc68b105a5aa3877f02a21d2c3053b31f64e5b`
+- Ubuntu：`53ecf856b56f1aaf86b52f9fdb35287dbef819d1804e34943759c9848f43ed1b`
+
+原始檔與摘要：`dist/posix-repro/*run21.zip`、`run21-summary.json`。
+後續文件／入門案例提交沒有改動這輪被測的 Python；正式打包或任何後續程式變動仍需相應檢查。

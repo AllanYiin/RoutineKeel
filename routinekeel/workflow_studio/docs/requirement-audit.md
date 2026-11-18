@@ -40,7 +40,7 @@
 | AC-04 未授權寄送 | test_security_end_to_end：外寄描述／自授權來源被拒、不能建置核准發布、SMTP/socket/HTTP 呼叫 0 | 目前未支援真實寄送適配，未宣稱其已授權路徑完成；負例工程驗收已具證據 |
 | AC-05 確定性零 LLM | 已核准發布至隔離工作區的 copy 包，連續 100 次不同輸入均 registered_requests=0，事後重核全部交付 | 本機固定案例已驗；仍需完整範例與平台矩陣，不推論任意流程皆正確 |
 | AC-06 成功資料夾 | acceptance-v1 C11–C15 從資料夾推導、訓練與未見資料真實重播、隔離發布；C15 含中間產物 | Windows 工程路徑已驗；原生操作與真人結果另列，未用工程測試替代真人 Gate |
-| AC-07 平台報告 | policy 平台拒絕與 package compatibility；run44245189603 三平台各523通過，同一IR與輸出hash一致 | 3924c6d工程矩陣已具證據；最新事件修正與後續交付仍須其對應版本驗證，不含原生GUI |
+| AC-07 平台報告 | policy 平台拒絕與 package compatibility；fb1e864的run44247339245 三平台各529通過，同一IR與輸出hash一致 | 目前程式工程矩陣已有證據；不含原生GUI、實際模型或未來發行包的安裝驗收 |
 | AC-08 五步影片 | FFmpeg 真實影格、fixture 推導 | 真實理解品質未驗，P2 維持停用 |
 
 ## 最終交付 Gate
@@ -49,8 +49,8 @@
   資料完整性／參考答案通過不算轉換成功。真實模型與至少 16 件非技術使用者完成仍未有證據，結果模板全部 not_run。
 - Stage 8 已有明確 JSON 比較、最多兩輪 ModelRepair Provider／UI 接線及獨立範圍／預算授權，
   CSV 算法及參數修復已用真正 Runtime 重播；模型輸出目前仍為 fixture，真實品質及新按鈕視覺驗收待完成。
-- Stage 12：Studio 三平台 CI 與獨立 Runtime／Studio 環境已有 run44245189603 成功結果；
-  最新事件修正的 run44247339245 仍須收齊。詳見 platform-acceptance.md，不以設定存在當成平台通過。
+- Stage 12：Studio 三平台 CI 與獨立 Runtime／Studio 環境的 run44245189603、最新事件修正的
+  run44247339245 均成功，artifact已核對。詳見 platform-acceptance.md；完整真人/模型Gate仍未完成。
 - Stage 13：入門／開發／隱私／限制／升級回滾文件與入門案例已備，案例由 UI model 與真正 Runtime 重播；
   尚需發行工具、完整包清單、無私密內容檢查、乾淨安裝啟動及最終 commit 證據。
   開發用 open_studio.bat 不等於乾淨安裝交付，文件存在與工程重播不代替真人走查。
