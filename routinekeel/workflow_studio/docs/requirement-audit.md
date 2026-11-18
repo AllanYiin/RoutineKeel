@@ -2,7 +2,7 @@
 
 依 `specs/requirements.txt` 第一部分及 Stage 0–13 核對。此文件是工作清單，並非完成聲明。
 本機已驗證的程式能力不等於真實模型品質、非技術使用者或三平台驗收。
-原始需求不因實作目前較窄而縮減；Stage 7 為主要回修階段，其餘缺口依相依順序補齊。
+原始需求不因實作目前較窄而縮減；目前 Stage 12 為主要驗收階段，測試揭露的功能缺陷仍須回修。
 
 ## 功能契約
 
@@ -29,16 +29,16 @@
 | 原需求 | 現有證據 | 未完成驗收 |
 |---|---|---|
 | §8 IR、邏輯參照、節點強制契約、有限分支 | ir 模組、compiler/compatibility.py、branch_lowering.py；IR／branch 測試 | 逐欄位核對 Runtime 語意與拒絕路徑；不能把 IR 接受但 Compiler 不支援當成已實作 |
-| §9 狀態／migration／不可變／交易 | SQLite v014、v009–v013 升級備份還原、CAS、版本／證據／工具／模板／審核／發布核對紀錄 | 長操作中斷狀態、100 次 CRUD 重開與完整正式指標故障矩陣 |
+| §9 狀態／migration／不可變／交易 | SQLite v014、v009–v013 升級備份還原、CAS、版本／證據／工具／模板／審核／發布核對紀錄；100 次建立／更新／重開已驗 | 完整長操作中斷與正式指標 20 故障矩陣仍待 |
 | §10 共用 Service／事件／串流 | service.py、discovery events 與 usage | generation、verification、approval 事件與所有狀態持久化須逐項核對；CLI 目前只有部分入口 |
 | §11 UI／預覽／停止／顏色＋文字 | 原生 Windows 檢視與使用者回饋；ui-review.md、project-drafts.md、test_project_edits.py | 背景重讀保留草稿、版本衝突與比較更新已補控制器測試；不操作目前使用者桌面，其他平台及新增表單仍待實機走查 |
-| §12 非功能與基準 | 安全路徑、來源 snapshots、隔離重播、無網路默認 | 100 來源零模型、20 節點 p95 <500ms、100 次 CRUD、100 次不同輸入隔離、20 故障；均需固定硬體與資料證據 |
+| §12 非功能與基準 | acceptance-benchmarks.md：100 來源零模型、20 節點 p95 0.8214ms、100 次建立／更新／重開及 100 次不同輸入隔離已在指定 Windows／SSD 驗證 | 完整 20 故障與其他平台證據仍待；不推論所有硬體皆達標 |
 | §13 Error／Abuse cases | 各模組拒絕測試及 error codes | 逐情境對照報告，確認取消／斷線／外部結果不明不重試；禁止刪掉失敗測試 |
 | AC-01 文字三步生成 | fixture discovery、真實 Runtime replay | 真實模型完整文字三步；至少五件文字及五件 Mermaid |
 | AC-02 第三版續編 | 持久化及 UI model 重開測試 | 固定第三版草稿／證據／原發布包不可變的直接整合案例 |
 | AC-03 中斷 | 串流故障／草稿保存測試 | 真實 Provider、重新開啟與 UI 狀態對照 |
 | AC-04 未授權寄送 | 工具政策與編譯拒絕測試 | 固定外部寄送負例的完整發布流程，外部呼叫必須為零 |
-| AC-05 確定性零 LLM | 真實 WorkflowService 與 registered_requests=0 | 納入已發布包的固定 100 次隔離測試 |
+| AC-05 確定性零 LLM | 已核准發布至隔離工作區的 copy 包，連續 100 次不同輸入均 registered_requests=0，事後重核全部交付 | 本機固定案例已驗；仍需完整範例與平台矩陣，不推論任意流程皆正確 |
 | AC-06 成功資料夾 | 證據候選、GoldenCase、未知標註測試 | 使用含中間產物的固定資料集端到端驗收 |
 | AC-07 平台報告 | policy 平台拒絕與 package compatibility | 同一 IR 的三平台報告及實際 CI；目前未完成 |
 | AC-08 五步影片 | FFmpeg 真實影格、fixture 推導 | 真實理解品質未驗，P2 維持停用 |

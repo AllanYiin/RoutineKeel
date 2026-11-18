@@ -393,3 +393,18 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
   20 passed、3 deselected，6.14 秒；與完整回歸分開記錄。
 - Ruff check、format（152 files）及 git diff --check 通過。無 schema 遷移，回退前須先保存本機未存草稿。
   新比較視窗與目標按鈕分列尚未實機驗收。完整原規格／真實模型／平台／非技術使用者 Gate 仍待。
+
+## Stage 12 首批基準與核心 DoD 對照
+
+- 核心八檔：test_compiler、test_generated_packages、test_runtime_compatibility、test_generated_handlers、
+  test_verifier、test_repair、test_branches、test_llm_runtime：37 passed，35.26 秒。
+  原指示檔名差異與範圍見 stage-acceptance.md；不存在的 test_llm_budget.py 初次命令未執行測試，未算通過。
+- 新增 test_performance、test_regression、test_end_to_end，硬體與完整數據見 acceptance-benchmarks.md。
+  20 節點靜態檢查最終 p95 0.8214 ms；100 來源清單及 metadata 模型呼叫 0；100 次建立／更新／重開完整性通過。
+- 隔離測試最初重用輸出槽，在第 11 個不同輸入被既有 OUTPUT_EXISTS 正確拒絕；保留此負例，
+  使用契約要求的獨立輸出位置後，100 次成功執行、100 個 run_id／delivery_id／輸入 hash 唯一，
+  100 份交付版本事後重核皆相符，registered model requests=0。測試命令 1 passed，245.55 秒。
+- 初輪三個快速基準通過、隔離期待失敗；修正 runner 的 UTF-8 診斷捕捉後重跑隔離，
+  加上來源版本集合後另重跑靜態基準 1 passed，0.86 秒。沒有把各輪相加冒充單次完整通過。
+- 本輪只新增測試／驗收文件，沒有產品或底座改動；不重跑不受影響的全部 Studio 測試。
+  完整 20 故障、20 低風險資料集、AC 矩陣、目前底座完整回歸、平台 CI、真人及真實模型 Gate 仍待。
