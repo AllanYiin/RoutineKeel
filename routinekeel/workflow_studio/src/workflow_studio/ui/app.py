@@ -804,16 +804,18 @@ class StudioApp:
         scale = self.display["scale"]
         width = max(round(280 * scale), self.canvas.winfo_width() - 4)
         if not self.display_ir:
+            width = max(1, self.canvas.winfo_width() - 4)
             self.canvas.create_text(
                 width / 2,
                 round(70 * scale),
                 text="整理出的流程會顯示在這裡。\n請依上方的「下一步」繼續。",
                 fill=COLORS["muted"],
-                width=width - round(40 * scale),
+                width=max(1, width - round(40 * scale)),
                 font=(self.display["font_family"], 11),
                 justify="center",
             )
             self.canvas.configure(scrollregion=(0, 0, width, round(160 * scale)))
+            self.canvas.xview_moveto(0)
             self.selected_node = None
             return
         nodes = self.display_ir["nodes"]

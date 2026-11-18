@@ -78,6 +78,10 @@ def test_ui_state_multiline_and_bounds(tmp_path, monkeypatch):
         assert app.stop_button.winfo_rooty() + app.stop_button.winfo_height() <= limit
         publish = next(button for button, rule in app.button_rules.items() if rule == "publish")
         assert publish.winfo_rooty() + publish.winfo_height() <= limit
+        empty_message = app.canvas.find_all()
+        assert len(empty_message) == 1
+        left, _, right, _ = app.canvas.bbox(empty_message[0])
+        assert left >= 0 and right <= app.canvas.winfo_width()
         for button in app.buttons:
             if button.winfo_ismapped():
                 assert button.winfo_width() >= button.winfo_reqwidth() - 2, button["text"]

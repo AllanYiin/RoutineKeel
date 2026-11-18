@@ -161,20 +161,50 @@ PR head 為 `fb1e8644a818b7c6f323ee5fe2cc1faac401217b`，實際 merge checkout
 
 [run 44282519400](https://github.com/AllanYiin/RoutineKeel/actions/runs/44282519400)
 測試 PR head `cc12c4a7a004cdc8d0dba44b82dc8343d892eaff`，實際 merge
-`4cbea7f472520324a6cefb638ca6b333801ce8f7`。本次核對時，Windows Studio 完整套件仍在執行，
-其餘五個 job 已成功；不沿用前版成功當成新版 Windows 通過。
+`4cbea7f472520324a6cefb638ca6b333801ce8f7`。三平台 Studio、底座及打包六個 job 均成功，
+publish skipped；三平台的原始 artifacts 均已下載並核對。
 
 Ubuntu/macOS 各 **583 passed、7 skipped、3 deselected**；JUnit tests=590，零錯誤／失敗，
 時間分別 147.795／128.102 秒。跳過範圍與前版相同。Ubuntu 獨立 Tk Gate
 **1 passed、0 skipped、3.064 秒**，加入名稱起案、分次保存、缺少成功條件時仍可請 AI 釐清、
 來源說明編輯與過期衝突保留；正常與小視窗合成截圖已檢視。
+Windows 為 **582 passed、8 skipped、3 deselected**，JUnit 830.099 秒；多一項 symlink skip。
 
-兩平台實際 ZIP 安裝／重用／案例重播／獨立 Runtime／損毀拒絕均成功且 source_dirty=false。
+三平台實際 ZIP 安裝／重用／案例重播／獨立 Runtime／損毀拒絕均成功且 source_dirty=false。
 已下載並對照 GitHub metadata 的 artifact SHA-256：
 
 - Ubuntu：`a62b3a89beb229dafbf170509e938e34bfc40fb385c598064eb334a291720bbe`
 - macOS：`a4b5436f25374ec79ab21784304813e42f94463db92e7810b375277a516991cd`
+- Windows：`61e4659d36edcf8dad8075527cc1a10a11b0358d6d0ffa58a156566391be68e3`
 
 證據為 `dist/ui-guidance-evidence/*-run31.zip`、`run31-summary.json`。
 本機 Windows 的 cc12c4a 候選另經獨立全新安裝，證據 `dist/clarification-install-evidence/distribution.json`；
-這不替代尚未結束的 Windows 完整套件或原生 UI 驗收。
+這不替代原生 Windows UI 或真人驗收。
+
+## 完整 Tk 操作與小視窗回修（67d0a5d）
+
+[run 44284930084](https://github.com/AllanYiin/RoutineKeel/actions/runs/44284930084)
+對應 head `67d0a5dee282cf1c3a6afdc50e06796a77e13549`、merge
+`3f3380c53c32687380259304bd84f58fce05cbd0`。Ubuntu 與 macOS 各
+**584 passed、7 skipped、3 deselected**，JUnit 231.775／148.116 秒；兩平台實際整包安裝成功。
+Windows 完整套件仍在執行。
+
+Linux 虛擬顯示器擴充為 **4 passed、0 skipped、4.583 秒**：
+
+- 引導／停用回饋、來源說明與過期草稿、名稱起案與分次保存。
+- 真正 Tk 按鈕完成成功資料夾推導、試做、本機發布、圖片預覽及關閉重開。
+- 合成串流第一段文字出現時尚未提交 Revision，完成後才保存。
+- 多行文字、離開保存／取消，以及小視窗各按鈕完整寬度。
+
+前輪 run44284483164 在已完成發布後，揭露圖片整數取整的比例斷言誤報及新專案按鈕壓窄。
+比例檢查改為不放大且容許一像素取整；產品增加三欄最小可用寬度，沒有放寬按鈕寬度檢查。
+四個新 JUnit case 皆非 skip；測試視窗各自清理排程，避免跨測試遺留 Tk callback。
+
+已核對 artifact SHA-256：
+
+- Ubuntu：`4d504bde038f698c7f8ac10d911bfae93a88f1bdf889b5b966960174f7d9ab09`
+- macOS：`b7b43b5d6fa894c9de49fbfe27ca30086173421d3f12f900f3862fefd73eb1ab`
+
+`dist/ui-guidance-evidence/run34-workflow-streaming.png`、`run34-workflow-readability-final.png`
+已人工檢視。後者另顯示空流程提示沿用圖形最小寬度而裁切；後續改為依可見寬度換行並加邊界斷言，
+該後續修正仍須其自己的 CI，不能算入本輪通過。

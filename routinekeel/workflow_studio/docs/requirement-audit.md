@@ -9,7 +9,7 @@
 | 原需求 | 現有證據入口 | 仍需完成或補強的證據 |
 |---|---|---|
 | FR-01 專案 CRUD／續編 | project/service.py；test_projects.py、test_ui_workflow.py | 確認 UI 軟刪除、第三版草稿續編及正式歷史保留的完整使用者路徑 |
-| FR-02 來源 CRUD／預覽 | ingestion/service.py、preview／folder、source_description.py；版本及過期寫入測試 | UI 說明已接上，保留原檔/歷史、過期與跨專案寫入拒絕；新表單虛擬視窗及所有格式的最終視覺矩陣仍待 |
+| FR-02 來源 CRUD／預覽 | ingestion/service.py、preview／folder、source_description.py；版本及過期寫入測試 | 說明編輯、衝突保留與圖片預覽已通過Linux真實Tk；各原生平台／所有格式視覺矩陣仍待 |
 | FR-03 草稿版本與差異 | project/history.py、版本與差異 UI、test_history_editing.py | 續編新版本／明確還原目標／捨棄保護已驗；新視窗實機走查待驗 |
 | FR-04 業務規則 CRUD | governance/evidence.py、machine_evidence.py、規則／步驟／資料夾關係表單；test_evidence_decisions.py、test_machine_evidence.py、test_folder_review.py | 人工與固定試做機器證據已分開綁定，修改處理內容使舊機器狀態失效；完整實機走查仍待 |
 | FR-05 工具註冊及政策 | registry/catalog.py、handlers.py、policy.py、available、v011–v012、工具管理 UI | 描述管理與同工作區 Handler 跨專案重用已實測；第三方適配覆蓋及新視窗實機驗收仍待，模板庫目前以同工作區為範圍 |
@@ -40,7 +40,7 @@
 | AC-04 未授權寄送 | test_security_end_to_end：外寄描述／自授權來源被拒、不能建置核准發布、SMTP/socket/HTTP 呼叫 0 | 目前未支援真實寄送適配，未宣稱其已授權路徑完成；負例工程驗收已具證據 |
 | AC-05 確定性零 LLM | 已核准發布至隔離工作區的 copy 包，連續 100 次不同輸入均 registered_requests=0，事後重核全部交付 | 本機固定案例已驗；仍需完整範例與平台矩陣，不推論任意流程皆正確 |
 | AC-06 成功資料夾 | acceptance-v1 C11–C15 從資料夾推導、訓練與未見資料真實重播、隔離發布；C15 含中間產物 | Windows 工程路徑已驗；原生操作與真人結果另列，未用工程測試替代真人 Gate |
-| AC-07 平台報告 | policy 平台拒絕與 package compatibility；83a53ef的run44275449294 三平台工程/完整ZIP安裝通過，同一IR與輸出hash一致 | 該版本矩陣已有證據；後續來源說明入口需新CI，不含原生Windows真人與實際模型品質 |
+| AC-07 平台報告 | policy 平台拒絕與 package compatibility；cc12c4a的run44282519400 三平台工程/完整ZIP安裝通過，artifact已核對 | 後續小視窗修正依最新平台報告；不含原生Windows真人與實際模型品質 |
 | AC-08 五步影片 | FFmpeg 真實影格、fixture 推導 | 真實理解品質未驗，P2 維持停用 |
 
 ## 最終交付 Gate
