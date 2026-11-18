@@ -461,3 +461,21 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
   正式發布仍須 main／人工 workflow_dispatch／publish_release=true，且新增 Studio 成功依賴。
 - YAML 解析及矩陣／發布依賴檢查通過；本機 ci_environment 確認 Runtime 無 Studio 可匯入。
   Ruff check／format 通過。CI 執行結果待實際 run 證據，真人／模型與交付 Gate 仍未完成。
+
+## 三平台 CI 修正與持久操作事件
+
+- PR #9 的第一次 run 44236192522：底座三平台成功；Studio Windows 518 passed／1 failed，
+  macOS／Ubuntu 各 398 passed／121 failed。實際日誌與修正說明見 platform-acceptance.md。
+- `3924c6d` 修正 Verifier 對 POSIX Python symlink 的解析，WSL 實際重現離開 venv 後確認恢復；
+  Windows 舊模板測試先正規化 Git 換行，再分別驗證 LF／CRLF 舊套件。相關本機 16 passed／40.54 秒，
+  模板 3 passed／6.14 秒。第二次 run 44245189603 的逐平台證據同樣見 platform-acceptance.md。
+- 原規格 §10.1 的生成／驗證完成及待核准事件先由五項測試重現缺漏，再補入既有 EventStore；
+  完成事件與建置／報告／狀態同交易，失敗保存最後確認階段，不在事件中複製原始例外或來源資料。
+- 額外注入建置結果讀回失敗，重現完成與失敗並存；將結果讀回納入提交交易後，
+  test_operation_events／test_compiler／test_verifier／test_model_repair／test_build_reviews
+  **48 passed，78.99 秒**。機器 JUnit：`dist/posix-repro/operation-final-regression.xml`。
+- 事件第一版啟動的完整本機非桌面回歸 **534 passed、3 deselected，811.20 秒**，
+  JUnit 為 `dist/posix-repro/full-studio.xml`；本機 FFmpeg 可用，所以未跳過六個 P2 工程測試。
+  這輪 collection 早於額外的結果讀回負例；最後交易補強由上述 48 項覆蓋，最新 commit 的完整回歸以後續 CI 為準。
+- 此次沒有 schema 遷移、不補造舊事件、不授予核准、不改底座。詳細契約及強制終止限制見
+  operation-events.md；新事件仍須隨最新程式版本取得完整三平台回歸。

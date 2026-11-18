@@ -42,3 +42,7 @@ runner 使用 WorkflowService plan／prepare／verify／run，讀取真實 Run�
 runtime_python 必須是已安裝相容 flow_base 的 Python。未提供時使用目前 Python；
 沒有 Runtime 依賴會留下明確失敗報告，不自動安裝依賴或啟動服務。
 本機測試 console.log 留在該次 verification 目錄，不自動分享原始內容。
+
+驗證報告、build 狀態、verification.completed 與通過後的 approval.required 同交易保存。
+業務比對失敗仍是一次已完成的驗證，status 為 failed；報告提交失敗則留下 verification.failed，
+不宣稱已有新報告或新核准。事件與回滾語意見 [操作事件](operation-events.md)。

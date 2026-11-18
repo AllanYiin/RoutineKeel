@@ -7,6 +7,7 @@ from ..compiler.generator import Compiler
 from ..compiler.package import digest
 from ..contracts import StudioError
 from ..governance.reviews import ReviewStore
+from ..llm.streaming import EventStore
 from ..project.models import canonical_json
 from ..project.service import now
 from .comparison import compare
@@ -28,7 +29,6 @@ class Verifier:
         build = Compiler(self.studio).get(project_id, build_id)
         review = ReviewStore(self.studio.repository).assert_open(project_id, build_id)
         report_id = "verification_" + uuid4().hex
-        folder = build["path"] / "verification" / report_id
         report = {
             "report_id": report_id,
             "project_id": project_id,
@@ -40,6 +40,37 @@ class Verifier:
             "created_at": now(),
             "review_sequence": review["sequence"],
         }
+        events = EventStore(self.studio.repository)
+        identity = {"build_id": build_id, "report_id": report_id}
+        events.append(project_id, None, "verification.started", identity, build["revision_id"])
+        try:
+            return self._verify(build, cases, policy, authorization, report)
+        except (Exception, KeyboardInterrupt):
+            events.append(
+                project_id,
+                None,
+                "verification.failed",
+                {
+                    **identity,
+                    "code": "VERIFICATION_INCOMPLETE",
+                    "last_completed_stage": (
+                        "static_validated" if report["static"] == "passed" else "started"
+                    ),
+                    "completed_case_ids": [
+                        c["case_id"] for c in report["cases"] if c["status"] == "passed"
+                    ],
+                },
+                build["revision_id"],
+            )
+            raise
+
+    def _verify(self, build, cases, policy, authorization, report):
+        project_id, build_id, report_id = (
+            report["project_id"],
+            report["build_id"],
+            report["report_id"],
+        )
+        folder = build["path"] / "verification" / report_id
         try:
             manifest, package_files = verify_static(self.studio, build, policy)
             report["static"] = "passed"
@@ -136,6 +167,16 @@ class Verifier:
                 "UPDATE studio_builds SET status=? WHERE build_id=?",
                 ("verified" if report["status"] == "passed" else "rejected", build_id),
             )
+            events = EventStore(self.studio.repository)
+            payload = {
+                "build_id": build_id,
+                "report_id": report_id,
+                "package_hash": build["package_hash"],
+                "status": report["status"],
+            }
+            events.append(project_id, None, "verification.completed", payload, build["revision_id"])
+            if report["status"] == "passed":
+                events.append(project_id, None, "approval.required", payload, build["revision_id"])
         return report
 
     def get(self, project_id, report_id):

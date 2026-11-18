@@ -3,7 +3,8 @@
 `StudioService.compile(project_id, revision_id, tool_policy)` 只編譯已保存的 ir_ready 等有效版本，
 重新查核當前工具政策、IR、受控實作及參數，產生候選 package／ZIP／可重建 source 專案。
 成果放在 Studio 自己的 `projects/<id>/builds/<build_id>`，不安裝至正式流程目錄。
-每次 build 有獨立識別碼、IR hash、ZIP hash 與 mapping；同一 IR 的 wheel bytes 可重現。
+每次 build 有獨立識別碼、IR hash、ZIP hash 與 mapping；同一環境及模板下，同一 IR 的 wheel bytes 可重現。
+跨 OS 的 ZIP metadata／文字換行可能不同，因此須逐包保存 hash，不能假設不同 OS 的 ZIP hash 相同。
 
 目前支援單一檔案輸入、線性／靜態 DAG、受控確定性工具與有界生成的資料處理 Handler。
 新增程式路徑、合成測試及執行邊界見 [生成 Handler](generated-handlers.md)。
@@ -29,3 +30,6 @@ wheel 只依賴已安裝的 flow_base，不匯入 workflow_studio。
 Runtime 直接模型 API registered_requests 為 0；這不代表開發對話本身沒有 token 成本。
 
 「可編譯並執行」仍不代表通過業務驗收。Stage 8 獨立 Verifier 才判定候選包是否符合 Golden Cases。
+
+生成的開始、階段與完成會保存為持久事件；完成事件與候選登錄同交易，見
+[操作事件](operation-events.md)。失敗或中止不會把未登錄檔案當成可發布版本。

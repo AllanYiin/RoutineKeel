@@ -71,3 +71,31 @@ CRLF 而產生 CRCRLF。現在先正規化測試資料，再分別用 LF／CRLF 
 修正後本機相關五檔 **16 passed，40.54 秒**；舊模板 **3 passed，6.14 秒**；
 Ruff check／format **172 檔通過**。證據在 `dist/posix-repro/`，修正版本仍須重新取得三平台 CI 結果。
 6 個 skip 是缺少 FFmpeg 的 P2 影片測試，3 個 deselected 為未授權重啟的原生 GUI 測試；兩者不能宣稱通過。
+
+## 修正版本 CI（3924c6d）
+
+[run 44245189603](https://github.com/AllanYiin/RoutineKeel/actions/runs/44245189603)
+對應 PR head `3924c6dc2b271a81389dbee3bec9f248544a3966`；GitHub 實際 checkout 的 PR merge commit
+為 `2e27d6105e59277859986bbd9f84729619a200e8`，由各 artifact 的 environment.json 核對。
+首輪 head `1663f4f` 的實際 merge commit 則是 `4e348218325251183062be7570ae58057cea032a`。
+
+| 範圍 | Ubuntu 24.04 | Windows 2025 | macOS 15 |
+|---|---|---|---|
+| 底座與流程（含 optional MCP） | 409 passed／3 skipped | 386 passed／26 skipped | 410 passed／2 skipped |
+| Studio 非桌面套件 | 523 passed／6 skipped／3 deselected | 執行中 | 523 passed／6 skipped／3 deselected |
+| Studio 耗時 | 214.65 秒 | 待結果 | 128.09 秒 |
+
+已完成的 POSIX artifacts 均含 20 個固定發布故障報告及 100 次隔離執行紀錄；
+100 次實際成功、不同 run ID、成果重核通過、registered model calls=0。
+20 節點靜態驗證 p95：Ubuntu 1.763391 ms、macOS 1.143792 ms，皆低於 500 ms。
+這是指定 runner 的量測，不推論任意硬體皆有相同效能。
+
+兩平台固定 IR hash 為 `457ff785685189c702672e5cd6be5815a9fad1b22bb2a11f45ffddd1d3fba1aa`，
+實際輸出 hash 為 `99c09682844681a9f8d9b752336f037ae8efa85fa9c551699248cceb877fd73f`。
+artifact ZIP SHA-256 已與 GitHub metadata 核對：
+
+- macOS：`757c88434be0f3bcaf2f04ce17590af6481c258e27d5f6828353039a07028828`
+- Ubuntu：`e9ac10765ed5c025ecf4acd777a25baaf437e0cb9c81b6900fa431d6395c78ff`
+
+下載的原始 artifacts 及彙整保存在 `dist/posix-repro/`，不提交到 Git。
+此結果只覆蓋該 commit；後續程式修正須另有回歸證據。真人、付費模型及原生視窗 Gate 仍未完成。

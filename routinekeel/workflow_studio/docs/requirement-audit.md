@@ -30,7 +30,7 @@
 |---|---|---|
 | §8 IR、邏輯參照、節點強制契約、有限分支 | ir 模組、compiler/compatibility.py、branch_lowering.py；IR／branch 測試 | 逐欄位核對 Runtime 語意與拒絕路徑；不能把 IR 接受但 Compiler 不支援當成已實作 |
 | §9 狀態／migration／不可變／交易 | SQLite v014、遷移備份、CAS、不可變紀錄、100 次專案循環及 20 發布故障／程序中止 | 其他長操作取消與完整跨平台狀態矩陣仍待 |
-| §10 共用 Service／事件／串流 | service.py、discovery events 與 usage | generation、verification、approval 事件與所有狀態持久化須逐項核對；CLI 目前只有部分入口 |
+| §10 共用 Service／事件／串流 | service.py、discovery events 與 usage；operation-events.md | 已補生成階段、驗證完成與待核准事件及交易回滾測試；CLI 目前只有部分入口，全部狀態與硬中止仍須逐項核對 |
 | §11 UI／預覽／停止／顏色＋文字 | 原生 Windows 檢視與使用者回饋；ui-review.md、project-drafts.md、test_project_edits.py | 背景重讀保留草稿、版本衝突與比較更新已補控制器測試；不操作目前使用者桌面，其他平台及新增表單仍待實機走查 |
 | §12 非功能與基準 | acceptance-benchmarks.md／fault-matrix.md：五項基準已有指定 Windows 環境證據，包含 20 固定故障 | 其他平台仍待；不推論所有硬體或實體斷電情境皆通過 |
 | §13 Error／Abuse cases | 各模組拒絕測試及 error codes | 逐情境對照報告，確認取消／斷線／外部結果不明不重試；禁止刪掉失敗測試 |

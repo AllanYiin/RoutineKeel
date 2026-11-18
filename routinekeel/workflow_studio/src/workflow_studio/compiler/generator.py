@@ -7,6 +7,7 @@ from uuid import uuid4
 from ..contracts import StudioError
 from ..ir.validator import validate_ir
 from ..ir.versioning import ir_fingerprint
+from ..llm.streaming import EventStore
 from ..project.models import canonical_json
 from ..project.service import now
 from .compatibility import check_supported
@@ -20,6 +21,41 @@ class Compiler:
         self.studio = studio
 
     def compile(self, project_id, revision_id, policy):
+        # Resolve ownership before writing events for a caller-provided identity.
+        self.studio.projects.get_revision(project_id, revision_id)
+        events = EventStore(self.studio.repository)
+        build_id = "build_" + uuid4().hex
+        stage = "started"
+        events.append(project_id, None, "generation.started", {"build_id": build_id}, revision_id)
+
+        def progress(completed_stage, content):
+            nonlocal stage
+            events.append(
+                project_id,
+                None,
+                "generation.delta",
+                {"build_id": build_id, "stage": completed_stage, "content": content},
+                revision_id,
+            )
+            stage = completed_stage
+
+        try:
+            return self._compile(project_id, revision_id, policy, build_id, progress)
+        except (Exception, KeyboardInterrupt) as exc:
+            events.append(
+                project_id,
+                None,
+                "generation.failed",
+                {
+                    "build_id": build_id,
+                    "code": exc.code if isinstance(exc, StudioError) else "GENERATION_FAILED",
+                    "last_completed_stage": stage,
+                },
+                revision_id,
+            )
+            raise
+
+    def _compile(self, project_id, revision_id, policy, build_id, progress):
         if self.studio.projects.get(project_id).status != "active":
             raise StudioError("PROJECT_INACTIVE", "請先恢復專案後再建立候選包。")
         revision = self.studio.projects.get_revision(project_id, revision_id)
@@ -58,7 +94,7 @@ class Compiler:
             ir.workflow_id, ir_hash, has_llm=has_llm, has_program=bool(generated)
         )
         version = f"0.1.{ir.revision}"
-        build_id = "build_" + uuid4().hex
+        progress("validated", "流程與工具契約已通過檢查。")
         base = self.studio.repository.root
         # Generated locations use database-owned IDs, never input file names or model paths.
         destination = base / "projects" / project_id / "builds" / build_id
@@ -160,6 +196,7 @@ class Compiler:
             json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
         )
         shutil.copyfile(package / "README.md", source / "README.md")
+        progress("package_written", "候選流程包已寫入，正在核對完整性。")
         verify_package(package)
         archive_path = destination / f"{module}-{version}.zip"
         with zipfile.ZipFile(archive_path, "x", compression=zipfile.ZIP_DEFLATED) as archive:
@@ -184,6 +221,7 @@ class Compiler:
             ],
         }
         (destination / "mapping.json").write_text(canonical_json(mapping), encoding="utf-8")
+        package_hash = digest(archive_path.read_bytes())
         with self.studio.repository.transaction() as db:
             if self.studio.projects.get(project_id).status != "active":
                 raise StudioError("PROJECT_INACTIVE", "建置期間專案已封存，候選包未登錄。")
@@ -194,13 +232,25 @@ class Compiler:
                     project_id,
                     revision_id,
                     destination.relative_to(base).as_posix(),
-                    digest(archive_path.read_bytes()),
+                    package_hash,
                     "candidate",
                     canonical_json(mapping),
                     now(),
                 ),
             )
-        return self.get(project_id, build_id)
+            EventStore(self.studio.repository).append(
+                project_id,
+                None,
+                "generation.completed",
+                {
+                    "build_id": build_id,
+                    "package_hash": package_hash,
+                    "status": "candidate",
+                },
+                revision_id,
+            )
+            result = self.get(project_id, build_id)
+        return result
 
     def get(self, project_id, build_id):
         row = self.studio.repository.connection.execute(
