@@ -46,6 +46,7 @@ jobs:
         run: uv run --locked --project routinekeel/workflow_studio --group dev python -m pytest tests/studio -q -rs -k "not test_real_tk_buttons and not test_tk_analysis and not test_ui_state_multiline" --junitxml="${{ runner.temp }}/studio-evidence/studio-junit.xml"
       - name: Verify guided workbench in an isolated virtual display
         if: runner.os == 'Linux'
+        timeout-minutes: 5
         env:
           STUDIO_HEADLESS_UI_TESTS: '1'
           STUDIO_GATE_REPORT_DIR: ${{ runner.temp }}/studio-evidence
