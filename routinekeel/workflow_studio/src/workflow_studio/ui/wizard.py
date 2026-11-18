@@ -84,6 +84,12 @@ def primary(state, enabled, step):
             return "從成功案例找流程", "find_folder_candidates", "先做本機比對，不需要模型。"
         if enabled.get("analysis"):
             return "AI 整理選取來源", "analyze", "送出前會確認資料範圍與預算。"
+        if state.get("provider_configured"):
+            return (
+                "補入本次模型金鑰",
+                "configure_model",
+                "模型設定已保留；金鑰只留在本次工作臺，請先補入。",
+            )
         return "設定 AI 模型", "configure_model", "也可用上方「手動建立第一個流程」。"
     if step == 2:
         if enabled.get("candidate"):
@@ -99,6 +105,8 @@ def primary(state, enabled, step):
         if state.get("verified"):
             return "下一步：核對與發布", "page:4", "試做通過，接著由你確認成果。"
         if enabled.get("verify"):
+            if state.get("report_failed"):
+                return "重新試做", "verify", "請先依報告修正流程或資料；上一步可回到流程檢查。"
             return "建立候選包並試做", "verify", ""
         return "", None, "請先加入試做輸入與正確成果。"
     if state.get("published"):

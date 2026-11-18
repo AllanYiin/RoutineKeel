@@ -193,6 +193,9 @@ def test_real_tk_buttons_complete_folder_to_verification(tmp_path, monkeypatch):
             time.sleep(0.02)
         assert not app.busy and not errors, errors
         assert list(target.glob("*/flow.json"))
+        assert app.published_notice.winfo_ismapped()
+        assert not app.actor_entry.winfo_ismapped()
+        assert not app.review_checkbox.winfo_ismapped()
         if os.environ.get("STUDIO_GATE_REPORT_DIR"):
             from test_ui_guidance import capture_window
 

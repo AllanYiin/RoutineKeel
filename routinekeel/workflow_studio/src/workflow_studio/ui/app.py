@@ -328,6 +328,8 @@ class StudioApp:
         self.refresh_optional(
             {
                 "project": project is not None,
+                "published": context["published"],
+                "unpublished": not context["published"],
                 "projects_available": bool(self.project_rows),
                 "picker_selected": bool(self.project_list.curselection())
                 if hasattr(self.project_list, "curselection")

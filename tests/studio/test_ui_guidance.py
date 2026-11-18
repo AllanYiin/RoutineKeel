@@ -250,6 +250,8 @@ def test_headless_guidance_disabled_feedback_and_progressive_disclosure(tmp_path
         assert not app.actor_entry.winfo_ismapped()
         assert not app.canvas.winfo_ismapped()
         assert not app.next_button.winfo_ismapped()
+        assert app.hint_label.winfo_width() > root.winfo_width() / 2
+        assert app.hint_label.winfo_height() < 45 * app.display["scale"]
         capture("wizard-start.png")
         # Typing directly works; no separate focus/unlock action is required.
         app.name_entry.insert(0, "引導測試")

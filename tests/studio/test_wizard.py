@@ -36,3 +36,9 @@ def test_saved_draft_can_add_sources_before_success_criteria_are_complete():
     assert access(state, 1)
     assert primary(state, {}, 0)[1] == "page:1"
     assert not access(state, 3)
+
+
+def test_saved_provider_without_session_key_explains_the_missing_input():
+    state = {"project": True, "has_sources": True, "selected": True, "provider_configured": True}
+    label, action, hint = primary(state, {}, 1)
+    assert action == "configure_model" and "金鑰" in label and "已保留" in hint

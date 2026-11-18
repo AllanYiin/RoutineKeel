@@ -133,16 +133,17 @@ def build_workbench(app):
         tk.StringVar(),
         tk.StringVar(),
     )
-    ttk.Label(
+    app.hint_label = ttk.Label(
         footer, textvariable=app.guidance_detail, style="Header.TLabel", wraplength=s(850)
-    ).pack(anchor="w", pady=(0, s(6)))
+    )
+    app.hint_label.pack(anchor="w", fill="x", pady=(0, s(6)))
     ttk.Label(
         footer,
         textvariable=app.guidance_feedback,
         foreground="#92400E",
         style="Header.TLabel",
         wraplength=s(850),
-    ).pack(anchor="w")
+    ).pack(anchor="w", fill="x")
     navigation = ttk.Frame(footer, style="Header.TFrame")
     navigation.pack(fill="x")
     back_slot = ttk.Frame(navigation, width=s(90), height=s(40), style="Header.TFrame")
@@ -161,7 +162,11 @@ def build_workbench(app):
 
     app.page_title = tk.StringVar()
     app.page_heading = ttk.Label(
-        root, textvariable=app.page_title, font=(family, 16, "bold"), padding=(s(20), s(6))
+        root,
+        textvariable=app.page_title,
+        font=(family, 16, "bold"),
+        padding=(s(20), s(6)),
+        style="Header.TLabel",
     )
     app.page_heading.pack(anchor="w")
     container = ttk.Frame(root)
@@ -412,16 +417,27 @@ def build_workbench(app):
     app.repair_panel = ttk.LabelFrame(result, text="修復進度")
     app.repair_analysis = text_area(app.repair_panel, height=6)
 
+    app.published_notice = ttk.Label(
+        approval,
+        text="發布完成\n\n流程已安裝到所選工作區。下方可查看發布紀錄；若要修改，請返回前面的步驟，並重新試做與核准。",
+        wraplength=s(700),
+        font=(family, 12),
+    )
+    app.published_notice.pack(anchor="w", fill="x", pady=s(12))
+    app.defer_widget(app.published_notice, show_when="published")
+    approval_form = ttk.Frame(approval)
+    approval_form.pack(fill="x")
+    app.defer_widget(approval_form, show_when="unpublished")
     ttk.Label(
-        approval, text="試做通過後，請核對實際成果與工作目標，再核准發布。", wraplength=s(800)
+        approval_form, text="試做通過後，請核對實際成果與工作目標，再核准發布。", wraplength=s(800)
     ).pack(anchor="w", pady=(0, s(14)))
     app.actor_var = tk.StringVar()
-    ttk.Label(approval, text="核准者姓名").pack(anchor="w")
-    app.actor_entry = ttk.Entry(approval, textvariable=app.actor_var, width=40)
+    ttk.Label(approval_form, text="核准者姓名").pack(anchor="w")
+    app.actor_entry = ttk.Entry(approval_form, textvariable=app.actor_var, width=40)
     app.actor_entry.pack(fill="x", pady=s(6))
     app.reviewed = tk.BooleanVar(value=False)
     app.review_checkbox = ttk.Checkbutton(
-        approval, text="已核對試做成果與工作目標", variable=app.reviewed
+        approval_form, text="已核對試做成果與工作目標", variable=app.reviewed
     )
     app.review_checkbox.pack(anchor="w", pady=s(12))
     app.button(
