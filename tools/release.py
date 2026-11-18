@@ -172,9 +172,9 @@ def build_project(path, staging):
 
     output = staging / 'release' / f'{archive_name}-{version}.zip'
     with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as archive:
-        for file in sorted(dest.iterdir()):
+        for file in sorted(dest.rglob('*')):
             if file.is_file():
-                member = f'{path.name}/{file.name}'
+                member = f'{path.name}/{file.relative_to(dest).as_posix()}'
                 if file.suffix in {'.sh', '.command'}:
                     info = zipfile.ZipInfo(member)
                     info.create_system = 3

@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from zipfile import ZipFile
 
 ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('agent_guidance',ROOT/'tools/agent_guidance.py')
@@ -30,6 +31,23 @@ def test_generic_flow_gets_guide_without_domain_source(tmp_path):
     guide.write_package_guide(tmp_path,ROOT/'routinekeel/flows/檔案複製範例')
     text=(tmp_path/'AGENTS.md').read_text()
     assert '../flow_base/AGENTS.md' in text and 'large-v3' not in text
+
+
+def test_subtitle_release_ships_the_required_skill_at_the_documented_path():
+    name = '課程影片產生字幕'
+    relative = 'skills/video-subtitle-creator.skill'
+    source = ROOT / 'routinekeel' / 'flows' / name
+    installed = ROOT / 'dist' / 'workspace' / name
+    bundle = (source / relative).read_bytes()
+    assert (installed / relative).read_bytes() == bundle
+    release = next((ROOT / 'dist' / 'release').glob('flow_subtitles-*.zip'))
+    with ZipFile(release) as archive:
+        assert archive.read(f'{name}/{relative}') == bundle
+        instructions = archive.read(f'{name}/AGENTS.md').decode('utf-8')
+        assert f']({relative})' in instructions
+        assert '必須先開啟' in instructions
+    with ZipFile(installed / relative) as skill:
+        assert 'video-subtitle-creator/SKILL.md' in skill.namelist()
 
 
 def test_agent_cli_from_task_directory_executes_selected_flow(tmp_path):

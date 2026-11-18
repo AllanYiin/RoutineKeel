@@ -1,5 +1,6 @@
 """Ship host-agent instructions separately from runtime and domain implementations."""
 from pathlib import Path
+from shutil import copyfile
 
 WORKSPACE_GUIDE = '''# flow_base 工作區的 Agent 入口
 
@@ -27,3 +28,11 @@ def write_package_guide(destination, project):
 先讀 ../flow_base/AGENTS.md 的通用執行契約，以及本目錄 flow.json、README.md 與 settings.json（若存在）。用同層底座 catalog → plan → run 執行本流程，不重新發明實作。工作區為共同父目錄；流程能力、參數及驗收由本包宣告，不把規則寫入底座。
 '''
     (destination / 'AGENTS.md').write_text(content, encoding='utf-8')
+
+    skills = project / 'skills'
+    if skills.resolve() == project.resolve() / 'skills':
+        for bundle in sorted(skills.glob('*.skill')):
+            if bundle.is_file() and not bundle.is_symlink():
+                output = destination / 'skills' / bundle.name
+                output.parent.mkdir(exist_ok=True)
+                copyfile(bundle, output)

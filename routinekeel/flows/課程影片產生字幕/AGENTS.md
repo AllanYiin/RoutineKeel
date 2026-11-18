@@ -4,6 +4,12 @@
 
 本流程的 Codex 專案／repo 預設就是本資料夾，對話與其他流程分開。共用執行工作區是父資料夾；執行時需允許必要的 ../flow_base、../.venv、../share_states、../share_logs。若權限受阻，回報具體路徑，不要把所有流程對話搬到同一個父目錄專案，也不要把底座複製進每個流程。不把 wheel 解開後自行執行 worker.py，不另找系統 Whisper、其他磁碟的舊專案或同類字幕技能來取代已封裝流程。只有使用者明確要求修改流程實作時，才進入 source.zip 的開發流程。
 
+## 字幕解析必用技能
+
+- 解析或驗證既有字幕，以及核對本流程產出的字幕時，必須先開啟 [video-subtitle-creator.skill](skills/video-subtitle-creator.skill) 壓縮包，讀取其中的 `video-subtitle-creator/SKILL.md`，並依該技能的解析與品質檢查規則操作。無法載入技能時，回報缺件並暫停字幕解析。
+- SRT／VTT 先用技能內的 `scripts/validate_subtitles.py` 做本機解析與格式檢查，驗證門檻採本次工作規格。需要從 SRT 產生結構化 cue 時，再使用 `scripts/srt_to_cues.py`。Agent 只讀統計與必要診斷。
+- 從影片或音訊產生字幕時，仍由本專案的 `catalog → plan → run` 執行五步流程，再用本節技能檢查字幕檔。產物判定沿用本專案的 QA 與真人聽審規則。
+
 ## 本流程規則
 
 - 正式預設 faster-whisper + large-v3，不自動換成 tiny／small；使用 manifest/settings 的實際設定，變更前清楚說明。
