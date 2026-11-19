@@ -13,6 +13,7 @@ from pathlib import Path
 
 from ..runtime import FlowError, atomic_json, read_json
 from ..workspace import Workspace, catalog
+from ..package_updates import package_operation
 from .types import PlanRequest, PlanResult, StartRequest, StartResult, SubmitRequest, SubmitResult
 
 RUN_ID = re.compile(r'^run_[a-f0-9]{32}$')
@@ -40,6 +41,22 @@ class WorkflowService:
     def list_workflows(self):
         return catalog(self.workspace)
 
+    def preview_workflow_update(self, archive, *, task=None):
+        from ..package_updates import preview_update
+        return preview_update(self.workspace, self._path(archive, allow_external=True), task)
+
+    def update_workflow(self, archive, *, plan_hash, task=None):
+        from ..package_updates import apply_update
+        return apply_update(self.workspace, self._path(archive, allow_external=True), plan_hash, task)
+
+    def rollback_workflow_update(self, update_id):
+        from ..package_updates import rollback_update
+        return rollback_update(self.workspace, update_id)
+
+    def recover_workflow_update(self):
+        from ..package_updates import recover_update
+        return recover_update(self.workspace)
+
     def describe_workflow(self, workflow_id):
         task = self.workspace.task(workflow_id)
         return {'contract_version': self.contract_version, 'flow_id': task.flow_id,
@@ -52,18 +69,21 @@ class WorkflowService:
         flow_id = self.workspace.task(task).flow_id if task else None
         return self.workspace.runtime.history(flow_id, max(1, min(limit, 1000)))
 
+    @package_operation
     def prepare_workflow(self, task_id, *, overrides=None, offline=False):
         task = self.workspace.task(task_id)
         adapter = task.load(self.workspace.runtime)
         workflow = task.configuration(self.workspace.runtime, overrides or {})
         return adapter.prepare(self.workspace.runtime, workflow, offline)
 
+    @package_operation
     def verify_workflow(self, task_id, *, overrides=None):
         task = self.workspace.task(task_id)
         adapter = task.load(self.workspace.runtime)
         workflow = task.configuration(self.workspace.runtime, overrides or {})
         return adapter.verify(self.workspace.runtime, workflow)
 
+    @package_operation
     def launch_prepare(self, task_id, *, overrides=None, offline=False):
         """Prepare and verify one configured workflow for an interactive launcher."""
         task = self.workspace.task(task_id)
@@ -76,6 +96,7 @@ class WorkflowService:
             raise FlowError('TASK_PREPARE', '流程環境驗證未通過', verification=verified)
         return {'description': description, 'prepared': prepared, 'verified': verified}
 
+    @package_operation
     def demo_workflow(self, task_id, output, *, overrides=None):
         from ..engine import run_demo
         task = self.workspace.task(task_id)
@@ -85,12 +106,14 @@ class WorkflowService:
             raise FlowError('TASK_CAPABILITY', '此流程沒有示範能力')
         return run_demo(self.workspace.runtime, task, self._path(output, allow_external=True))
 
+    @package_operation
     def invoke_action(self, task_id, name, parameters):
         if not isinstance(parameters, dict):
             raise FlowError('TASK_ACTION_PARAMETERS', '能力參數必須是 JSON object')
         task = self.workspace.task(task_id)
         return task.invoke_action(self.workspace.runtime, name, parameters)
 
+    @package_operation
     def transfer_cache(self, task_id, *, direction, source=None, output=None, resources=None, overrides=None):
         from ..resources import export_resources, import_resources
         task = self.workspace.task(task_id)
@@ -151,6 +174,7 @@ class WorkflowService:
                             error.get('message', '計畫未能完成'), **(error.get('details') or {}))
         return PlanResult.model_validate(response['result'])
 
+    @package_operation
     def start_workflow(self, request):
         from ..execution.supervisor import start_detached
         from ..outputs import choose_output
@@ -177,6 +201,14 @@ class WorkflowService:
 
     def submit_workflow(self, request):
         """Validate, persist and return an ID without launching code in this process."""
+        request = SubmitRequest.model_validate(request)
+        # Reject unauthorized attachments/inputs before creating any workspace state.
+        self._path(request.source, allow_external=request.allow_external_paths)
+        self._path(request.output, allow_external=request.allow_external_paths)
+        return self._submit_workflow(request)
+
+    @package_operation
+    def _submit_workflow(self, request):
         from .queue import QueueStore
 
         request = SubmitRequest.model_validate(request)
@@ -262,6 +294,7 @@ class WorkflowService:
                 'run_id': status['run_id'],
                 'confirmed_stopped': status['status'] == 'cancelled'}
 
+    @package_operation
     def run_workflow_sync(self, request):
         from ..engine import run_workflow
         request = StartRequest.model_validate(request)

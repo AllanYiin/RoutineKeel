@@ -10,6 +10,8 @@
 
 ## 安裝與驗證
 
+底座 0.2.13 起，**既有流程包**的升級改用 [流程 ZIP 附件更新](workflow-updates.md)：使用者在宿主對話附新版 ZIP，宿主呼叫預覽／套用，底座自動備份且保留設定與成果。以下手動解壓步驟用於底座本身升級；流程包不需使用者自行蓋檔。
+
 1. 將新 `flow_base` ZIP 解壓到原工作區的同名 `flow_base/`，保留 `share_states`、`share_logs`、流程資料夾、各流程 `outputs` 與私人設定。啟動器按 wheel 雜湊更新工作區 `.venv`，不需手動刪除原環境。
 2. 啟動時 `Runtime.initialize()` 在 lock 下檢查 `PRAGMA user_version` 與 migration checksum；升級 v001、v002、v003、v004 前自動建立 `state.sqlite3.before-vNNN.sqlite3` 與 `.sha256`。重複啟動同一 migration 應為 no-op。未知較新 schema 或不相容舊表會拒絕寫入，保留原檔。
 3. 執行 `flow_base --workspace <工作區> doctor --format=json`，再對所需流程執行 `verify`。檢查既有 `history`、最近成功成果與 `deliveries/current.json` 指向的 immutable version。用檔案複製範例完成一次新 Run，再看 `diagnose <run_id>` 與成果。

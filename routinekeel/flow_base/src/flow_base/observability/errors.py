@@ -65,6 +65,9 @@ GROUPS = {
     'DIAGNOSTIC_PERSIST_FAILED': '''EVENT_LOCK_TIMEOUT EVENT_PERSIST_FAILED EVENT_TOO_LARGE PROCESS_EVIDENCE PROCESS_LOG_FAILED''',
 }
 
+GROUPS['RESOURCE_INTEGRITY_FAILED'] += ' WORKFLOW_UPDATE_INVALID'
+GROUPS['STATE_CONFLICT'] += ' WORKFLOW_UPDATE_CONFLICT WORKFLOW_UPDATE_PENDING'
+
 ALIASES = {}
 for canonical, names in GROUPS.items():
     for name in names.split():
@@ -73,6 +76,9 @@ for canonical, names in GROUPS.items():
         ALIASES[name] = canonical
 
 SPECIFIC = {
+    'WORKFLOW_UPDATE_INVALID': ('流程 ZIP、更新紀錄或備份未通過完整性與安全檢查。', ['保留現有資料，取得正確的流程發行 ZIP 後重試；備份損壞請交維護者查核。']),
+    'WORKFLOW_UPDATE_CONFLICT': ('附件、目標版本或套件內容已改變，不能直接套用或回復。', ['重新預覽新版 ZIP，核對流程識別碼與版本；不要手動覆蓋設定或成果。']),
+    'WORKFLOW_UPDATE_PENDING': ('上次流程更新尚未完成，底座已暫停載入套件。', ['執行 recover-workflow-update 復原，再重新預覽與更新。']),
     'INPUT_MISSING': ('輸入檔案不存在或不是一般檔案。', ['重新選取可讀的輸入檔案。']),
     'TASK_UNKNOWN': ('工作區內找不到指定流程。', ['確認流程包與 flow_base 放在同一工作區後重新列出流程。']),
     'EXECUTION_UNKNOWN': ('找不到指定的待執行工作。', ['核對完整 execution_id 與工作區位置。']),

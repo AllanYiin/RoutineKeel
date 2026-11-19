@@ -80,6 +80,14 @@ def parser():
     c.add_argument('--intent', type=Path, required=True)
     c.add_argument('--execute', action='store_true')
     c.add_argument('--offline', action='store_true')
+    c = commands.add_parser('update-workflow', help='預覽或套用新版流程 ZIP，保留設定、成果及歷史')
+    c.add_argument('--archive', type=Path, required=True)
+    c.add_argument('--task', help='通常從附件識別；指定時須與附件的流程識別碼相符')
+    c.add_argument('--execute', action='store_true')
+    c.add_argument('--plan-hash', help='預覽回傳的 plan_hash，綁定附件與目前版本')
+    c = commands.add_parser('rollback-workflow-update', help='透過更新備份回復流程套件')
+    c.add_argument('update_id')
+    commands.add_parser('recover-workflow-update', help='復原中斷的流程包更新；保留使用者資料')
     for name, help_text in (
         ('doctor', '唯讀檢查本機環境與狀態'),
         ('diagnose', '依 run_id 查執行、診斷與最後事件'),
@@ -312,7 +320,7 @@ def main(argv=None):
     workspace = Workspace(args.workspace)
     runtime = workspace.runtime
     service = WorkflowService(workspace, authorized_external_paths=[
-        getattr(args, 'input', None), getattr(args, 'output', None)])
+        getattr(args, 'input', None), getattr(args, 'output', None), getattr(args, 'archive', None)])
     try:
         command = args.command or ('chat' if sys.stdin.isatty() else 'list')
         if command == 'ui':
@@ -343,6 +351,17 @@ def main(argv=None):
                       'execution': 'dispatch --intent intent.json --execute', 'policy': 'Select installed IDs and declared parameter_paths only; no generated code.'}
         elif command in {'doctor', 'diagnose', 'logs', 'explain-error', 'export-diagnostics'}:
             return diagnostic_command(workspace, args)
+        elif command == 'update-workflow':
+            if args.execute:
+                if not args.plan_hash:
+                    raise FlowError('INVALID_CONFIGURATION', '套用更新前須預覽並提供 --plan-hash')
+                result = service.update_workflow(args.archive, plan_hash=args.plan_hash, task=args.task)
+            else:
+                result = service.preview_workflow_update(args.archive, task=args.task)
+        elif command == 'rollback-workflow-update':
+            result = service.rollback_workflow_update(args.update_id)
+        elif command == 'recover-workflow-update':
+            result = service.recover_workflow_update()
         elif command == 'inspect':
             result = inspect_environment(runtime.home)
         elif command == 'action':

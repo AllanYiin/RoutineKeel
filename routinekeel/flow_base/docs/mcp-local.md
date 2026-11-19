@@ -19,6 +19,8 @@ RoutineKeel 的 MCP 入口只處理短時間的提交、查詢和取消。任務
 
 MCP 工具：`list_workflows`、`describe_workflow`、`plan_workflow`、`submit_workflow`、`get_workflow_status`、`get_workflow_result`、`cancel_workflow`。CLI 也有 `submit`、`execution-status`、`execution-result`、`execution-cancel`、`queue-worker`，共用相同 Service。CLI 原有 `run` 仍可同步執行，不受佇列模式影響。
 
+0.2.13 新增 `preview_workflow_update`、`update_workflow`、`rollback_workflow_update`、`recover_workflow_update`。使用者要求以附件更新既有流程時，宿主先將指定 ZIP 放入工作區，再預覽並以回傳的 plan_hash 套用；不需手動解壓或覆蓋。更新工具只處理套件檔，不執行附件程式，也不啟動模型。設定、成果、歷史與快取保留；執行中／排隊工作會阻擋更新。CLI／復原及限制見 [流程更新](workflow-updates.md)。
+
 佇列第一版只接受工作區內的輸入與輸出；外部檔案須先明確匯入工作區。MCP 不允許任意 shell、不安裝未授權流程、不傳原始診斷或檔案內容，也不綁定 HTTP Port。`result_status=review_required` 表示處理完成但仍待人工審閱，與 `execution_status=succeeded` 分開。資料庫升級至 v004 前有 SHA-256 驗證的 SQLite 備份；回退舊版底座須先還原與舊版相容的 DB。
 
 MCP 2026-07-28 的協定核心無 Session；RoutineKeel 的持久化來自本機 SQLite，不能單靠協定無狀態推論程序會存活。Worker 必須獨立於 MCP 程序啟動。原生 MCP Tasks 擴充只在目標 Client 確認支援後另行映射，普通工具不依賴它。完整契約見 `specs/mcp-queue-v1.md`。

@@ -77,6 +77,8 @@ class Workspace:
         self.runtime.logs.mkdir(parents=True, exist_ok=True)
 
     def discover(self, *, read_only=False):
+        from .package_updates import ensure_no_pending
+        ensure_no_pending(self)
         result = {}
         if not self.root.is_dir():
             return result

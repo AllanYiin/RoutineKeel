@@ -53,6 +53,26 @@ def create_server(workspace: Path | str):
         return result(lambda: service.describe_workflow(workflow_id))
 
     @server.tool()
+    def preview_workflow_update(archive: str, workflow_id: str | None = None) -> dict:
+        """Inspect a user-provided workflow ZIP inside the workspace, without running its code."""
+        return result(lambda: service.preview_workflow_update(archive, task=workflow_id))
+
+    @server.tool()
+    def update_workflow(archive: str, plan_hash: str, workflow_id: str | None = None) -> dict:
+        """Apply the user's requested update with the preview plan_hash. Preserve local settings and outputs."""
+        return result(lambda: service.update_workflow(archive, plan_hash=plan_hash, task=workflow_id))
+
+    @server.tool()
+    def rollback_workflow_update(update_id: str) -> dict:
+        """Restore package files from one recorded update when the user requests rollback."""
+        return result(lambda: service.rollback_workflow_update(update_id))
+
+    @server.tool()
+    def recover_workflow_update() -> dict:
+        """Restore the old package after an interrupted update; never delete user data."""
+        return result(service.recover_workflow_update)
+
+    @server.tool()
     def plan_workflow(workflow_id: str, source: str | None = None, output: str | None = None,
                       overrides: dict | None = None, offline: bool = False) -> dict:
         """Preview a workflow without modifying workspace state."""
