@@ -1,3 +1,22 @@
+# 0.5.0 驗證紀錄（2026-11-19）
+
+Windows x64 本機完整字幕流程測試 **97 passed、0 skipped**。包含真實 noisereduce 非平穩降噪、極短音軌與脈衝位置、跨區塊預加重狀態、防削波、標準／參考模式與快取隔離，以及聽審音檔在片頭、片尾、短句與超過 30 秒來源段落的精確 PCM 裁切。另驗證多個疑義只採目前來源段落裁切，不採第一筆子片段疑義時間；頁面拒絕與目前段落不符的原音座標。保留一項既有 CTranslate2/pkg_resources 棄用警告。
+
+從 repo 根目錄可重跑：
+
+```sh
+uv run --locked --project "routinekeel/flows/課程影片產生字幕/src/ai_flow01/profiles/demucs-cpu" --with "pytest==9.2.0" --with-editable routinekeel/flow_base --with-requirements "routinekeel/flows/課程影片產生字幕/tests/demucs-test-requirements.txt" python -m pytest "routinekeel/flows/課程影片產生字幕/tests" -q
+python tools/release.py --project ai_flow01
+```
+
+測試依賴檔保留 ASR 測試所需版本；NumPy 與底座直接依賴由各自專案約束提供，避免 ASR 測試的間接依賴覆蓋 Demucs 固定 NumPy 或底座固定 filelock。模型權重不包含在測試依賴檔內。
+
+正式 `catalog → plan → run` 入口實測同一段 4.220 秒原音的 standard 與 reference 模式，使用相同中文提示、large-v3 CUDA float16 及 Demucs CPU。兩次 5 個步驟皆為 executed；來源原音與辨識音軌均為 16 kHz 單聲道、67,520 個取樣點。快照 run_id、模式、提示、來源指紋及實際後端已核對。標準模式的人聲 WAV 與 0.4.1 的同段已保存產物逐位元組相同；參考模式確實使用 noisereduce 3.0.3 及係數 0.97 預加重。
+
+兩次 SRT／VTT 各 1 則字幕，技能驗證器按 30 字元／行、2 行、0.5–12 秒、15 CPS 檢查，均為 0 error、0 warning；工作狀態仍為 REVIEW_REQUIRED。流程 LLM API calls/tokens 均為 0。這是執行與機械檢查證據：短片中的已知術語仍有辨識錯誤，沒有證明參考模式提升準確率，故 standard 仍為預設。沒有執行 WER/CER、全文聽審、全課程重辨識或其他 OS 的實體模型測試。
+
+另以既有工作執行 review-build，保留人工文字修訂與原 ASR，重建確認頁、CSV、校對稿及分享 ZIP。172 份聽審 WAV 的實際 PCM、長度、取樣率及雜湊與 review_audio.json／原音核對一致；確認頁可顯示來源段落、前後文音檔與 SRT 的不同時間範圍。這不等同語音／文字同步驗收；既有硬性 QA 仍維持 FAIL，沒有自動核准。課程內容、原音及 outputs 不隨發行或版控散布。
+
 # 0.4.1 驗證紀錄（2026-11-18）
 
 Windows x64 以正式 catalog、plan、run 入口及預設 12 秒上限離線執行兩個案例。兩次均完成五步，使用 Demucs CPU 與 large-v3 CUDA。本流程原始碼測試共 78 項通過。

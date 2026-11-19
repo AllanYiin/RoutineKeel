@@ -8,6 +8,7 @@ import io
 import json
 import re
 import zipfile
+import wave
 from collections import defaultdict
 from pathlib import Path
 
@@ -103,11 +104,41 @@ def render(out, rows, issues, audio_paths, qa):
     hard=[f for f in qa['findings'] if f.get('severity')!='review']
     hard_html=''.join('<li>'+html.escape(('字幕 '+str(f['cue'])+'：' if 'cue' in f else '')+REASONS.get(f['reason'],'請檢查：'+f['reason']))+'</li>' for f in hard)
     html_rows=[]
+    audio_metadata = json.loads((out/'review_audio.json').read_text(encoding='utf-8-sig')) if (out/'review_audio.json').is_file() else {}
+    exported_cues = json.loads((out/'cues.json').read_text(encoding='utf-8-sig')) if (out/'cues.json').is_file() else []
     for row in table:
         sid=row[0]
         cells=''.join('<td>'+html.escape(str(v))+'</td>' for v in row[:6])
         audio=players.get(sid)
         player='<audio controls preload="none" src="'+html.escape(audio,quote=True)+'"></audio>' if audio else '<strong>原音缺失，請回到原影片確認</strong>'
+        window=audio_metadata.get('clips',{}).get(sid)
+        if audio and window:
+            rate=audio_metadata['sample_rate']
+            path=out/audio_paths.get(int(sid),audio_paths.get(sid))
+            with wave.open(str(path),'rb') as clip:
+                valid=(clip.getframerate()==rate and clip.getnframes()==window['frames'])
+            source_row=by_id[sid]
+            valid=valid and (
+                window['end_sample']-window['start_sample']==window['frames']
+                and window['segment_start_sample']==round(source_row['start']*rate)
+                and window['segment_end_sample']==round(source_row['end']*rate)
+                and 0 <= window['start_sample'] <= window['segment_start_sample']
+                < window['segment_end_sample'] <= window['end_sample'] <= audio_metadata['source_frames'])
+            if not valid or hashlib.sha256(path.read_bytes()).hexdigest()!=window['sha256']:
+                raise ValueError('REVIEW_AUDIO_TIMELINE: review audio metadata does not match PCM')
+            start=window['start_sample']/rate;end=window['end_sample']/rate
+            offset_start=(window['segment_start_sample']-window['start_sample'])/rate
+            offset_end=(window['segment_end_sample']-window['start_sample'])/rate
+            note=(f'原音範圍（原片）：{clock(start)}–{clock(end)}；音檔 {end-start:.3f} 秒。'
+                  f'來源段落在播放器 {offset_start:.3f}–{offset_end:.3f} 秒；其餘為聽審前後文。')
+            player+='<p class="muted">'+html.escape(note)+'</p>'
+        elif audio:
+            player+='<p class="muted">此音檔可能含前後文；舊版未記錄裁切範圍，請重建確認頁核對。</p>'
+        matching=[(index,c) for index,c in enumerate(exported_cues,1) if str(c.get('source_id'))==sid]
+        if matching:
+            player+='<div class="muted">對應 SRT：'+'；'.join(
+                html.escape(f"#{index} {clock(c['start'])}–{clock(c['end'])}（{c['end']-c['start']:.3f} 秒）")
+                for index,c in matching)+'</div>'
         html_rows.append('<tr data-id="'+html.escape(sid,quote=True)+'">'+cells+'<td>'+player+'</td><td><textarea aria-label="片段 '+html.escape(sid,quote=True)+' 確認文字">'+html.escape(row[6])+'</textarea></td></tr>')
     data=json.dumps({'rows':table,'headers':HEADERS,'filename':title+'.字幕疑義填答.csv','revision':revision},ensure_ascii=False).replace('<','\\u003c').replace('&','\\u0026')
     template=Path(__file__).with_name('review_page.html').read_text(encoding='utf-8')
@@ -138,6 +169,7 @@ def package(out):
     if not (out/'review_delivery.json').exists():return
     data=json.loads((out/'review_delivery.json').read_text())
     members=['review.html',data['table'],data['transcript'],'subtitles.srt','subtitles.vtt','QA.json','README_請先閱讀.txt']
+    if (out/'review_audio.json').is_file():members.append('review_audio.json')
     if (out/'pause_splits.json').is_file(): members.append('pause_splits.json')
     if not data['embedded_audio']:members += [p.relative_to(out).as_posix() for p in sorted((out/'review_clips').glob('*.wav'))]
     target=out/data['archive'];temp=target.with_suffix('.zip.tmp')

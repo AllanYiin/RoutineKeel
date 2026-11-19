@@ -7,6 +7,7 @@
 <div class="cards"><div class="card">字幕總數<strong>@@CUES@@</strong></div><div class="card">需聽審片段<strong>@@COUNT@@</strong></div><div class="card">格式硬性問題<strong>@@HARD@@</strong></div><div class="card">已填答片段<strong id="answered">0 / @@COUNT@@</strong></div></div></header>
 <main><section class="notice"><h2>先處理這些事項</h2><ul>@@HARD_LIST@@</ul><p>同一片段的多個疑義已合併顯示；共有 @@ISSUES@@ 筆疑義、@@AUDIO@@ 段原音。@@AUDIO_NOTE@@</p></section>
 <p>① 播放原音　② 填寫「確認文字」　③ 下載填答 CSV　④ 交回流程匯入並重建字幕。確認原文正確時，可填入相同文字；留空表示尚未填答。</p>
+<p class="muted">「開始／結束」是來源段落在原片的時間，不一定是一則 SRT 的範圍。聽審原音前後各最多保留 1.5 秒，原片邊界會截短；播放器的 0 秒是音檔起點。請對照每列標示的原音範圍、播放器內段落位置及對應 SRT 的實際顯示時長。</p>
 <div class="tools"><button class="primary" id="download">下載填答 CSV</button><label>搜尋 <input id="search" type="search" placeholder="片段、文字或疑義"></label><label><input id="pending" type="checkbox">只看未填答</label><span id="save-status" role="status"></span></div>
 <div class="wrap"><table><thead><tr><th>片段</th><th>開始</th><th>結束</th><th>ASR 原文</th><th>目前校訂</th><th>疑義</th><th>原音</th><th>確認文字</th></tr></thead><tbody>@@ROWS@@</tbody></table><p id="empty" class="empty" hidden>沒有符合篩選條件的片段。</p></div>
 <footer><p><a href="@@TRANSCRIPT@@">開啟完整校對稿</a> · <a href="@@TABLE@@" download>下載空白／既有確認表</a> · <a href="subtitles.srt" download>下載目前 SRT</a> · <a href="@@ARCHIVE@@" download>下載字幕與確認表 ZIP</a></p><p class="muted">此頁離線運作，沒有上傳或 API 呼叫。瀏覽器暫存可能被清除，請下載填答 CSV 保存。其他文件連結需與完整交付包放在一起。QA.json 供程式檢查使用。</p></footer>

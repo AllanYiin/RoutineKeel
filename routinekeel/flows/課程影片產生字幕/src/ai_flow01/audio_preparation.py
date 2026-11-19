@@ -14,6 +14,45 @@ WINDOW = 10 * MODEL_RATE
 OVERLAP = MODEL_RATE
 TARGET_DBFS = -20.0
 PEAK_DBFS = -1.0
+PREEMPHASIS_COEFFICIENT = 0.97
+
+
+def preprocessing_spec(mode="standard"):
+    """Versioned settings also participate in extraction's cache fingerprint."""
+    if mode not in {"standard", "reference"}:
+        raise ValueError("AUDIO_PREPROCESSING_INVALID: unknown mode")
+    if mode == "standard":
+        return {"revision": 1, "mode": mode,
+                "order": ["spectral_denoise", "demucs_vocals", "volume_normalize"],
+                "noise_reduction": {"library": "torch_stft", "n_fft": 1024, "hop_length": 256,
+                                    "noise_quantile": 0.2, "minimum_gain_db": -12.0, "sample_rate": MODEL_RATE},
+                "enhancement": {"pre_emphasis_coefficient": 0.0, "target_active_rms_dbfs": TARGET_DBFS,
+                                "peak_ceiling_dbfs": PEAK_DBFS, "max_gain_db": 20.0}}
+    return {
+        "revision": 2, "mode": mode,
+        "order": ["noisereduce_nonstationary", "demucs_vocals", "pre_emphasis", "volume_normalize"],
+        "noise_reduction": {"library": "noisereduce", "stationary": False,
+                            "prop_decrease": 0.75, "n_fft": 1024,
+                            "win_length": 1024, "hop_length": 256, "use_torch": False,
+                            "sample_rate": MODEL_RATE},
+        "enhancement": {"pre_emphasis_coefficient": PREEMPHASIS_COEFFICIENT,
+                        "pre_emphasis_initial_previous_sample": 0.0,
+                        "target_active_rms_dbfs": TARGET_DBFS, "peak_ceiling_dbfs": PEAK_DBFS,
+                        "max_gain_db": 20.0},
+    }
+
+
+def standard_denoise(mix):
+    """Retain the 0.4.1 default until reference preprocessing has accuracy evidence."""
+    import torch
+
+    window = torch.hann_window(1024, device=mix.device)
+    spectrum = torch.stft(mix, 1024, hop_length=256, window=window,
+                          pad_mode="constant", return_complex=True)
+    power = spectrum.abs().square().mean(dim=0)
+    noise = torch.quantile(power, 0.2, dim=-1, keepdim=True)
+    gain = (1 - 2 * noise / power.clamp_min(1e-12)).clamp(min=10 ** (-12 / 20), max=1)
+    return torch.istft(spectrum * gain, 1024, hop_length=256, window=window, length=mix.shape[-1])
 
 
 def pcm_blocks(source, rate, layout, max_seconds):
@@ -53,16 +92,40 @@ def pcm_blocks(source, rate, layout, max_seconds):
 
 
 def denoise(mix):
-    """Apply one spectral gain to both channels, preserving stereo phase and length."""
+    """Nonstationary spectral gating using the user's noisereduce parameters."""
+    import noisereduce as nr
+    import numpy as np
     import torch
 
-    fft_size = 1024
-    window = torch.hann_window(fft_size, device=mix.device)
-    spectrum = torch.stft(mix, fft_size, hop_length=256, window=window, pad_mode="constant", return_complex=True)
-    power = spectrum.abs().square().mean(dim=0)
-    noise = torch.quantile(power, 0.2, dim=-1, keepdim=True)
-    gain = (1 - 2 * noise / power.clamp_min(1e-12)).clamp(min=10 ** (-12 / 20), max=1)
-    return torch.istft(spectrum * gain, fft_size, hop_length=256, window=window, length=mix.shape[-1])
+    values = mix.detach().cpu().numpy()
+    if not np.isfinite(values).all():
+        raise ValueError("NOISE_REDUCTION_INVALID: non-finite input")
+    length = values.shape[-1]
+    if not length or not values.any():
+        return mix.clone()
+    # STFT needs at least n_fft samples; never change the decoded timeline.
+    padded = np.pad(values, ((0, 0), (0, max(0, 1024 - length))))
+    clean = np.asarray(nr.reduce_noise(y=padded, sr=MODEL_RATE, stationary=False,
+                                     prop_decrease=0.75, n_fft=1024, win_length=1024,
+                                     hop_length=256, use_torch=False), dtype=np.float32)
+    if clean.shape != padded.shape or not np.isfinite(clean).all():
+        raise ValueError("NOISE_REDUCTION_INVALID: invalid output samples")
+    return torch.from_numpy(np.ascontiguousarray(clean[:, :length])).to(mix.device)
+
+
+def preemphasize(block, previous=0.0):
+    """Continuous first-order high-pass filter; carry state across PCM blocks."""
+    import numpy as np
+
+    values = np.asarray(block, dtype=np.float32).reshape(-1)
+    if not np.isfinite(values).all():
+        raise ValueError("AUDIO_ENHANCEMENT_INVALID: non-finite samples")
+    if not len(values):
+        return values.copy(), previous
+    enhanced = values.copy()
+    enhanced[0] -= PREEMPHASIS_COEFFICIENT * previous
+    enhanced[1:] -= PREEMPHASIS_COEFFICIENT * values[:-1]
+    return enhanced, float(values[-1])
 
 
 def load_separator(weights):
@@ -77,17 +140,30 @@ def load_separator(weights):
 
 
 def verify_separator(req):
+    import importlib.metadata
     import torch
+    # Check the denoiser's actual non-Torch path before any long recording runs.
+    probe = torch.sin(torch.arange(MODEL_RATE).float() / 11)[None, :].repeat(2, 1) * 0.01
+    mode = req.get("audio_preprocessing", "standard")
+    spec = preprocessing_spec(mode)
+    clean = denoise(probe) if mode == "reference" else standard_denoise(probe)
+    if clean.shape != probe.shape or not torch.isfinite(clean).all():
+        raise ValueError("NOISE_REDUCTION_INVALID: dependency verification failed")
     model = load_separator(req["weights"])
     with torch.inference_mode():
         stems = model(torch.zeros(1, 2, MODEL_RATE))
         vocals = stems[0, model.sources.index("vocals")]
         if vocals.shape != (2, MODEL_RATE) or not torch.isfinite(vocals).all():
             raise ValueError("DEMUCS_OUTPUT_INVALID: vocals failed the inference check")
-    return {"model": "HDEMUCS_HIGH_MUSDB_PLUS", "stem": "vocals", "device": "cpu", "verified": True}
+    return {"model": "HDEMUCS_HIGH_MUSDB_PLUS", "stem": "vocals", "device": "cpu", "verified": True,
+            "noisereduce_version": importlib.metadata.version("noisereduce") if mode == "reference" else None,
+            "versions": {name: importlib.metadata.version(name)
+                         for name in (("numpy", "scipy", "noisereduce", "torch", "torchaudio")
+                                      if mode == "reference" else ("numpy", "torch", "torchaudio"))},
+            "preprocessing": spec}
 
 
-def separate_window(pcm, model):
+def separate_window(pcm, model, mode="standard"):
     import numpy as np
     import torch
     import torch.nn.functional as F
@@ -97,7 +173,7 @@ def separate_window(pcm, model):
         return np.zeros(length, dtype=np.float32)
     with torch.inference_mode():
         mix = torch.from_numpy(pcm.astype(np.float32)) / 32768
-        clean = denoise(mix)
+        clean = denoise(mix) if mode == "reference" else standard_denoise(mix)
         mean = clean.mean()
         scale = clean.std(unbiased=False).clamp_min(1e-6)
         # Supply context to the model even for very short inputs and final windows.
@@ -107,7 +183,7 @@ def separate_window(pcm, model):
         return (vocal * scale + mean).numpy()
 
 
-def vocal_blocks(blocks, model):
+def vocal_blocks(blocks, model, mode="standard"):
     """Crossfade adjacent predictions and emit exactly one output per input sample."""
     import numpy as np
 
@@ -116,7 +192,7 @@ def vocal_blocks(blocks, model):
     size, tail = 0, None
 
     def blend(pcm):
-        vocal = separate_window(pcm, model)
+        vocal = separate_window(pcm, model, mode)
         if tail is not None:
             vocal[:OVERLAP] = tail * (1 - fade) + vocal[:OVERLAP] * fade
         return vocal
@@ -165,6 +241,8 @@ def normalized_wave(samples, dest, frames):
         for block in blocks():
             out.writeframesraw(np.rint(block * (gain * 32768)).clip(-32768, 32767).astype("<i2").tobytes())
     return {"target_active_rms_dbfs": TARGET_DBFS, "peak_ceiling_dbfs": PEAK_DBFS,
+            "input_active_rms_dbfs": 20 * math.log10(rms) if rms else None,
+            "input_peak_dbfs": 20 * math.log10(peak) if peak else None,
             "gain_db": 20 * math.log10(gain), "output_peak": peak * gain}
 
 
@@ -174,6 +252,8 @@ def prepare_audio(req):
     import numpy as np
 
     dest = Path(req["output"])
+    mode = req.get("audio_preprocessing", "standard")
+    spec = preprocessing_spec(mode)
     with wave.open(req["original"], "rb") as original:
         frames = original.getnframes()
         if original.getframerate() != ASR_RATE:
@@ -182,18 +262,25 @@ def prepare_audio(req):
     source = pcm_blocks(req["input"], MODEL_RATE, "stereo", req["max_audio_seconds"])
     resampler = av.AudioResampler(format="fltp", layout="mono", rate=ASR_RATE)
     completed = 0
+    previous = 0.0
     # Bound working memory independently of the length of the lecture.
     with tempfile.TemporaryFile(dir=dest.parent) as samples:
-        for block in vocal_blocks(source, model):
+        for block in vocal_blocks(source, model, mode):
             frame = av.AudioFrame.from_ndarray(np.ascontiguousarray(block[None, :]), format="fltp", layout="mono")
             frame.sample_rate = MODEL_RATE
             for converted in resampler.resample(frame):
-                samples.write(converted.to_ndarray().astype("<f4", copy=False).tobytes())
+                enhanced = converted.to_ndarray()
+                if mode == "reference":
+                    enhanced, previous = preemphasize(enhanced, previous)
+                samples.write(enhanced.astype("<f4", copy=False).tobytes())
             completed += len(block)
             print(json.dumps({"event": "progress", "completed": min(completed / MODEL_RATE, frames / ASR_RATE),
                               "total": frames / ASR_RATE, "unit": "秒音訊", "label": "去噪與 Demucs 人聲分離"}), flush=True)
         for converted in resampler.resample(None):
-            samples.write(converted.to_ndarray().astype("<f4", copy=False).tobytes())
+            enhanced = converted.to_ndarray()
+            if mode == "reference":
+                enhanced, previous = preemphasize(enhanced, previous)
+            samples.write(enhanced.astype("<f4", copy=False).tobytes())
         actual = samples.tell() // 4
         if abs(actual - frames) > 16:
             raise ValueError(f"AUDIO_TIMELINE: Demucs produced {actual} samples, expected {frames}")
@@ -204,6 +291,6 @@ def prepare_audio(req):
             os.replace(temp, dest)
         finally:
             temp.unlink(missing_ok=True)
-    return {"order": ["spectral_denoise", "demucs_vocals", "volume_normalize"],
+    return {**spec,
             "separator": "torchaudio.HDEMUCS_HIGH_MUSDB_PLUS", "stem": "vocals", "device": "cpu",
             "sample_rate": ASR_RATE, "frames": frames, "normalization": levels}

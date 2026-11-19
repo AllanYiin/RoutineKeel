@@ -6,6 +6,7 @@
     "traditional_chinese": true,
     "device": "auto",
     "allow_cpu_fallback": false,
+    "audio_preprocessing": "standard",
     "glossary": [],
     "llm": {
       "enabled": false,
