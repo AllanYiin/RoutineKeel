@@ -201,8 +201,8 @@ V014 = (
 )
 
 V015 = (
-    # One mutable row per project: the guided session is working state, not history.
-    # Committed revisions, evidence decisions and approvals keep their own immutable tables.
+    # Retained for compatibility with workspaces created by the retired web workflow.
+    # Removing that UI must not remove existing session data or rewrite migration history.
     """CREATE TABLE studio_guided_sessions (
         project_id TEXT PRIMARY KEY REFERENCES studio_projects(project_id),
         version INTEGER NOT NULL CHECK(version > 0), state_json TEXT NOT NULL,

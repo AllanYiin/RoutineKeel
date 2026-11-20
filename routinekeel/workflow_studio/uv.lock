@@ -791,11 +791,6 @@ dependencies = [
     { name = "pydantic" },
 ]
 
-[package.optional-dependencies]
-mcp = [
-    { name = "mcp" },
-]
-
 [package.dev-dependencies]
 dev = [
     { name = "build" },
@@ -807,11 +802,9 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "filelock", specifier = "==3.32.7" },
-    { name = "mcp", marker = "extra == 'mcp'", specifier = "==2.3.0" },
     { name = "pillow", specifier = ">=13.0.0" },
     { name = "pydantic", specifier = "==2.14.3" },
 ]
-provides-extras = ["mcp"]
 
 [package.metadata.requires-dev]
 dev = [

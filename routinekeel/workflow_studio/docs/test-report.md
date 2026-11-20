@@ -564,3 +564,16 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
 - 移除只在儲存庫成立、在安裝包中無目標的故障矩陣連結，改明列儲存庫檔案位置。
 - distribution_package／distribution_bootstrap：**13 passed、1 POSIX symlink skip，0.51 秒**，
   `dist/distribution-link-regression.xml`。GitHub Actions 帳戶限制尚未排除，此修正先留本機驗證，未觸發新 CI。
+
+
+## 移除舊網頁引導流程（2026-11-20）
+
+- 依作者明確確認，移除整個舊 `guided/`、CLI `mcp` 指令、`StudioService.guided()`、Studio MCP extra 及三個專屬測試檔；同步核對鎖檔。
+- 移除 Claude Code 在 Studio 工作區註冊的 `routinekeel-studio` 舊入口。沒有建立新的宿主入口。
+- 保留 v015 遷移及既有資料。新增兩項回歸：舊指令在開啟工作區前被拒，以及舊專案／狀態資料重開後保持原值。
+- 定向回歸：`test_retired_host_entry.py`、`test_smoke.py`、`test_projects.py`、`test_project_edits.py`、`test_migrations.py`、`test_distribution_package.py`、`test_distribution_bootstrap.py`，以開發 venv 執行 `python -B -m pytest ... -q -p no:cacheprovider`，**57 passed、1 skipped，46.26 秒**。略過項目要求 POSIX symlink，Windows 不適用。
+- Ruff check 通過；format check 為 179 files already formatted；本次修改範圍的 `git diff --check` 通過。`uv lock --check --offline --no-cache` 通過，43 個套件。
+- 隔離建置 wheel 成功，檢查 108 個成員，不含舊 `guided/`、`cards.html` 或 Studio MCP extra。CLI `status` 可正常開啟工作區並回傳 schema 15。
+- 曾啟動完整 Studio 套件，在既有 Runtime 的 20 種故障注入案例期間主動停止，**未取得全套終態，不宣稱完整回歸通過**。本次以受影響的入口、專案、儲存遷移與打包定向回歸作為清理驗證。
+- 新方向只保留宿主對話逐層確認與藍圖包；本機 Codex 已實際送出選擇題並收到人類回覆。完整 Studio 新流程、Claude Code／Codex 端對端操作及外觀一致性尚未驗收。
+- 既有 Tk 與通用服務保留；沒有修改底座或已安裝流程。本節記錄提交前的本機驗證，提交與推送結果以 Git 紀錄為準。

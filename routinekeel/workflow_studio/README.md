@@ -1,5 +1,9 @@
 # Workflow Studio（開發中）
 
+新的互動方向是 **Claude Code／Codex 宿主對話內逐層確認，產出藍圖包**，見[現行互動規格](specs/redesign-host-reasoning.md)。
+舊網頁流程與 MCP 入口已移除，CLI 不再提供 `mcp` 指令。
+新的逐層狀態、宿主接入及藍圖包匯出尚未實作；下列既有 Tk 工作台及通用服務不能代表新流程完成。
+
 Studio 將工作描述與成功案例整理成可驗證、可重複使用的 RoutineKeel 工作流。
 目前依 Stage 0–13 計畫開發；能力與實際驗收結果見 [進度](todo.md)。
 目前已有可操作的本機工作台，但仍是開發版，尚未完成整體驗收。
