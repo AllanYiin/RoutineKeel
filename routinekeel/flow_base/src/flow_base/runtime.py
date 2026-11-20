@@ -182,6 +182,13 @@ class Runtime:
         self._legacy_action_context = ContextVar(f'action_context_{id(self)}', default=None)
 
     @property
+    def workspace_root(self):
+        parent = self.home.parent
+        if parent.name == 'flow_base' and (parent.parent / 'workflows').is_dir():
+            return parent.parent.resolve()
+        return parent.resolve()
+
+    @property
     def action_context(self):
         """Compatibility facade for adapters that read action metadata."""
         from .core.run_context import current

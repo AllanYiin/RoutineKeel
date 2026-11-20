@@ -9,11 +9,12 @@
 - 詳細的字幕規範、相容依賴、預設及驗收屬於字幕包 README／WORKFLOW_AUDIT／PROVENANCE。
 
 - 0.2.4：資料夾名稱、顯示名稱、穩定識別碼與 Python module 解耦。舊流程可直接改名；新流程省略 id 時自動持久化識別碼。重複識別碼或有歧義的名稱必須明確報錯。
-- 各流程包提供 run_app.bat／run_app.command／run_app.sh。由共用生成器產生，僅定位同層 flow_base，委派底座安裝、準備該流程並進入指定流程的共用互動入口。
-- 流程入口不寫死 id、資料夾名稱或絕對路徑；以入口所在資料夾定位 flow.json。無底座包時清楚提示放入同層，不猜測下載來源。
+- 各流程包提供 run_app.bat／run_app.command／run_app.sh。由共用生成器產生，從 workflows/FLOW_<名稱>/ 定位上兩層的 flow_base；保留舊式同層入口相容性。委派底座安裝、準備該流程並進入指定流程的共用互動入口。
+- 流程入口不寫死 id、資料夾名稱或絕對路徑；以入口所在資料夾定位 flow.json。無底座包時清楚提示放入 RoutineKeel 根目錄，不猜測下載來源。
 - 準備流程僅安裝宣告資源，不執行影片處理、不呼叫 LLM。預設首次需要網路，可用 --offline／--prepare-only／--config。
 
-- 同一底座支撐多個流程，根目錄維持 .venv、share_logs、share_states、flow_base，以及可自由命名的流程資料夾。
+- 同一底座支撐多個流程；新式根目錄為 .venv、flow_base、workflows、blueprints、workflow_studio。share_logs、share_states 位於 flow_base 內；流程位於 workflows/FLOW_<名稱>/。.venv 首次啟動建立，不分發既有環境。沒有 workflows/ 的舊式平面工作區維持相容。
+- GitHub 預設完整包包含 Studio、底座及兩個現有參考案例，分包保留相同的工作區相對位置。產品主線為 Studio 產生藍圖包、底座轉換與執行；不持續擴充內建領域流程，也不把這次封裝修訂當作尚未完成能力的驗收。
 - Windows 雙擊 run_app.bat；macOS 雙擊 run_app.command；Linux 執行 run_app.sh。三者由 scripts/project_launcher.py 生成，不另建獨立安裝邏輯。
 - Python 與 uv 都可事先不存在。先用平台內建 shell 下載且校驗 uv，再由 uv 取得 Python 3.12、建立 .venv、安裝底座。
 - 既有 start.ps1/start.sh 保留為共用底層 bootstrap；Windows 多個 uv 路徑須選取單一可用執行檔，驗證成功後才處理 .venv。

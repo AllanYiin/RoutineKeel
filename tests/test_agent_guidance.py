@@ -37,13 +37,13 @@ def test_subtitle_release_ships_the_required_skill_at_the_documented_path():
     name = '課程影片產生字幕'
     relative = 'skills/video-subtitle-creator.skill'
     source = ROOT / 'routinekeel' / 'flows' / name
-    installed = ROOT / 'dist' / 'workspace' / name
+    installed = ROOT / 'dist' / 'workspace' / 'workflows' / ('FLOW_' + name)
     bundle = (source / relative).read_bytes()
     assert (installed / relative).read_bytes() == bundle
     release = next((ROOT / 'dist' / 'release').glob('flow_subtitles-*.zip'))
     with ZipFile(release) as archive:
-        assert archive.read(f'{name}/{relative}') == bundle
-        instructions = archive.read(f'{name}/AGENTS.md').decode('utf-8')
+        assert archive.read(f'workflows/FLOW_{name}/{relative}') == bundle
+        instructions = archive.read(f'workflows/FLOW_{name}/AGENTS.md').decode('utf-8')
         assert f']({relative})' in instructions
         assert '必須先開啟' in instructions
     with ZipFile(installed / relative) as skill:
@@ -52,7 +52,7 @@ def test_subtitle_release_ships_the_required_skill_at_the_documented_path():
 
 def test_agent_cli_from_task_directory_executes_selected_flow(tmp_path):
     task_dir=tmp_path/'中文 改名流程'
-    shutil.copytree(ROOT/'dist/workspace/檔案複製範例',task_dir)
+    shutil.copytree(ROOT/'dist/workspace/workflows/FLOW_檔案複製範例',task_dir)
     source=tmp_path/'input.txt';source.write_text('agent uses installed flow')
     output=tmp_path/'out'
     env=dict(os.environ,PYTHONPATH=str(ROOT/'routinekeel/flow_base/src'),PYTHONDONTWRITEBYTECODE='1')

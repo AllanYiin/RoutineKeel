@@ -115,7 +115,7 @@ def _execution_identity(runtime, task, source, output):
     input_hash = sha256(source) if source.is_file() else None
     def location(path):
         try:
-            return {'workspace_relative': path.relative_to(runtime.home.parent).as_posix()}
+            return {'workspace_relative': path.relative_to(runtime.workspace_root).as_posix()}
         except ValueError:
             return {'external_absolute': str(path)}
     output_identity = location(output)

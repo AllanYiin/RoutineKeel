@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 @pytest.fixture
 def workspace(tmp_path):
     for task, folder in {'ai_flow01': '課程影片產生字幕', 'ai_flow02': '檔案複製範例'}.items():
-        shutil.copytree(ROOT / 'dist/workspace' / folder, tmp_path / task)
+        shutil.copytree(ROOT / 'dist/workspace/workflows' / ('FLOW_' + folder), tmp_path / task)
     return tmp_path
 
 
@@ -208,7 +208,9 @@ def test_distributions_never_bundle_environment_or_models():
         project = ROOT / 'routinekeel' / folder if name == 'flow_base' else ROOT / 'routinekeel/flows' / folder
         version = tomllib.loads((project/'pyproject.toml').read_text())['project']['version']
         with zipfile.ZipFile(ROOT/'dist/release'/f'{archive_name}-{version}.zip') as z:
-            assert all(n.startswith(folder+'/') for n in z.namelist())
+            folder = folder if name == 'flow_base' else 'workflows/FLOW_' + folder
+            scaffolding = {'workflows/', 'blueprints/', 'flow_base/share_logs/', 'flow_base/share_states/'}
+            assert all(n.startswith(folder+'/') or (name == 'flow_base' and n in scaffolding) for n in z.namelist())
             assert not any('.venv' in n.split('/') or n.endswith('model.bin') for n in z.namelist())
             assert z.testzip() is None
             assert z.getinfo(folder+'/run_app.sh').external_attr >> 16 & 0o111

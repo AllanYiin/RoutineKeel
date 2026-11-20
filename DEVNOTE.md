@@ -2,49 +2,57 @@
 
 ## SNAPSHOT — 當前狀態
 
-最後更新：2026-11-17T08:35+08:00
-交接狀態：verified
+最後更新：2026-11-21T01:59+08:00
+交接狀態：refined
 
 ### 目標與授權範圍
 
-依 RoutineKeel 底座階段規劃及使用者核定的 MCP 佇列修訂完成 Stage 0–13、逐階段驗收並交付。
+使用者要求 GitHub Release 的輸出採 RoutineKeel/.venv、flow_base/{share_logs,share_states}、workflows/FLOW_*、blueprints、workflow_studio 結構；補充主線為 Studio 產生藍圖包，底座轉換為真實 workflow，GitHub 保留2–3個案例，不持續擴充內建流程。已明確授權「commit push」。本次不合併、不發布 Release、不執行付費模型。
 
 ### 目前進度
 
-Stage 0–12 的程式與整合 Gate 已提交並在 GitHub draft PR #3 的 Ubuntu/Windows/macOS CI 通過；Stage10 16d0fd6，Stage11 ad753e0，Stage12 候選 a0495ba，後續跨平台修正 d08c5c4/24354da。Stage13 文件候選 f69402f；最後 CI 結果與真人走查清單正在更新，PR 保持 draft、未合併未發布。原有 .idea/ 七個 staged 檔案屬使用者變更。
+實作與本機驗證完成，交付分支 codex/release-workspace-layout。來源為 GitHub main 的4c9f457，隔離工作樹 C:/Users/allan/.codex/worktrees/release-workspace-layout/RoutineKeel；E:/PycharmProjects/RoutineKeel 的既有 dirty 工作樹完整保留，沒有拷入0.2.14未提交功能。
+
+預設 tools/release.py 產生5個ZIP：底座、Studio、字幕與複製兩個既有案例、RoutineKeel-workspace完整包。分包沿用同一相對位置；流程在workflows/FLOW_*，底座狀態與紀錄在flow_base內，.venv首次啟動才建立。--project仍只建置指定套件。完整包排除環境、模型、私人設定與成果，保留空blueprints目錄。Runtime、計畫、交付引用、輸出防護、三平台入口與生成指引支援新結構；舊平面工作區仍相容。字幕review-import與recover-run使用工作區根目錄解析相對路徑，沒有修改領域算法。
+
+README與規格改為Studio→藍圖→底座的產品方向，只保留現有兩個案例。這不是把main尚未完成的藍圖轉換功能宣稱完成。Windows完整底座與流程回歸429 passed/26 skipped；最後打包與Studio安裝保護23 passed/1 skipped。五ZIP CRC/SHA256全部通過，乾淨Windows首次準備與UV_OFFLINE=1再次啟動均ready。GitHub三平台CI與遠端交付狀態以本分支實際查詢為準；不沿用本檔舊Stage13或PR3狀態推定本次發布。
 
 ### 下一步
 
-將 CI run #9 的三平台結果與未覆蓋 Mac Finder/Tk 真人走查寫入報告/手冊，提交並推送 doc-only 更新，再追蹤最後文件變更的 CI 終態。等待使用者對未接觸程式碼的操作走查回覆；未取得人工證據與明確合併/發布授權前不宣稱 Stage13 發行完成。
+依使用者已授權的commit/push交付此分支並建立draft PR；若遠端分支已存在，檢查其最新CI與PR狀態。不要自動合併main或勾選publish_release。GitHub三平台及真人走查尚未在此文件中宣稱通過。
 
 ### DECISIONS
 
-- Stage10 MCP 以 execution_id/SQLite v004/獨立 queue-worker 執行，MCP Client 無狀態查詢且不派生 Worker。
-- PR #3 使用 Ubuntu build 加 Windows2025/macOS15 Gate；publish 需三平台成功，draft PR 不合併/不發布。
-- Windows cp1252 與 macOS 缺 process_started_at 已依第一次/第二次 CI 日誌修正；發行啟動器和 CI 明確用 UTF-8。
-- Stage12 指標依三平台自動測試與 C: NVMe p95 9.78ms 驗收；Mac GUI/Finder headless 未覆蓋須列明。
+- 主包包含Studio與底座，現有課程字幕／檔案複製僅為參考案例；不新增領域流程或擴大案例清單。
+- 從最新main另建隔離工作樹，保留其他分支、PR11與E工作樹未提交內容。本次沒有更改已安裝D:/RoutineKeel的正式套件。
+- 新結構由workflows目錄判定；舊式平面配置仍相容。根層.venv由啟動器建立，不打包可執行環境或快取。
+- 實際發行仍保留workflow_dispatch、main、publish_release及三平台成功Gate。使用者只授權commit/push，不能當作合併或發行授權。
+- 先前Stage0–13資料保留在歷史，驗收依當前程式、測試與本次CI，不把舊DEVNOTE的PR3開放狀態當最新事實。
 
 ### LANDMINES
 
-- Stage13 手冊規定未接觸程式碼的人走一次安裝/範例/診斷/恢復，尚待使用者安排；macOS Finder/Tk 互動桌面不由 CI 證明。
-- 實際舊版 wheel 回退未演練，只有 SQLite 備份 checksum/restore 測試；發布前需決策。
-- 最後文件更新尚未跑其對應 head commit 的完整 CI；PR 仍 draft。
-- .idea staged 屬使用者，所有提交與推送均排除。
+- 本地使用main既有版本底座0.2.12、字幕0.4.1、Studio0.1.0；E工作樹未提交0.2.14功能沒有混入。本次解決發行結構，未實作未完成的Studio藍圖轉換能力。
+- Windows本機測試已過；26與1項skip包含平台／既有環境限制，不代表macOS/Linux原生GUI、Finder或真人驗收。
+- 完整ZIP約3.4MB為乾淨建置候選，不含D工作區的私人Reel、長文藍圖、媒體或來源。dist與運行資料不提交。
+- 原E工作樹的dirty內容、.idea與先前其他專案進度不在本次提交範圍。
 
 ### 證據索引
 
-- draft PR https://github.com/AllanYiin/RoutineKeel/pull/3
-- GitHub Actions run 43987170358 各 job logs
-- routinekeel/flow_base/docs/test-report.md 與 release-checklist.md
-- routinekeel/flow_base/docs/user-guide.md 新增走查清單
-- git status：.idea 七個 staged 使用者檔案與待提交 docs
+- 使用者本輪Release目錄要求、Studio/藍圖/底座與2–3案例方向、commit push授權
+- tools/release.py
+- .github/workflows/packages.yml
+- tests/test_release_layout.py
+- routinekeel/flow_base/docs/test-report.md
+- D:/RoutineKeel/flow_base/share_states/verification/github-release-layout-summary.json
 
 ### VALIDATION
 
-- GitHub PR CI run #9 — PASS：https://github.com/AllanYiin/RoutineKeel/actions/runs/43987170358 commit 24354dac：Ubuntu 401 passed/3 skipped、macOS15 402 passed/2 skipped、Windows2025 383 passed/21 skipped；三 job success、publish skipped；Ubuntu三 ZIP SHA256SUMS OK。
-- 本機 Windows/WSL — PASS：Windows 382 passed/21 skipped，WSL Linux 390 passed/13 skipped；M7 C:NVMe 5,000 Run p95 9.78ms。
-- Stage13 文件候選 — PASS：source.zip 含架構/known issues/release checklist/upgrade/合成診斷，三 ZIP SHA正確，文件連結0缺失；user-guide 新增真人走查步驟，後續需重建驗證。
-- Mac Finder/Tk 真人走查與舊 wheel rollback — NOT_RUN：headless CI不具互動視窗；使用者走查回覆待處理；舊 wheel回退未演練。
+- 完整底座與兩流程回歸 — PASS：pytest tests routinekeel/flows --ignore=tests/studio -q：429 passed,26 skipped；完整log在D:/RoutineKeel/flow_base/share_states/verification/github-release-layout-full-tests.log。
+- 最終打包／Studio保護 — PASS：pytest tests/test_release_layout.py tests/studio/test_distribution_package.py tests/studio/test_distribution_bootstrap.py -q：23 passed,1 skipped。
+- 乾淨發行ZIP與分包 — PASS：5 ZIP CRC、SHA256SUMS與分包／完整包逐檔相同；真實ZIP內wheel完成catalog、plan、run、cache，輸出防護正例負例通過。
+- Windows正式入口 — PASS：乾淨ZIP首次run_app.bat --prepare-only --offline成功，首次下載Python/底座依賴；隨後UV_OFFLINE=1再啟動ready。未下載模型或付費呼叫。
+- GitHub CI依賴組合 — PASS：uv run --locked --project routinekeel/flow_base --extra mcp --group dev --with-requirements dist/subtitle-test-requirements.txt 成功。
+- GitHub三平台CI／發布 — NOT_RUN：尚需以提交後GitHub的最新分支與PR查詢；未自動合併或發布Release。
 
 # HISTORY
 
@@ -144,3 +152,10 @@ Stage13 文件候選 f69402f 已提交；本機三 ZIP SHA、source 文件、連
 <!-- devnote-review:c76f4a3b22a97acd2afdc5ce -->
 
 PR #3 第三輪 CI Ubuntu401/3skip、macOS402/2skip、Windows383/21skip 均成功；前兩輪揭露並修復 Windows cp1252 和 macOS 程序出生時間。Stage12 整合 Gate 已具三平台證據。Stage13 更新測試報告與真人走查步驟，仍待最後 doc-only CI、Mac GUI真人走查及發布授權。
+
+
+## [2026-11-21T01:59+08:00] Release採新式工作區、Studio主包與兩個參考案例
+
+<!-- devnote-review:7c712d47fba770a0b1975863 -->
+
+完成新式Runtime路徑與Release結構，預設5ZIP含Studio完整包、保留舊平面相容性與2個案例。修正字幕審閱與恢復的工作區相對路徑，新增真實解壓包測試。Windows底座與流程429pass/26skip，最終打包23pass/1skip，5ZIPCRC與SHA正常，乾淨首啟動及離線再啟動ready。使用者授權commit/push，使用隔離分支交付，未處理其他dirty工作或自動發布。

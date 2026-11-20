@@ -105,30 +105,37 @@ python -m flow_base.codex_tokens --latest
 
 ## 資料夾與交付方式
 
-將各 ZIP 解壓到同一個父資料夾。交付時只有 `flow_base` 與所需的流程資料夾（名稱可自訂）；第一次啟動才產生 `.venv`、`share_logs`、`share_states`。
+GitHub Release 提供 `RoutineKeel-workspace-*.zip` 完整包，以及底座、Studio、兩個參考流程的獨立 ZIP。完整包解壓產生 `RoutineKeel/`；獨立 ZIP 解壓到同一個 `RoutineKeel/` 便能合併或更新。
 
 ```text
-工作區/
-    .venv/          首次執行建立：底座的輕量 Python 環境
-    share_logs/     共用日誌：flow_id/run_id/；安裝日誌另按環境區分
-    share_states/   流程登錄、執行狀態、預算帳本、快取、模型與隔離環境
-    flow_base/      三平台 run_app、底層 start、底座 wheel、README、完整原始碼 ZIP
-    課程影片產生字幕/  字幕流程：三平台 run_app、flow.json、任務 wheel、README、source.zip
-    檔案複製範例/    選用的第二流程，同樣提供三平台 run_app
+RoutineKeel/
+    .venv/                       首次啟動建立
+    flow_base/
+        share_logs/              共用日誌
+        share_states/            狀態、模型及隔離環境
+    workflows/
+        FLOW_課程影片產生字幕/
+        FLOW_檔案複製範例/
+    blueprints/                  藍圖包
+    workflow_studio/             設計期工作台
 ```
 
-`.venv`、模型、下載套件、API key、歷史日誌均不會預先打包。新增任務只需加入同層資料夾；不重新打包或安裝底座。未放入任務包時，底座也能啟動並列出空清單。
+產品主線為 Studio → 藍圖包 → 底座轉換與執行。GitHub 僅保留兩個現有參考案例；自訂需求透過通用流程建立，不持續擴充內建領域流程。本次打包調整不代表尚未驗收的藍圖轉換能力已完成。
+
+新流程放在 `workflows/FLOW_<名稱>/`，不改變 flow.json 的穩定識別碼。啟動器定位上兩層的 `flow_base`，也保留舊式同層配置的相容入口。工作區有 `workflows/` 時，底座使用新結構；沒有時仍可讀取舊式平面工作區。
+
+本文件後文簡寫的 `share_states/`、`share_logs/` 在新式工作區均位於 `flow_base/` 內。實際 `.venv`、模型、私人設定、API key 及執行成果不隨 ZIP 分發。
 
 根目錄 `.venv` 僅裝底座。大型依賴在 `share_states/environments/<依賴與平台雜湊>/.venv` 動態建立，避免不同工作流互相破壞版本。相同鎖定檔、Python 與平台可共用相同環境；模型依資源內容雜湊共用。這些都是底座管理的內部資料，流程不需要自帶安裝腳本。
 
 
 ## 流程也有一鍵入口（0.2.4）
 
-在「課程影片產生字幕」或任何流程資料夾內，Windows 開啟 run_app.bat、macOS 開啟 run_app.command、Linux 執行 run_app.sh。入口以自己的位置定位流程，不寫死 ai_flow01、資料夾名稱或磁碟路徑。第一次自動委派同層 flow_base 安裝底座、準備該流程的預設依賴及模型，驗證成功後直接進入該流程。之後沿用可用環境及資源。
+在「課程影片產生字幕」或任何流程資料夾內，Windows 開啟 run_app.bat、macOS 開啟 run_app.command、Linux 執行 run_app.sh。入口以自己的位置定位流程，不寫死 ai_flow01、資料夾名稱或磁碟路徑。第一次自動委派工作區根目錄的 flow_base 安裝底座、準備該流程的預設依賴及模型，驗證成功後直接進入該流程。之後沿用可用環境及資源。
 
 學員可以直接輸入 `/input D:\課程\第一堂.mp4`，看到計畫後輸入 `/run`。準備階段不開始影片處理，也不呼叫 LLM。共用底座入口仍提供全部流程的選擇。
 
-流程包需與 **flow_base 0.2.4 或以上**放在同一層。沒有底座包時，入口會提示正確放置方式；目前未設置公開的底座發行網址，因此不會從猜測的網址下載底座。底座包已放好但尚未安裝 uv、Python 或 .venv，則可由流程入口自動完成安裝。
+新式流程包放在 `workflows/FLOW_<名稱>/`，底座放在工作區根目錄的 `flow_base/`。沒有底座包時，入口會提示正確放置方式；目前未設置公開的底座發行網址，因此不會從猜測的網址下載底座。底座包已放好但尚未安裝 uv、Python 或 .venv，則可由流程入口自動完成安裝。
 
 流程入口支援 `--prepare-only`、`--offline`、`--config 設定.json`。例如：
 
@@ -139,7 +146,7 @@ sh './課程影片產生字幕/run_app.sh' --offline
 
 --offline 限制流程資源安裝與執行；若連底座首次安裝也要禁用網路，另設定 UV_OFFLINE=1。準備失敗會記錄在 share_states/launcher 與 share_logs/launcher，重新開啟即可重試。準備資源不產生 run_id，實際執行才產生。
 
-資料夾可以改成 `ai_flow_ASR_video`、`我的字幕工具` 或含空格的名稱，不必修改 wheel 或 flow.json；掃描以同層 flow.json 為準。顯示名稱來自 title；命令的 --task 接受顯示名稱、資料夾名稱或穩定識別碼。名稱重複時會要求唯一選項，兩個資料夾含相同內部 id 時會報錯，不默默合併執行歷史。
+資料夾可以改成 `ai_flow_ASR_video`、`我的字幕工具` 或含空格的名稱，不必修改 wheel 或 flow.json；新式配置掃描 workflows/ 各子資料夾內的 flow.json。顯示名稱來自 title；命令的 --task 接受顯示名稱、資料夾名稱或穩定識別碼。名稱重複時會要求唯一選項，兩個資料夾含相同內部 id 時會報錯，不默默合併執行歷史。
 
 新流程作者可提供 module 並省略 id，首次發現時會將隨機識別碼寫入 flow.json（因此檔案需可寫）；之後更新或分享同一流程，應保留產生的 id，不要重新用缺少 id 的模板覆蓋。flow_id 由工作區自動登錄，搬移並保留 share_states 可延續；只分享乾淨流程包到另一個工作區會取得該工作區自己的 flow_id。舊包保留 ai_flow01 作為內部識別碼只是向後相容，不限制學員使用的名稱。
 

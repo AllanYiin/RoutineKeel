@@ -4,7 +4,7 @@
 
 這是已封裝的工作流程工作區。使用者要求執行工作時，宿主 Agent 負責理解需求、選擇已登錄流程、呼叫既有 CLI、讀取有限結果。實際步驟由流程包執行。除非使用者要求開發，不另寫替代腳本或改動 wheel。
 
-預設每個流程資料夾各自作為 Codex 專案／repo，對話由宿主管理，各流程不需要合併成一個專案。共用執行工作區是這些流程的父資料夾，與對話專案根是不同概念。從目前流程呼叫旁邊的底座；僅存取必要的 ../flow_base、../.venv、../share_states、../share_logs 及使用者指定輸入／輸出。catalog 由底座讀取同層流程的宣告資料，不授權宿主 Agent 掃描其他流程內容。若環境限制阻擋，明確回報受阻的共用路徑，由使用者依其宿主可用機制允許必要存取；不得假定 AGENTS.md 能突破沙盒，也不一律要求改用共同父目錄作為所有對話的專案。
+預設每個流程資料夾各自作為 Codex 專案／repo，對話由宿主管理，各流程不需要合併成一個專案。共用執行工作區是 RoutineKeel 根目錄，流程放在 workflows/FLOW_<名稱>/，與對話專案根是不同概念。從目前流程呼叫工作區根目錄的底座；僅存取必要的 ../../flow_base、../../.venv、../../flow_base/share_states、../../flow_base/share_logs 及使用者指定輸入／輸出。catalog 由底座讀取 workflows/ 下流程的宣告資料，不授權宿主 Agent 掃描其他流程內容。若環境限制阻擋，明確回報受阻的共用路徑，由使用者依其宿主可用機制允許必要存取；不得假定 AGENTS.md 能突破沙盒，也不一律要求改用共同父目錄作為所有對話的專案。
 
 先讀本文件、目標流程的 AGENTS.md、flow.json 與 README.md；settings.json 如存在也應讀取。不要自動解開 source.zip 或檢查整個系統的 Python／模型快取。環境準備由底座執行。
 
@@ -16,7 +16,7 @@ Windows PowerShell（先根據實際專案根與已選流程設定變數；以�
 
 ```powershell
 $Workspace = (Resolve-Path -LiteralPath 'D:\flow_workspace').Path
-$TaskDir = Get-Item -LiteralPath (Join-Path $Workspace '資料整理流程')
+$TaskDir = Get-Item -LiteralPath (Join-Path $Workspace 'workflows\FLOW_資料整理流程')
 $Launcher = Join-Path $Workspace 'flow_base\start.ps1'
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Launcher catalog
 if ($LASTEXITCODE -ne 0) { throw 'flow_base catalog failed' }

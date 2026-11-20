@@ -44,7 +44,7 @@ def probe(request, temporary):
     from ..outputs import choose_output
 
     workspace = Workspace(Path(request['workspace']))
-    workspace.runtime = ReadOnlyRuntime(workspace.root / 'share_states')
+    workspace.runtime = ReadOnlyRuntime(workspace.runtime.home)
     workspace.runtime.logs = Path(temporary) / 'logs'
     task = workspace.task(request['task'], read_only=True)
     cache_root = Path(temporary) / 'plugins'

@@ -33,13 +33,34 @@ RoutineKeel 想解決的是這段「從作者的方法到他人能穩定使用�
 
 對外專案與根資料夾名稱為 **RoutineKeel**；內部共用底座叫 **flow_base**。一般使用者可從下方的「第一次使用」開始，不需要閱讀原始碼。
 
+## 產品方向與案例範圍
+
+主要使用路徑將是：使用者透過 `workflow_studio` 產生藍圖包，存放於 `blueprints/`，再由 `flow_base` 轉換為可執行的 workflow，安裝在 `workflows/FLOW_<名稱>/`。Studio 與底座的已實作能力、驗收狀態以各自文件為準。
+
+GitHub 保留兩個參考案例：**課程影片產生字幕**與**檔案複製範例**，用來示範領域能力、檢核及交付契約。產品不以持續擴充內建流程清單為主線；新的使用者需求優先走 Studio、藍圖與底座的通用路徑。
+
 ## 第一次使用
 
-到 GitHub Releases 開啟最新發行，從 **Assets** 下載底座 ZIP 和你需要的流程 ZIP。例如字幕需要 `flow_base-*.zip` 與 `flow_subtitles-*.zip`。[前往 Releases](https://github.com/AllanYiin/RoutineKeel/releases)
+到 [GitHub Releases](https://github.com/AllanYiin/RoutineKeel/releases) 的 **Assets** 下載 `RoutineKeel-workspace-*.zip`。完整解壓後會得到 `RoutineKeel/`，包含 Studio、底座及兩個參考案例。這是私人儲存庫，GitHub 下載需要權限。
 
-建立名為 `RoutineKeel` 的資料夾，將兩包完整解壓到裡面。解壓後，`flow_base/` 和 `課程影片產生字幕/` 應直接並排。這是私人儲存庫，GitHub 下載需要權限；分享給學員時，可直接把兩個 ZIP 交給他們。
+```text
+RoutineKeel/
+    .venv/                 首次啟動建立，不隨 ZIP 分發
+    flow_base/
+        share_logs/
+        share_states/
+    workflows/
+        FLOW_課程影片產生字幕/
+        FLOW_檔案複製範例/
+    blueprints/
+    workflow_studio/
+```
 
-1. 進入你要使用的流程，例如 **課程影片產生字幕**。
+從 `workflow_studio/` 的 `open_studio.bat`、`open_studio.command` 或 `open_studio.sh` 開啟 Studio。若只更新個別套件，可下載底座、Studio 或流程的獨立 ZIP，解壓到同一個 `RoutineKeel/`；它們保留上述相對位置。完整包與分包都不包含模型、私人設定、憑證、快取或既有執行成果。
+
+以下用已附的字幕參考案例示範執行：
+
+1. 進入你要使用的流程，例如 **workflows/FLOW_課程影片產生字幕**。
 2. 依作業系統開啟下表的入口。
 3. 首次啟動等待環境與模型準備完成。這個階段需要網路，下載時間取決於網路與電腦。
 4. 依畫面提示指定影片，確認執行計畫，再開始工作。

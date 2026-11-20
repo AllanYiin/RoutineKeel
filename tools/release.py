@@ -1,4 +1,4 @@
-"""Build one ZIP per component in dist, with a separate test workspace."""
+"""Build component ZIPs and a clean RoutineKeel workspace distribution."""
 from pathlib import Path
 import argparse
 import ast
@@ -144,7 +144,8 @@ def build_project(path, staging):
              '--project', str(validation), '--strict'])
     run(['uv', 'build', '--wheel', '--out-dir', str(wheels)], cwd=path)
     wheel = wheels / f'{name.replace("-", "_")}-{version}-py3-none-any.whl'
-    dest = staging / 'workspace' / path.name
+    relative = Path('flow_base') if path == BASE else Path('workflows') / ('FLOW_' + path.name)
+    dest = staging / 'workspace' / relative
     dest.mkdir(parents=True)
     shutil.copyfile(wheel, dest / wheel.name)
     shutil.copyfile(path / 'README.md', dest / 'README.md')
@@ -172,9 +173,12 @@ def build_project(path, staging):
 
     output = staging / 'release' / f'{archive_name}-{version}.zip'
     with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as archive:
+        if path == BASE:
+            for directory in ('workflows/', 'blueprints/', 'flow_base/share_logs/', 'flow_base/share_states/'):
+                archive.writestr(directory, b'')
         for file in sorted(dest.rglob('*')):
             if file.is_file():
-                member = f'{path.name}/{file.relative_to(dest).as_posix()}'
+                member = file.relative_to(staging / 'workspace').as_posix()
                 if file.suffix in {'.sh', '.command'}:
                     info = zipfile.ZipInfo(member)
                     info.create_system = 3
@@ -186,15 +190,56 @@ def build_project(path, staging):
     with zipfile.ZipFile(output) as archive:
         if archive.testzip() is not None:
             raise ValueError(f'Corrupted release file: {output}')
-    return {'file': output.name, 'folder': path.name, 'version': version,
+    return {'file': output.name, 'folder': relative.as_posix(), 'version': version,
             'bytes': output.stat().st_size, 'sha256': sha(output)}
+
+
+def workspace_directories(workspace):
+    """Create empty layout scaffolding, never copy an installed environment."""
+    for name in ('workflows', 'blueprints', 'workflow_studio',
+                 'flow_base/share_logs', 'flow_base/share_states'):
+        (workspace / name).mkdir(parents=True, exist_ok=True)
+
+
+def write_workspace_archive(staging, reports):
+    workspace = staging / 'workspace'
+    workspace_directories(workspace)
+    (workspace / 'README.md').write_text(
+        '# RoutineKeel\n\n'
+        '主要方向：workflow_studio 設計 → blueprints 藍圖包 → flow_base 轉換為可執行 workflow。\n'
+        'GitHub 保留課程字幕、檔案複製兩個參考案例，不以持續增加內建流程作為產品主線。\n\n'
+        'Studio 入口：workflow_studio/open_studio.bat（Windows）或 open_studio.command／open_studio.sh。\n'
+        '底座入口：flow_base/run_app.bat；參考流程位於 workflows/FLOW_<名稱>/。\n'
+        'Studio 的已實作能力與驗收範圍見 workflow_studio/README.md。\n'
+        '首次啟動建立 .venv；共用紀錄與狀態位於 flow_base/share_logs、flow_base/share_states。\n'
+        '此包不含執行環境、模型、憑證、私人設定或使用者成果。\n', encoding='utf-8')
+    version = project_info(BASE)[1]
+    output = staging / 'release' / f'RoutineKeel-workspace-{version}.zip'
+    with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr('RoutineKeel/', b'')
+        for file in sorted(workspace.rglob('*')):
+            member = 'RoutineKeel/' + file.relative_to(workspace).as_posix()
+            if file.is_dir():
+                archive.writestr(member + '/', b'')
+            else:
+                info = zipfile.ZipInfo(member)
+                info.create_system = 3
+                info.external_attr = (0o100755 if file.suffix in {'.sh', '.command'} else 0o100644) << 16
+                info.compress_type = zipfile.ZIP_DEFLATED
+                archive.writestr(info, file.read_bytes())
+    with zipfile.ZipFile(output) as archive:
+        if archive.testzip() is not None:
+            raise ValueError('Corrupted workspace ZIP')
+    return {'file': output.name, 'folder': 'RoutineKeel', 'version': version,
+            'bytes': output.stat().st_size, 'sha256': sha(output),
+            'components': [item['folder'] for item in reports]}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--project', help='Optional component folder name or Python package name')
     args = parser.parse_args()
-    # Studio is opt-in; the existing default set of Runtime/flow ZIPs is unchanged.
+    # The default distribution centers on Studio/runtime plus two existing examples.
     projects = ([STUDIO] if args.project in {'studio', 'workflow_studio', 'workflow-studio'}
                 else discover_projects())
     if args.project:
@@ -203,6 +248,9 @@ def main():
         projects = [p for p in projects if selected in (p.name, project_info(p)[0])]
         if len(projects) != 1:
             parser.error(f'Unknown or ambiguous component: {args.project}')
+
+    if not args.project:
+        projects.append(STUDIO)
 
     if DIST.is_symlink() or (hasattr(DIST, 'is_junction') and DIST.is_junction()):
         raise ValueError('Build output cannot be a linked directory')
@@ -222,6 +270,8 @@ def main():
                 encoding='utf-8')
         else:
             write_workspace_guide(staging / 'workspace')
+        if not args.project:
+            reports.append(write_workspace_archive(staging, reports))
         (staging / 'release/SHA256SUMS').write_text(
             ''.join(f"{item['sha256']}  {item['file']}\n" for item in reports), encoding='utf-8')
         (staging / 'release/versions.json').write_text(

@@ -69,8 +69,14 @@ class Manifest(Contract):
 class Workspace:
     def __init__(self, root=None):
         self.root = Path(root or os.environ.get('FLOW_BASE_WORKSPACE') or Path.cwd()).expanduser().resolve()
-        self.runtime = Runtime(self.root / 'share_states')
-        self.runtime.logs = self.root / 'share_logs'
+        self.nested_layout = (self.root / 'workflows').is_dir()
+        self.workflows_root = self.root / 'workflows' if self.nested_layout else self.root
+        base = self.root / 'flow_base' if self.nested_layout else self.root
+        for directory in (self.workflows_root, base):
+            if directory.is_symlink() or getattr(directory, 'is_junction', lambda: False)():
+                raise FlowError('TASK_FOLDER', '工作區結構不得使用連結', path=str(directory))
+        self.runtime = Runtime(base / 'share_states')
+        self.runtime.logs = base / 'share_logs'
 
     def initialize(self):
         self.runtime.initialize()
@@ -80,7 +86,7 @@ class Workspace:
         result = {}
         if not self.root.is_dir():
             return result
-        for folder in sorted(self.root.iterdir()):
+        for folder in sorted(self.workflows_root.iterdir()):
             if not folder.is_dir() or folder.name.startswith('.') or folder.name in {'flow_base', 'share_states', 'share_logs'}:
                 continue
             path = folder / 'flow.json'
@@ -148,8 +154,8 @@ class Workspace:
         if supplied.is_symlink():
             raise FlowError('TASK_FOLDER', '流程入口不可使用符號連結')
         target = supplied.resolve()
-        if target.parent != self.root:
-            raise FlowError('TASK_FOLDER', '流程包應放在 flow_base 同層', path=str(target))
+        if target.parent != self.workflows_root:
+            raise FlowError('TASK_FOLDER', '流程包應放在此工作區的流程目錄內', path=str(target))
         for task in self.discover().values():
             if task.folder == target:
                 return task

@@ -327,7 +327,8 @@ class Adapter(BaseAdapter):
         if name not in schemas:
             raise FlowError('TASK_ACTION_UNKNOWN', 'Unknown subtitle action')
         params = schemas[name].model_validate(parameters).model_dump()
-        output = (runtime.home.parent / params.pop('output')).resolve()
+        workspace = getattr(runtime, 'workspace_root', runtime.home.parent)
+        output = (workspace / params.pop('output')).resolve()
         from flow_base.outputs import artifact_directory, validate_tree
         validate_tree(output)
         artifacts = artifact_directory(output)
@@ -342,7 +343,7 @@ class Adapter(BaseAdapter):
         if name == 'review-approve' and not params['confirm_listened']:
             raise FlowError('HUMAN_APPROVAL_REQUIRED', '必須由真人明確確認聽審；不能由 runner 或模型代替。')
         if name == 'review-import':
-            params['csv_path'] = str((runtime.home.parent / params['csv_path']).resolve())
+            params['csv_path'] = str((workspace / params['csv_path']).resolve())
         operation = {'review-approve':'approve', 'review-import':'import'}.get(name, 'build')
         return self.review_operation(runtime, output, operation, **params)
 

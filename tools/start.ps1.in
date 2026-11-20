@@ -1,14 +1,15 @@
 $ErrorActionPreference = 'Stop'
 $LauncherArgs = @($args)
 $env:FLOW_BASE_WORKSPACE = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$env:FLOW_BASE_HOME = Join-Path $env:FLOW_BASE_WORKSPACE 'share_states'
+$StateRoot = if (Test-Path -LiteralPath (Join-Path $env:FLOW_BASE_WORKSPACE 'workflows') -PathType Container) { $PSScriptRoot } else { $env:FLOW_BASE_WORKSPACE }
+$env:FLOW_BASE_HOME = Join-Path $StateRoot 'share_states'
 [System.IO.Directory]::CreateDirectory($env:FLOW_BASE_HOME) | Out-Null
-[System.IO.Directory]::CreateDirectory((Join-Path $env:FLOW_BASE_WORKSPACE 'share_logs')) | Out-Null
+[System.IO.Directory]::CreateDirectory((Join-Path $StateRoot 'share_logs')) | Out-Null
 $LaunchId = 'launch_' + [guid]::NewGuid().ToString('N')
 $env:FLOW_BASE_LAUNCH_ID = $LaunchId
 $LaunchPhase = 'bootstrap'
 $CommandExitCode = $null
-$LaunchLogDir = Join-Path $env:FLOW_BASE_WORKSPACE 'share_logs\launcher'
+$LaunchLogDir = Join-Path $StateRoot 'share_logs\launcher'
 $LaunchStateDir = Join-Path $env:FLOW_BASE_HOME 'launcher'
 [System.IO.Directory]::CreateDirectory($LaunchLogDir) | Out-Null
 [System.IO.Directory]::CreateDirectory($LaunchStateDir) | Out-Null

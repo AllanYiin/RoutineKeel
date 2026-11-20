@@ -1,5 +1,13 @@
 # RoutineKeel 整合驗收紀錄（Stage 12 三平台 CI 通過）
 
+## 2026-11-21 Release 目錄修訂
+
+- 預設 `python tools/release.py` 產生底座、Studio、兩個既有案例與完整工作區共五個 ZIP。完整包使用 `RoutineKeel/` 根目錄；流程為 `workflows/FLOW_<名稱>/`，共用狀態與日誌位於 `flow_base/` 內。個別 `--project` 建置只交付所選套件。
+- 本機 Windows：`python -m pytest tests routinekeel/flows --ignore=tests/studio -q` → **429 passed、26 skipped**。涵蓋舊平面工作區、新目錄的計畫／執行／快取、輸出防護，以及字幕審閱／復原相對路徑；不執行付費模型。
+- 最後重建後：`python -m pytest tests/test_release_layout.py tests/studio/test_distribution_package.py tests/studio/test_distribution_bootstrap.py -q` → **23 passed、1 skipped**。實際解壓 ZIP、以其中 wheel 執行、合併分包並與完整包逐檔比對；五個 ZIP CRC 與 `SHA256SUMS` 全部通過。
+- 乾淨解壓後，Windows `workflows/FLOW_檔案複製範例/run_app.bat --prepare-only --offline` 首次成功準備環境；首次需要下載 Python 與底座依賴。之後以 `UV_OFFLINE=1` 再啟動，狀態仍為 ready。沒有分發既有 `.venv`、模型、私人設定或執行成果。
+- GitHub 三平台結果需以本修訂對應的 CI 為準；以上為本機 Windows 證據，不代表 macOS／Linux 原生啟動、真人 Studio 走查或未完成的藍圖轉換能力已驗收。保留既有手動發布 Gate。
+
 本報告依 `RoutineKeel_flow_base_spec_v1.2.2.zip` 的 AC-01～08、M1～M8，以及使用者後續核定的 `specs/mcp-queue-v1.md` 修訂，記錄實際證據。Stage 10 已改為持久化 `execution_id` 與另行啟動的 queue-worker；MCP Client 不直接派生執行程序。三平台 CI 已通過；舊版 wheel 回滾已按下述範圍實測。使用者將 macOS Finder／Tk 實機驗證延後；非技術真人操作走查仍未完成。
 
 ## 測試環境與重現命令

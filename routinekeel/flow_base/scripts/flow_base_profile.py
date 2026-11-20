@@ -24,6 +24,7 @@ POSIX = '''#!/bin/sh
 set -u
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$HERE/.." && pwd)
+if [ -d "$ROOT/workflows" ]; then ROOT="$HERE"; fi
 id="launch_$(date -u +%Y%m%dT%H%M%S)_$$"
 mkdir -p "$ROOT/share_logs/launcher" "$ROOT/share_states/launcher" || exit 1
 log="$ROOT/share_logs/launcher/$id.log"
@@ -63,12 +64,14 @@ exit "$code"
 TASK_BAT = r'''@echo off
 setlocal DisableDelayedExpansion
 title flow_base workflow
-if not exist "%~dp0..\flow_base\start.ps1" (
-  echo Missing shared flow_base. Extract the flow_base package beside this workflow folder.
+set "FLOW_BASE_LAUNCHER=%~dp0..\..\flow_base\start.ps1"
+if not exist "%FLOW_BASE_LAUNCHER%" set "FLOW_BASE_LAUNCHER=%~dp0..\flow_base\start.ps1"
+if not exist "%FLOW_BASE_LAUNCHER%" (
+  echo Missing shared flow_base. Extract the flow_base package into the RoutineKeel workspace root.
   pause
   exit /b 2
 )
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0..\flow_base\start.ps1" launch --folder "%~dp0." %*
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%FLOW_BASE_LAUNCHER%" launch --folder "%~dp0." %*
 set "FLOW_BASE_EXIT=%ERRORLEVEL%"
 if not "%FLOW_BASE_EXIT%"=="0" (
   echo.
@@ -82,9 +85,10 @@ exit /b %FLOW_BASE_EXIT%
 TASK_POSIX = '''#!/bin/sh
 set -eu
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-BASE="$HERE/../flow_base"
+BASE="$HERE/../../flow_base"
+if [ ! -f "$BASE/run_app.sh" ]; then BASE="$HERE/../flow_base"; fi
 if [ ! -f "$BASE/run_app.sh" ]; then
-  printf '找不到共用底座。請將 flow_base 套件解壓到本流程資料夾的同一層，再重新開啟。\\n' >&2
+  printf '找不到共用底座。請將 flow_base 套件解壓到與流程資料夾同一層的 RoutineKeel 工作區根目錄，再重新開啟。\\n' >&2
   if [ -t 0 ]; then printf '按 Enter 關閉…'; read -r answer || true; fi
   exit 2
 fi
