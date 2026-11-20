@@ -26,7 +26,7 @@
 
 ## 一鍵開始（Quick Start）
 
-將本資料夾與 flow_base 放在同一層；資料夾可自由命名。Windows 雙擊 run_app.bat，macOS 開啟 run_app.command，Linux 執行 `sh run_app.sh`。三個薄入口都委派同一底座，不各自維護安裝邏輯。不必預先安裝 uv 或 Python；首次需要網路，模型與套件現場取得。
+將本資料夾放在 RoutineKeel/workflows/FLOW_課程影片產生字幕，底座位於 ../../flow_base；資料夾可自由命名。Windows 雙擊 run_app.bat，macOS 開啟 run_app.command，Linux 執行 `sh run_app.sh`。三個薄入口都委派同一底座，不各自維護安裝邏輯。不必預先安裝 uv 或 Python；首次需要網路，模型與套件現場取得。
 
 準備完成後輸入 `/input 影片的完整路徑`，查看計畫，輸入 `/run` 開始。也可在共用入口輸入「把『課程.mp4』產生字幕」；本機規則只接受流程宣告的參數，缺項會提示。自然語言不是任意 shell 執行器。
 

@@ -18,7 +18,7 @@ def load_builder(monkeypatch):
     return builder
 
 
-def test_studio_is_not_added_to_default_runtime_flow_releases(monkeypatch):
+def test_studio_is_not_a_domain_workflow_example(monkeypatch):
     load_builder(monkeypatch)
     import release
 

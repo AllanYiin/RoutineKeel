@@ -36,14 +36,18 @@ def test_valid_words_are_unchanged_and_invalid_segment_still_fails():
     with pytest.raises(FlowError,match='段落'):normalize_word_timelines(rows,3)
 
 
-@pytest.fixture
-def failed_work(tmp_path,monkeypatch):
-    runtime=Runtime(tmp_path/'share_states');runtime.initialize();runtime.logs=tmp_path/'share_logs'
+@pytest.fixture(params=['flat', 'nested'])
+def failed_work(tmp_path,monkeypatch,request):
+    nested=request.param=='nested'
+    if nested:(tmp_path/'workflows').mkdir()
+    base=tmp_path/'flow_base' if nested else tmp_path
+    runtime=Runtime(base/'share_states');runtime.initialize();runtime.logs=base/'share_logs'
     source=tmp_path/'lecture.fixture';source.write_bytes(b'synthetic source, not user course')
     flow=subtitle_workflow().model_copy(update={'profile':'asr-cpu'})
     flow.options.initial_prompt=''  # Historical 0.3.2 snapshot had an empty prompt.
     flow.options.device='cpu';flow.options.language='en';flow.options.traditional_chinese=False
-    folder=tmp_path/'課程影片產生字幕';out=folder/'outputs/failed';out.mkdir(parents=True)
+    folder=tmp_path/'workflows/FLOW_課程影片產生字幕' if nested else tmp_path/'課程影片產生字幕'
+    out=folder/'outputs/failed';out.mkdir(parents=True)
     audio=runtime.home/'artifacts/extract/result.wav';audio.parent.mkdir(parents=True)
     with wave.open(str(audio),'wb') as wav:
         wav.setnchannels(1);wav.setsampwidth(2);wav.setframerate(16000);wav.writeframes(b'\0\0'*16000*22)
@@ -124,7 +128,7 @@ def test_recovery_refuses_untrusted_or_changed_inputs(failed_work,change):
         v=read_json(raw_path);v['segments'][0]['text']='changed';atomic_json(raw_path,v)
     elif change=='model':
         v=read_json(raw_path);v['model_revision']='changed';atomic_json(raw_path,v)
-    elif change=='input':(runtime.home.parent/'lecture.fixture').write_bytes(b'changed')
+    elif change=='input':(runtime.workspace_root/'lecture.fixture').write_bytes(b'changed')
     elif change=='missing_audio':(runtime.home/'artifacts/extract/result.wav').unlink()
     else:atomic_json(out/'artifacts/edits.json',{'0':'human'})
     with pytest.raises(FlowError):recover(runtime,adapter)
@@ -139,7 +143,7 @@ def test_normal_transcribe_handler_keeps_raw_and_uses_fallback(failed_work,monke
     def worker_reply(profile,request,**kwargs):atomic_json(Path(request['output']),raw)
     monkeypatch.setattr(runtime,'worker',worker_reply)
     target=runtime.home/'artifacts/new/result.json'
-    ctx=Context(runtime,flow,runtime.home.parent/'lecture.fixture',out,'j',{'device':'cpu'},True,runtime.logs)
+    ctx=Context(runtime,flow,runtime.workspace_root/'lecture.fixture',out,'j',{'device':'cpu'},True,runtime.logs)
     transcribe(ctx,flow.steps[2],{'vad':runtime.home/'artifacts/vad/result.json'},target)
     assert read_json(target.with_suffix('.raw.json'))==raw
     assert read_json(target)['segments'][20]['words']==[]

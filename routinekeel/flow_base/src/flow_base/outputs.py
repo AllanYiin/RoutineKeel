@@ -17,7 +17,7 @@ def reject_links(path):
 
 
 def choose_output(runtime, task, source=None, requested=None):
-    workspace = runtime.home.parent.resolve()
+    workspace = runtime.workspace_root
     if requested is not None:
         path = Path(requested).expanduser()
         output = path if path.is_absolute() else workspace / path
@@ -43,7 +43,9 @@ def choose_output(runtime, task, source=None, requested=None):
         protected = (workspace / name).resolve()
         if output == protected or output.is_relative_to(protected):
             raise FlowError('OUTPUT_PROTECTED', '不得將交付成果寫入底座、環境、狀態或日誌區', path=str(output))
-    for folder in workspace.iterdir():
+    if output == (workspace / 'workflows').resolve():
+        raise FlowError('OUTPUT_PROTECTED', '不得將交付成果寫入流程目錄根層', path=str(output))
+    for folder in (workspace / 'workflows' if (workspace / 'workflows').is_dir() else workspace).iterdir():
         if folder.is_dir() and (folder / 'flow.json').is_file():
             root = folder.resolve()
             if output == root or output.is_relative_to(root):

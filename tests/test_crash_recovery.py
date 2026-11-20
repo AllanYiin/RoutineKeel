@@ -108,7 +108,7 @@ def test_process_cancellation_waits_for_exit(tmp_path):
 
 def test_detached_supervisor_finishes_after_client_exits(tmp_path):
     root = Path(__file__).resolve().parents[1]
-    shutil.copytree(root / 'dist/workspace/檔案複製範例', tmp_path / 'copy_flow')
+    shutil.copytree(root / 'dist/workspace/workflows/FLOW_檔案複製範例', tmp_path / 'copy_flow')
     source = tmp_path / 'input.txt'
     source.write_text('detached result', encoding='utf-8')
     code = (

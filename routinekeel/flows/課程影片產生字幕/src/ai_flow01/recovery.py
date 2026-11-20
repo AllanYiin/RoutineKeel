@@ -64,6 +64,7 @@ def recover(runtime, adapter, output=None, raw_asr=None):
     if not action:
         raise FlowError('RUNTIME_UPDATE_REQUIRED', '恢復能力需要 flow_base 0.2.8 以上')
     folder = Path(action['folder']).resolve()
+    workspace = getattr(runtime, 'workspace_root', runtime.home.parent)
     if output is None:
         candidates = []
         for report_path in (folder / 'outputs').glob('*/report.json'):
@@ -77,7 +78,7 @@ def recover(runtime, adapter, output=None, raw_asr=None):
         output = candidates[0]
     output = Path(output)
     if not output.is_absolute():
-        output = runtime.home.parent / output
+        output = workspace / output
     validate_tree(output)
     output = output.resolve()
     failed = read_json(output / 'report.json')
@@ -98,7 +99,7 @@ def recover(runtime, adapter, output=None, raw_asr=None):
         workflow.options = workflow.options.model_copy(update={'initial_prompt': old_prompt})
         prepared = snapshot['prepared']
         location = snapshot['source']
-        source = (runtime.home.parent / location['workspace_relative']).resolve() if 'workspace_relative' in location else Path(location['external_absolute'])
+        source = (workspace / location['workspace_relative']).resolve() if 'workspace_relative' in location else Path(location['external_absolute'])
         if not source.is_file() or sha256(source) != snapshot['input_hash']:
             raise FlowError('RECOVERY_SOURCE', '原始影片遺失或已改變；不採用舊辨識')
         completed = {s['handler']: s for s in failed.get('steps', [])}

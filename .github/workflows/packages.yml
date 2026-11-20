@@ -38,7 +38,7 @@ jobs:
           python-version: '3.12'
       - name: Install the packaging tool
         run: python -m pip install 'uv==0.13.6'
-      - name: Build separate ZIPs
+      - name: Build Studio, runtime, examples and workspace ZIPs
         run: python tools/release.py
       - name: Test packages and source
         shell: bash
@@ -80,7 +80,7 @@ jobs:
           python-version: '3.12'
       - name: Install the packaging tool
         run: python -m pip install 'uv==0.13.6'
-      - name: Build separate ZIPs
+      - name: Build Studio, runtime, examples and workspace ZIPs
         run: python tools/release.py
       - name: Test packages and source with optional MCP
         run: |
@@ -121,7 +121,7 @@ jobs:
           else
             gh release create "$tag" --draft --target "$GITHUB_SHA" \
               --title "RoutineKeel ${GITHUB_SHA:0:12}" \
-              --notes "每個 ZIP 為獨立套件。將 flow_base 與所需流程解壓到同一個 RoutineKeel 資料夾。SHA256SUMS 可校驗下載檔案。"
+              --notes "優先下載 RoutineKeel-workspace 完整安裝包，解壓即有 flow_base、workflows、blueprints、workflow_studio。獨立套件解壓到同一個 RoutineKeel 資料夾；流程位於 workflows/FLOW_<名稱>。.venv 於首次啟動建立，不含私人設定、模型與執行成果。SHA256SUMS 可校驗下載檔案。"
           fi
           (cd packages && sha256sum -c SHA256SUMS)
           gh release upload "$tag" packages/*.zip packages/SHA256SUMS packages/versions.json --clobber

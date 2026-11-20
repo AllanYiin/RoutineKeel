@@ -166,7 +166,7 @@ def isolated_copy_module():
 
 def test_copy_workflow_reaches_delivered_terminal_state(tmp_path, isolated_copy_module):
     root = Path(__file__).resolve().parents[1]
-    shutil.copytree(root / 'dist/workspace/檔案複製範例', tmp_path / 'copy_flow')
+    shutil.copytree(root / 'dist/workspace/workflows/FLOW_檔案複製範例', tmp_path / 'copy_flow')
     workspace = Workspace(tmp_path)
     task = workspace.task('ai_flow02')
     workflow = task.configuration(workspace.runtime)
@@ -188,7 +188,7 @@ def test_copy_workflow_reaches_delivered_terminal_state(tmp_path, isolated_copy_
 
 def test_cancel_from_other_runtime_waits_for_handler_stop(tmp_path, monkeypatch, isolated_copy_module):
     root = Path(__file__).resolve().parents[1]
-    shutil.copytree(root / 'dist/workspace/檔案複製範例', tmp_path / 'copy_flow')
+    shutil.copytree(root / 'dist/workspace/workflows/FLOW_檔案複製範例', tmp_path / 'copy_flow')
     workspace = Workspace(tmp_path)
     task = workspace.task('ai_flow02')
     workflow = task.configuration(workspace.runtime)

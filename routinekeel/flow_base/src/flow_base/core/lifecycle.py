@@ -45,7 +45,7 @@ def manifest_reference(runtime, path):
     path = Path(path).resolve()
     reference = {'path': str(path)}  # retained for old diagnostic readers
     try:
-        reference['workspace_relative'] = path.relative_to(runtime.home.parent.resolve()).as_posix()
+        reference['workspace_relative'] = path.relative_to(runtime.workspace_root).as_posix()
     except ValueError:
         pass
     return reference
@@ -58,7 +58,7 @@ def resolve_manifest_reference(runtime, value):
         parts = PurePosixPath(relative)
         if parts.is_absolute() or '..' in parts.parts or '\\' in relative or ':' in relative:
             raise FlowError('DELIVERY_PATH', 'Manifest 相對位置不安全')
-        root = runtime.home.parent.resolve()
+        root = runtime.workspace_root
         path = root.joinpath(*parts.parts).resolve()
         if not path.is_relative_to(root):
             raise FlowError('DELIVERY_PATH', 'Manifest 越出工作區')

@@ -78,7 +78,7 @@ def model_intent(workspace, text, *, source=None, output=None, transport=None, s
     tasks = workspace.discover()
     if (selected and selected.manifest.llm_policy == 'forbidden') or (selected is None and any(t.manifest.llm_policy == 'forbidden' for t in tasks.values())):
         raise FlowError('LOCAL_LLM_FORBIDDEN', '工作區包含禁止外部 LLM 的流程；請使用本機路由，或從明確允許 LLM 的流程入口啟用。')
-    config = workspace.root / 'share_states/settings/router.json'
+    config = workspace.runtime.home / 'settings/router.json'
     if not config.is_file():
         raise FlowError('ROUTER_NOT_CONFIGURED', 'Create share_states/settings/router.json with verified provider rates; or use local/host routing')
     settings = LLM.model_validate(read_json(config))

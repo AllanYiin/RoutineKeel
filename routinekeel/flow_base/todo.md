@@ -43,3 +43,7 @@
 - [x] 0.2.10 統一 run/action/demo 的顯眼生命週期、可讀日誌及正文轉述契約。
 - [x] 綁定 Codex Session、新舊累計格式、轉送 App Server 通知與起訖增量。
 - [x] 0.2.10 完整回歸（221 passed）、封裝 wheel smoke 與完整原始碼交付。
+
+- [x] 新式 Release 目錄：workflows/FLOW_*、flow_base/share_states、flow_base/share_logs，保留平面工作區相容性。
+- [x] 完整工作區 ZIP 含 Studio、底座與兩個既有參考案例，分包位置一致，不分發 .venv／模型／私人狀態。
+- [x] 乾淨 ZIP 解壓、分包合併、wheel 計畫／執行／快取、跨流程輸出防護與 Windows 首啟動／離線再啟動驗證。

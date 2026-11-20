@@ -2,10 +2,12 @@
 set -eu
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 FLOW_BASE_WORKSPACE=$(CDPATH= cd -- "$HERE/.." && pwd)
-FLOW_BASE_HOME="$FLOW_BASE_WORKSPACE/share_states"
+FLOW_BASE_STATE_ROOT="$FLOW_BASE_WORKSPACE"
+if [ -d "$FLOW_BASE_WORKSPACE/workflows" ]; then FLOW_BASE_STATE_ROOT="$HERE"; fi
+FLOW_BASE_HOME="$FLOW_BASE_STATE_ROOT/share_states"
 export FLOW_BASE_WORKSPACE FLOW_BASE_HOME
 FLOW_BASE_BOOTSTRAP="$FLOW_BASE_HOME/bootstrap/$(uname -s)-$(uname -m)"
-mkdir -p "$FLOW_BASE_HOME" "$FLOW_BASE_WORKSPACE/share_logs"
+mkdir -p "$FLOW_BASE_HOME" "$FLOW_BASE_STATE_ROOT/share_logs"
 export UV_CACHE_DIR="$FLOW_BASE_HOME/packages"
 export UV_PYTHON_INSTALL_DIR="$FLOW_BASE_HOME/python"
 export UV_NO_MODIFY_PATH=1 UV_NO_PROGRESS=1 UV_NO_ENV_FILE=1 UV_LINK_MODE=copy
