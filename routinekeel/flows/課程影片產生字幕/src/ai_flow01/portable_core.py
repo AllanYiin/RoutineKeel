@@ -17,22 +17,33 @@ def enforce_local_policy(config):
         raise ValueError('Review packet exceeds the 20 segment / 3000 character / 60 context limit')
 
 
-def make_review_audio(out, manifest, issues, source_audio=None):
+def make_review_audio(out, manifest, issues, source_audio=None, rows=None):
     if source_audio is None or not Path(source_audio).is_file():
         return {}
     paths = {}
+    windows = {}
+    source_rows = {int(row['id']): row for row in rows} if rows is not None else None
     clips = out / 'review_clips'
     clips.mkdir(exist_ok=True)
     with wave.open(str(source_audio), 'rb') as source:
         rate = source.getframerate()
+        total = source.getnframes()
+        padding = round(1.5 * rate)
         for issue in issues:
             sid = int(issue['id'])
             if sid in paths:
                 continue
-            start = max(0, float(issue['start']) - 1.5)
-            length = min(30, max(2, float(issue['end']) - float(issue['start']) + 3))
-            source.setpos(min(source.getnframes(), round(start * rate)))
-            frames = source.readframes(round(length * rate))
+            interval = source_rows[sid] if source_rows is not None else issue
+            core_start = round(float(interval['start']) * rate)
+            core_end = round(float(interval['end']) * rate)
+            start = max(0, core_start - padding)
+            end = min(total, core_end + padding)
+            if not 0 <= core_start < core_end <= total or end <= start:
+                raise ValueError('REVIEW_AUDIO_TIMELINE: source interval is outside original audio')
+            source.setpos(start)
+            frames = source.readframes(end - start)
+            if len(frames) != (end - start) * source.getnchannels() * source.getsampwidth():
+                raise ValueError('REVIEW_AUDIO_TIMELINE: incomplete original PCM interval')
             if not frames:
                 continue
             clip = clips / f'{sid:06}.wav'
@@ -40,6 +51,11 @@ def make_review_audio(out, manifest, issues, source_audio=None):
                 target.setnchannels(source.getnchannels()); target.setsampwidth(source.getsampwidth()); target.setframerate(rate)
                 target.writeframes(frames)
             paths[sid] = f'review_clips/{clip.name}'
+            windows[str(sid)] = {'path': paths[sid], 'start_sample': start, 'end_sample': end,
+                                 'segment_start_sample': core_start, 'segment_end_sample': core_end,
+                                 'frames': end - start, 'sha256': sha256(clip)}
+    write_json(out / 'review_audio.json', {'timebase': 'original_media_samples', 'sample_rate': rate,
+                                         'source_frames': total, 'padding_seconds': 1.5, 'clips': windows})
     return paths
 
 def read_json(path: Path):
@@ -413,7 +429,7 @@ def build(out: Path, config: dict, force_rebuild: bool = False, source_audio=Non
         "character_count": sum(len(item["text"]) + len(item["context_before"]) +
                                len(item["context_after"]) for item in packet)
     })
-    audio_paths = make_review_audio(out, manifest, issues, source_audio)
+    audio_paths = make_review_audio(out, manifest, issues, source_audio, rows=rows)
     # Keep human notes when the exact issue is unchanged; archive old tables when changed.
     review_path = out / 'review.csv'
     previous_review = review_path.read_bytes() if review_path.exists() else None

@@ -27,7 +27,8 @@ def extract(ctx, step, dependencies, target):
     original = target.parent / 'original.wav'
     vocals = target.parent / 'vocals.wav'
     options = ctx.workflow.options
-    request = {'input': str(ctx.source), 'max_audio_seconds': options.max_audio_seconds}
+    request = {'input': str(ctx.source), 'max_audio_seconds': options.max_audio_seconds,
+               'audio_preprocessing': options.audio_preprocessing}
     ctx.runtime.worker(ctx.workflow.profile, {**request, 'action': 'extract', 'output': str(original)},
                        timeout=options.worker_timeout_seconds, log=ctx.logdir / 'extract.log')
     model = catalogue()[SEPARATOR]

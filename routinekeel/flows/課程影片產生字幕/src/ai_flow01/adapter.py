@@ -8,6 +8,7 @@ from flow_base.resources import check_resource, ensure_resource, resource_path
 from .contracts import Workflow, Step, subtitle_workflow
 from .resources import SEPARATOR, SEPARATOR_PROFILE, catalogue
 from .subtitles import HANDLERS
+from .audio_preparation import preprocessing_spec
 
 def resolve_environment(workflow, environment):
     """Domain policy consumes the host's snapshot; never probes hardware here."""
@@ -76,7 +77,7 @@ def plan(runtime, workflow, source=None, output=None):
                               "allow_cpu_fallback": workflow.options.allow_cpu_fallback,
                               "initial_prompt": workflow.options.initial_prompt,
                               "initial_prompt_enabled": workflow.options.initial_prompt_enabled},
-              "audio_preprocessing": {"order": ["spectral_denoise", "demucs_vocals", "volume_normalize"],
+              "audio_preprocessing": {**preprocessing_spec(workflow.options.audio_preprocessing),
                                       "model": SEPARATOR, "profile": SEPARATOR_PROFILE},
               "vad": {k: v for k, v in workflow.options.model_dump().items() if k.startswith("vad_")},
               "review": {"enabled": False, "llm_calls": 0, "llm_tokens": 0, "human_review_required": True},
@@ -174,7 +175,8 @@ def verify(runtime, workflow):
     if not check_resource(runtime, separator)["ready"]:
         raise FlowError("RESOURCE_MISSING", "Demucs weights are missing or damaged", resource=SEPARATOR)
     weights = resource_path(runtime, separator) / separator.files[0].path
-    result["separator"] = runtime.worker(SEPARATOR_PROFILE, {"action": "verify_separator", "weights": str(weights)}, timeout=300)
+    result["separator"] = runtime.worker(SEPARATOR_PROFILE, {"action": "verify_separator", "weights": str(weights),
+                                                           "audio_preprocessing": workflow.options.audio_preprocessing}, timeout=300)
     result['profile'] = workflow.profile
     result['execution_selection'] = {**workflow.execution_selection, 'backend_verified': True,
                                     'actual_device': result['device'], 'fallback': result.get('fallback')}
@@ -188,7 +190,8 @@ def step_settings(workflow, handler, prepared):
     o = workflow.options.model_dump()
     if handler == "media.extract":
         return {"max_audio_seconds": o["max_audio_seconds"], "profile": workflow.profile,
-                "separator": catalogue()[SEPARATOR].model_dump()}
+                "separator": catalogue()[SEPARATOR].model_dump(), "preprocessing": preprocessing_spec(workflow.options.audio_preprocessing),
+                "separator_backend": prepared.get("separator", {})}
     if handler == 'speech.vad':
         return {k: v for k, v in o.items() if k.startswith('vad_')}
     if handler == "speech.transcribe":
@@ -221,7 +224,7 @@ class Adapter(BaseAdapter):
     handlers = HANDLERS
 
     def step_title(self, step):
-        return {'media.extract':'抽取原音、去噪、Demucs 人聲分離與音量標準化','speech.vad':'偵測語音並跳過長靜音',
+        return {'media.extract':'抽取原音、降噪、Demucs 人聲分離與音訊增強','speech.vad':'偵測語音並跳過長靜音',
                 'speech.transcribe':'逐區辨識與原片時間映射','text.review':'整理本機審閱資料',
                 'subtitle.export':'字幕輸出、品質檢查與疑義原音'}.get(step.handler, step.id)
 

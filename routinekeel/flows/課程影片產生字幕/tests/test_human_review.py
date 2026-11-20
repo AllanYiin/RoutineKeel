@@ -50,6 +50,56 @@ def test_readable_bundle_audio_csv_transcript_and_zip(review_fixture):
         assert 'transcript.json' not in z.namelist()
 
 
+@pytest.mark.parametrize('start,end,duration',[(0.5,1.5,5),(6.4,7.62,10),(3,33,40),(8,9.5,10)])
+def test_review_clip_has_exact_source_samples_and_consistent_context(tmp_path,start,end,duration):
+    import array
+    import wave
+    samples=array.array('h', ((i % 32767) for i in range(duration*16000)))
+    source=tmp_path/'original.wav'
+    with wave.open(str(source),'wb') as audio:
+        audio.setparams((1,2,16000,0,'NONE','not compressed'))
+        audio.writeframes(samples.tobytes())
+    paths=core.make_review_audio(tmp_path,{},[{'id':38,'start':start,'end':end}],source)
+    metadata=core.read_json(tmp_path/'review_audio.json')
+    record=metadata['clips']['38']
+    first=max(0,round(start*16000)-24000);last=min(len(samples),round(end*16000)+24000)
+    assert (record['start_sample'],record['end_sample'],record['frames'])==(first,last,last-first)
+    with wave.open(str(tmp_path/paths[38]),'rb') as clip:
+        assert clip.readframes(clip.getnframes())==samples[first:last].tobytes()
+    assert record['sha256']==core.sha256(tmp_path/paths[38])
+
+
+def test_page_explains_audio_context_and_actual_srt_duration(review_fixture):
+    out,_,delivery=build_fixture(review_fixture)
+    page=(out/'review.html').read_text(encoding='utf-8')
+    assert '原音範圍（原片）：00:00:00.000–00:00:04.500' in page
+    assert '播放器 1.000–3.000 秒' in page
+    assert '對應 SRT：#1 00:00:01.000–00:00:03.000（2.000 秒）' in page
+    with zipfile.ZipFile(out/delivery['archive']) as archive:
+        assert 'review_audio.json' in archive.namelist()
+
+
+def test_review_audio_uses_current_source_row_not_first_fragment_issue(review_fixture):
+    out,_=review_fixture
+    paths=core.make_review_audio(out,{},[{'id':0,'start':2,'end':3}],out/'audio.wav',
+                                 rows=[{'id':0,'start':1,'end':3}])
+    entry=core.read_json(out/'review_audio.json')['clips']['0']
+    assert entry['segment_start_sample']==16000
+    assert (entry['start_sample'],entry['end_sample'])==(0,72000)
+    assert paths[0]=='review_clips/000000.wav'
+
+
+def test_page_rejects_metadata_not_matching_current_source_row(review_fixture):
+    out,_,_=build_fixture(review_fixture)
+    metadata=core.read_json(out/'review_audio.json')
+    metadata['clips']['0']['segment_start_sample']+=1
+    core.write_json(out/'review_audio.json',metadata)
+    rows=core.read_json(out/'transcript.json')
+    with pytest.raises(ValueError,match='REVIEW_AUDIO_TIMELINE'):
+        human_review.render(out,rows,[{'id':0,'reason':'low_asr_confidence','start':1,'end':3}],
+                            {0:'review_clips/000000.wav'},core.read_json(out/'QA.json'))
+
+
 def test_csv_roundtrip_rebuild_and_no_automatic_approval(review_fixture,monkeypatch):
     out,config,d=build_fixture(review_fixture)
     target,_=answers(out,d)

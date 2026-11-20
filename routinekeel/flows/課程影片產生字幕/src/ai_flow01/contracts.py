@@ -15,6 +15,7 @@ class Options(Contract):
     traditional_chinese: bool = True
     device: Literal["cpu", "cuda", "auto"] = "auto"
     allow_cpu_fallback: bool = False
+    audio_preprocessing: Literal["standard", "reference"] = "standard"
     beam_size: int = Field(default=5, ge=1, le=10)
     vad_threshold: float = Field(default=0.3, gt=0, lt=1)
     vad_min_speech_ms: int = Field(default=250, ge=0, le=5000)
