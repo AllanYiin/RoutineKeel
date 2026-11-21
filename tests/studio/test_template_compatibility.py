@@ -9,7 +9,8 @@ from workflow_studio.compiler.package import digest, write_wheel
 from workflow_studio.compiler.template_registry import verify_template
 
 
-def test_pre_generation_template_remains_verifiable_and_executable(tmp_path):
+@pytest.mark.parametrize("checkout_eol", [b"\n", b"\r\n"], ids=["LF", "CRLF"])
+def test_pre_generation_template_remains_verifiable_and_executable(tmp_path, checkout_eol):
     studio, p, build, cases, verifier, policy = verification_case(tmp_path)
     package = build["path"] / "package"
     manifest = json.loads((package / "flow.json").read_text(encoding="utf-8"))
@@ -19,8 +20,10 @@ def test_pre_generation_template_remains_verifiable_and_executable(tmp_path):
     import workflow_studio.compiler.template_registry as registry
 
     old_code = (Path(registry.__file__).parent / "templates/v1/runtime_adapter.py.txt").read_bytes()
+    old_code = old_code.replace(b"\r\n", b"\n").replace(b"\n", checkout_eol)
     assert verify_template("runtime_adapter.py", old_code) == "v1"
-    assert verify_template("runtime_adapter.py", old_code.replace(b"\n", b"\r\n")) == "v1"
+    crlf_code = old_code.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+    assert verify_template("runtime_adapter.py", crlf_code) == "v1"
     candidate = build["path"] / "legacy.whl"
     write_wheel(
         candidate,
@@ -55,3 +58,14 @@ def test_unknown_template_does_not_gain_trust_from_a_filename():
 
     with pytest.raises(StudioError):
         verify_template("runtime_adapter.py", b"print('not a trusted version')")
+
+
+@pytest.mark.parametrize("name", ["runtime_adapter.py", "runtime_llm.py"])
+def test_doubled_carriage_returns_do_not_gain_template_trust(name):
+    import workflow_studio.compiler.template_registry as registry
+    from workflow_studio.contracts import StudioError
+
+    content = (Path(registry.__file__).parent / "templates/v1" / (name + ".txt")).read_bytes()
+    malformed = content.replace(b"\r\n", b"\n").replace(b"\n", b"\r\r\n")
+    with pytest.raises(StudioError):
+        verify_template(name, malformed)

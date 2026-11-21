@@ -2,7 +2,7 @@
 
 ## SNAPSHOT — 當前狀態
 
-最後更新：2026-11-21T22:22+08:00
+最後更新：2026-11-21T22:45+08:00
 交接狀態：verified
 
 ### 目標與授權範圍
@@ -13,9 +13,11 @@
 
 原始碼改為根層 flow_base/、workflows/FLOW_*/、blueprints/、workflow_studio/；共享狀態／日誌在 flow_base，.venv 首次啟動建立。整合底座的 ZIP 更新、藍圖首裝、宿主／真人待辦及可選媒體元件；保留 GitHub 字幕 0.5.0。版本為 flow_base 0.2.15、字幕 0.5.0、複製範例 0.2.3、Studio 0.2.0。Studio Tk 程式與專屬測試已移至 E 槽忽略的本機備份，保留無視窗控制器，CLI 預設 guide，另有 projects/status。五 ZIP 已建置；底座／流程 529 passed、28 skipped、1 deselected，Studio 515 passed，封裝／更新 90 passed。交付分支 codex/unified-source-layout，C 工作樹由 main 180a134 建立；E 原 staging 保留，D 安裝只做唯讀核對，未升級或執行。
 
+已提交推送 9d07e1b 並建立 draft PR #13。首輪 CI 五個工作成功，Windows Studio 為 508 passed／6 skipped／1 failed；失敗來自 CRLF 模板再轉一次而產生 CRCRLF 的測試資料。已固定受控模板 Git checkout 為 LF，並以 LF／CRLF 兩種來源實際驗證、執行舊套件；另驗證 CRCRLF 仍被拒絕，未改動或放寬模板信任邏輯。修正專項 5 passed，lint／format 通過。
+
 ### 下一步
 
-完成最後來源同步、封裝核對與交付分支提交推送並建立 PR；後續核對 GitHub 三平台 CI。main 合併與 Release 發布仍依既有 Gate；不覆蓋舊發布、不啟動付費功能。
+提交並推送換行修正，核對 PR #13 新 head 的六個三平台驗證工作；未全數成功前不得宣稱三平台通過。之後重建綁定最終提交的候選，更新本機 dist。main 合併與發布仍依既有 Gate。
 
 ### DECISIONS
 
@@ -48,6 +50,10 @@
 - E:/PycharmProjects/RoutineKeel/dist/layout-final-package-tests.xml
 - E:/PycharmProjects/RoutineKeel/dist/layout-source-backup/
 - E:/PycharmProjects/RoutineKeel/dist/installed-layout-verification.json
+- tests/studio/test_template_compatibility.py
+- .gitattributes
+- https://github.com/AllanYiin/RoutineKeel/pull/13
+- https://github.com/AllanYiin/RoutineKeel/actions/runs/44914045009
 
 ### VALIDATION
 
@@ -58,6 +64,8 @@
 - E 原 staging 與狀態搬移 — PASS：git diff --cached --binary 與 dist/layout-source-backup/index.patch 相同；runtime-before/verification.json 核對移動前後 SQLite bytes。
 - D 實際安裝結構 — PASS：E:/PycharmProjects/RoutineKeel/dist/installed-layout-verification.json：三流程位於 workflows/FLOW_*，home/logs 在 flow_base；唯讀檢查，provider_calls=0。
 - GitHub main 合併／Release 發布／付費生成 — NOT_RUN：依既有手動 Gate；本輪先交付分支與候選，不修改已發布 Release 或啟動生成。
+- 首輪 GitHub 三平台 CI — FAIL：https://github.com/AllanYiin/RoutineKeel/actions/runs/44914045009：五個成功，Windows Studio test_template_compatibility 的錯誤 CRCRLF fixture 失敗；原始 job 136875728407。
+- CRLF 修正回歸 — PASS：dist/template-newline-tests.xml：5 passed；包含 LF／CRLF 舊模板 wheel 執行及異常換行拒絕。git check-attr 確認 templates/** 為 text eol=lf；模板驗證程式未修改。
 
 # HISTORY
 
@@ -171,3 +179,10 @@ PR #3 第三輪 CI Ubuntu401/3skip、macOS402/2skip、Windows383/21skip 均成�
 <!-- devnote-review:31c008ec83cdfd64a262168a -->
 
 依使用者選擇整合 E 底座與 GitHub 字幕 0.5.0，將原始碼搬至與安裝相同的根層結構。排除 Studio Tk 並保留無視窗核心，新增 guide 入口及驗證。更新／回退支援巢狀流程與技能附件，五 ZIP 已建置；529／515／90 項測試通過。舊來源、SQLite、Tk 與 E staging 有備份與核對；D 僅唯讀檢查，未執行付費生成或發布。
+
+
+## [2026-11-21T22:45+08:00] 修正 Windows checkout 的模板換行驗證
+
+<!-- devnote-review:7de286b9c6e1e5f0c6388108 -->
+
+PR #13 首輪 CI 僅 Windows Studio 失敗：模板為 CRLF 時測試再次替換 LF，生成 CRCRLF。固定模板 checkout 為 LF，改以 LF／CRLF 兩種來源做舊套件實際執行測試，並確認異常 CRCRLF 仍拒絕。專項 5 passed、lint／format 通過；未放寬模板信任邏輯，等待新提交三平台 CI。
