@@ -1,6 +1,7 @@
 """Explicit previous trusted templates, so an app upgrade does not invalidate releases."""
 
 import hashlib
+import re
 from pathlib import Path
 
 from ..contracts import StudioError
@@ -10,7 +11,7 @@ LEGACY = {"v1": ROOT / "templates/v1"}
 
 
 def canonical_code(content):
-    return content.replace(b"\r\n", b"\n")
+    return re.sub(rb"\r+\n", b"\n", content).replace(b"\r", b"\n")
 
 
 def verify_template(name, content):
