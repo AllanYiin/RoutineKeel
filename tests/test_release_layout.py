@@ -25,7 +25,7 @@ def extracted(tmp_path):
 
 
 def cli(workspace, *arguments, ok=True):
-    wheel = next((workspace / 'flow_base').glob('*.whl'))
+    wheel = next((workspace / 'flow_base').glob('flow_base-*.whl'))
     code = 'import sys;sys.path.insert(0,sys.argv.pop(1));from flow_base.cli import main;raise SystemExit(main())'
     command = [sys.executable, '-X', 'utf8', '-I', '-c', code, str(wheel), '--workspace', str(workspace), *map(str, arguments)]
     result = subprocess.run(command, cwd=workspace / 'workflow_studio', capture_output=True, text=True, encoding='utf-8', timeout=45)
@@ -40,7 +40,7 @@ def test_full_zip_contains_studio_runtime_and_two_reference_flows():
         assert all(n.startswith('RoutineKeel/') for n in names)
         for folder in ['flow_base', 'flow_base/share_states', 'flow_base/share_logs', 'blueprints', 'workflow_studio', 'workflows']:
             assert 'RoutineKeel/' + folder + '/' in names
-        assert 'RoutineKeel/workflow_studio/open_studio.bat' in names
+        assert 'RoutineKeel/workflow_studio/studio.bat' in names
         assert {n for n in names if n.endswith('/flow.json')} == {
             'RoutineKeel/workflows/FLOW_課程影片產生字幕/flow.json',
             'RoutineKeel/workflows/FLOW_檔案複製範例/flow.json',
@@ -67,7 +67,29 @@ def test_split_zips_overlay_same_relative_locations_as_full_bundle(tmp_path):
                         assert part.read(item) == full.read('RoutineKeel/' + item.filename)
     assert (tmp_path / 'flow_base/start.ps1').is_file()
     assert (tmp_path / 'workflows/FLOW_檔案複製範例/flow.json').is_file()
-    assert (tmp_path / 'workflow_studio/open_studio.bat').is_file()
+    assert (tmp_path / 'workflow_studio/studio.bat').is_file()
+
+
+def test_packaged_studio_defaults_to_conversation_without_native_ui(extracted):
+    wheel = next((extracted / 'workflow_studio').glob('workflow_studio-*.whl'))
+    with zipfile.ZipFile(wheel) as package:
+        assert not any(name.startswith('workflow_studio/ui/') for name in package.namelist())
+    assert not list((extracted / 'workflow_studio').glob('open_studio.*'))
+    code = '''
+import importlib.abc, sys
+sys.path.insert(0, sys.argv.pop(1))
+class NoTk(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, *args):
+        if fullname == "tkinter" or fullname.startswith("tkinter."):
+            raise AssertionError("Tk must not be loaded")
+sys.meta_path.insert(0, NoTk())
+from workflow_studio.__main__ import main
+raise SystemExit(main())
+'''
+    result = subprocess.run([sys.executable, '-X', 'utf8', '-I', '-c', code, str(wheel)],
+                            cwd=extracted, capture_output=True, text=True, encoding='utf-8', timeout=15)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)['result']['mode'] == 'host_conversation'
 
 
 def test_clean_extracted_wheel_catalog_plan_execution_and_cache(extracted):
@@ -93,6 +115,7 @@ def test_clean_extracted_wheel_catalog_plan_execution_and_cache(extracted):
 
 @pytest.mark.parametrize('relative', [
     'workflows', 'flow_base/share_states/job', 'flow_base/share_logs/job',
+    'blueprints/job', 'workflow_studio/job',
     'workflows/FLOW_課程影片產生字幕/outputs/job',
 ])
 def test_clean_release_protects_shared_directories_and_other_flows(extracted, relative):

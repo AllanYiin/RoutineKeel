@@ -197,7 +197,7 @@ def test_crash_mid_mirror_is_recovered_from_journal(tmp_path, crash_point):
         'checkpoint=lambda name:os._exit(17) if name==sys.argv[5] else None)'
     )
     env = os.environ.copy()
-    env['PYTHONPATH'] = str(Path(__file__).resolve().parents[1] / 'routinekeel/flow_base/src')
+    env['PYTHONPATH'] = str(Path(__file__).resolve().parents[1] / 'flow_base/src')
     crashed = subprocess.run([sys.executable, '-c', code, str(runtime.home), str(output), str(stage), second_run, crash_point],
                              env=env, capture_output=True, text=True, timeout=15)
     assert crashed.returncode == 17, crashed.stderr

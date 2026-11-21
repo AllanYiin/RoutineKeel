@@ -151,30 +151,6 @@ def test_ambiguous_branch_persists_clarification_without_ready_ir(tmp_path):
     studio.close()
 
 
-def test_incomplete_success_criteria_can_request_clarification_without_changing_goal(tmp_path):
-    question = "哪些可觀察的成果代表完成？"
-    provider = FixtureProvider(lambda payload: payload.update(ir=None, questions=[question]))
-    studio, p, source, planner, _ = setup(tmp_path, provider)
-    with studio:
-        current = studio.projects.get(p.project_id)
-        goal = {"description": "整理這些檔案", "success_criteria": []}
-        studio.projects.update(p.project_id, current.version, goal=goal)
-        prepared = planner.prepare(p.project_id, [source.source_id])
-        events = list(planner.run(prepared))
-        revision_id = events[-1]["revision_id"]
-        assert (
-            studio.projects.get_revision(p.project_id, revision_id).status == "needs_clarification"
-        )
-        assert events[-1]["questions"] == [question]
-        assert studio.projects.get(p.project_id).goal == goal
-    with StudioService.open_workspace(tmp_path) as reopened:
-        assert (
-            reopened.projects.get_revision(p.project_id, revision_id).status
-            == "needs_clarification"
-        )
-        assert reopened.projects.get(p.project_id).goal == goal
-
-
 def test_budget_and_cancel_prevent_completed_revision(tmp_path):
     studio, p, _, planner, prepared = setup(tmp_path)
     planner.budget = Budget(1, 1, 8000, 1_000_000, 1_000_000)

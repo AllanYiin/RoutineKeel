@@ -22,7 +22,7 @@ from flow_base.storage.artifacts import build_artifact_set
 from flow_base.storage.delivery import write_version_manifest, rollback_delivery
 from flow_base.observability.events import EventRecorder
 from flow_base.workspace import Workspace
-from flow_base.cli import diagnostic_command
+from flow_base.cli import diagnostic_command, emit_error
 from flow_base.presentation import Reporter
 from test_workspace import workspace
 
@@ -31,13 +31,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def _cli(root, *arguments):
     env = os.environ.copy()
-    env['PYTHONPATH'] = str(ROOT / 'routinekeel/flow_base/src')
+    env['PYTHONPATH'] = str(ROOT / 'flow_base/src')
     return subprocess.run([sys.executable, '-m', 'flow_base', '--workspace', str(root),
                            *map(str, arguments)], env=env, capture_output=True, text=True, timeout=30)
 
 
 def test_every_base_flow_error_has_chinese_guidance_and_actions():
-    source = ROOT / 'routinekeel/flow_base/src/flow_base'
+    source = ROOT / 'flow_base/src/flow_base'
     codes = {node.args[0].value for path in source.rglob('*.py')
              for node in ast.walk(ast.parse(path.read_text(encoding='utf-8')))
              if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'FlowError'
@@ -65,6 +65,21 @@ def test_nonzero_process_exit_does_not_claim_confirmed_oom():
     assert item['canonical_code'] == 'WORKER_CRASHED'
     assert item['cause_status'] == 'suspected'
     assert 'OOM' not in item['user_message']
+
+
+def test_launch_disk_preflight_shows_actionable_summary_and_keeps_diagnostic(tmp_path, capsys):
+    runtime = Runtime(tmp_path / 'share_states')
+    exc = FlowError('PREFLIGHT_BLOCKED', 'Resolve preflight issues before running',
+                    blockers=[{'code': 'DISK_SPACE', 'required': 11013509612}])
+    explanation = explain_exception(exc)
+    assert explanation['code'] == 'PREFLIGHT_BLOCKED'
+    assert explanation['canonical_code'] == 'DISK_SPACE_INSUFFICIENT'
+    emit_error(runtime, exc, human=True)
+    shown = capsys.readouterr().out
+    assert '可用空間不足' in shown and '11.0 GB' in shown
+    assert '釋出' in shown and '錯誤編號：' in shown
+    assert '"stack"' not in shown and 'PREFLIGHT_BLOCKED' not in shown
+    assert list((tmp_path / 'share_logs/launcher').rglob('error.json'))
 
 
 def test_representative_real_failures_map_to_standard_codes(tmp_path, monkeypatch):

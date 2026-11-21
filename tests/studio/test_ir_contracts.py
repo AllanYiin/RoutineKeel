@@ -14,7 +14,7 @@ def test_valid_linear_ir_and_generated_schema_are_consistent():
     assert ir.nodes[0].id == "copy"
     schema = (
         Path(__file__).resolve().parents[2]
-        / "routinekeel/workflow_studio/src/workflow_studio/contracts/workflow_ir.schema.json"
+        / "workflow_studio/src/workflow_studio/contracts/workflow_ir.schema.json"
     )
     assert json.loads(schema.read_text(encoding="utf-8")) == WorkflowIR.model_json_schema()
 

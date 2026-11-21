@@ -324,11 +324,11 @@ def test_oversized_request_is_rejected_without_call_or_partial_revision(tmp_path
 
 
 def test_ui_disclosure_uses_frozen_sent_pixels_and_persists_image_budget(tmp_path):
-    from workflow_studio.ui.model import StudioUIModel
+    from workflow_studio.conversation.session import StudioSession
 
     studio, p, source, _, _, _, _ = setup_image(tmp_path)
     studio.close()
-    model = StudioUIModel(tmp_path / "studio")
+    model = StudioSession(tmp_path / "studio")
     model.select_project(p.project_id)
     model.configure_provider(
         "https://example.invalid/chat", "vision", 1, 1, 1, image_input_token_bound=100_000
@@ -340,7 +340,7 @@ def test_ui_disclosure_uses_frozen_sent_pixels_and_persists_image_budget(tmp_pat
     assert (
         asset["preview"]["kind"] == "image" and b"private-metadata-sentinel" not in asset["content"]
     )
-    reopened = StudioUIModel(tmp_path / "studio")
+    reopened = StudioSession(tmp_path / "studio")
     reopened.select_project(p.project_id)
     assert reopened.session_config["image_input_token_bound"] == 100_000
     assert reopened.prepare_analysis([source.source_id]) == prepared

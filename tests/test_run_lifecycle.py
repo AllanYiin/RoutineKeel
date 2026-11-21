@@ -114,7 +114,7 @@ def test_two_processes_cannot_claim_same_run(tmp_path):
         's.claim(sys.argv[2],token=str(os.getpid()),pid=os.getpid(),started_at=1.0)'
     )
     env = os.environ.copy()
-    env['PYTHONPATH'] = str(Path(__file__).resolve().parents[1] / 'routinekeel/flow_base/src')
+    env['PYTHONPATH'] = str(Path(__file__).resolve().parents[1] / 'flow_base/src')
     children = [subprocess.Popen([sys.executable, '-c', code, str(store.runtime.home), run_id],
                                  env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE) for _ in range(2)]
     errors = [child.communicate(timeout=10)[1].decode('utf-8', 'replace') for child in children]

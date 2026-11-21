@@ -6,9 +6,9 @@ import pytest
 from compiler_helpers import build_ir, runtime_python
 from ir_cases import valid_ir
 from workflow_studio.contracts import StudioError
+from workflow_studio.conversation.graph import GraphDraft
+from workflow_studio.conversation.session import StudioSession
 from workflow_studio.llm.usage import UsageLedger
-from workflow_studio.ui.graph_dialog import GraphDraft
-from workflow_studio.ui.model import StudioUIModel
 
 
 def report_node(studio, project_id, policy):
@@ -38,7 +38,7 @@ def test_manual_add_connect_and_deliver_replays_on_runtime_without_llm(tmp_path)
     assert studio.projects.get_revision(p.project_id, original.revision_id) == original
     assert UsageLedger(studio.repository).summary(p.project_id)["calls"] == 0
     studio.close()
-    model = StudioUIModel(tmp_path / "studio", runtime_python=runtime_python())
+    model = StudioSession(tmp_path / "studio", runtime_python=runtime_python())
     model.select_project(p.project_id)
     source, expected = tmp_path / "input.txt", tmp_path / "expected.json"
     source.write_bytes(b"  alpha  \r\n beta\r\n")
@@ -186,7 +186,7 @@ def test_simple_node_edit_after_discard_uses_next_global_revision_and_invalidate
     second = studio.history.reuse(p.project_id, original.revision_id, 3, policy)
     studio.history.discard(p.project_id, second.revision_id, 4)
     studio.close()
-    model = StudioUIModel(tmp_path / "studio")
+    model = StudioSession(tmp_path / "studio")
     model.select_project(p.project_id)
     model.build_id, model.approval_id = "cached-build", "cached-approval"
     changed = model.edit_node("copy", output_name="new.txt")

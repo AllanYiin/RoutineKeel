@@ -1,0 +1,1939 @@
+規格整理 v 1.2.2
+開發規格草案 v1.0
+專案名稱：RoutineKeel Workflow Compiler & Studio
+
+核心目標：讓沒有程式開發經驗的人，透過業務描述、流程圖、操作影片或成功案例資料夾，由 LLM 自動完成工作流分析、設計、程式生成、測試及封裝，最後交由現有 RoutineKeel flow_base 穩定執行。
+
+本規格以先前討論及已檢視的 RoutineKeel 儲存庫 為基礎，包含：
+1. 技術規格文件：功能、架構、資料契約、執行邏輯、介面、狀態管理、跨平台、安全、測試與驗收。
+2. 非技術規格文件：從一般使用者角度描述如何把業務工作轉換成可重複使用的工具。
+3. Codex 分階段開發計畫：共 14 個階段（Stage 0～13），每階段都有可直接複製的 Instructions、預期檔案、測試、完成標準及回滾方式。
+本次以新增功能為主，不重做現有 flow_base，也不直接變更現有字幕流程的業務規則。
+
+第一部分：技術規格文件（Technical Spec）
+1. 背景與問題定義
+1.1 現有系統
+依先前檢視，RoutineKeel 的現有基礎包括：
+文字Markdown
+CSVExcel
+統計圖表
+元件	現況	新系統的處理方式
+flow_base 0.2.12	共用啟動、執行、狀態、環境與成果管理	保留
+WorkflowService	工作規劃、執行、查詢、取消等共同入口	重用
+Workflow / Step	描述步驟、依賴、Handler、快取與副作用	延續並補充
+flow.json	獨立流程包的描述檔	維持相容
+SQLite 與 migrations	已支援執行紀錄、佇列與版本相關資料	重用既有機制，新增獨立設計資料
+MCP / queue worker	支援外部 Agent 提交及追蹤工作	保留
+字幕工作流	提供多步驟、Checkpoint、品質檢查及人工審閱案例	作為驗證參考
+檔案複製工作流	簡單、確定性執行範例	作為第一個生成與重播測試案例
+
+
+
+既有 Workflow 契約已能描述依賴順序，但尚不能完整、通用地表達業務流程發現、證據可信度、條件分支、工具能力選擇及工作流自動生成。
+
+因此新增 Compiler，而不是將這些設計期功能塞進 Runtime。
+1.2 欲解決的問題
+目前新增一條工作流，仍需要具備一定工程能力的人整理業務邏輯、撰寫 Adapter 與 Handler、建立合約、測試，以及封裝。
+
+本次開發要減少這些人工工程工作。
+文字Markdown
+CSVExcel
+統計圖表
+問題	目標改善
+業務人員無法完整寫出技術流程	支援文字、流程圖、成功案例及錄影
+工作流設計依賴開發人員	由 LLM 完成主要工程轉換
+LLM 直接寫程式容易產生錯誤	增加中介表示、契約檢查與自動測試
+每個工作流重複開發工具	建立共用工具能力目錄
+一次執行成功但無法穩定重跑	自動補齊參數、狀態、恢復與副作用規則
+AI 參與過多導致成本不穩定	區分設計期推理與執行期推理
+換平台可能無法運作	在生成前分析平台相容性
+工作流雖能執行卻不代表業務正確	建立業務驗收與人工核准機制
+
+
+
+2. 目標、成功標準與範圍
+2.1 產品目標
+建立一個「業務流程自動編譯系統」，讓使用者只要提供任務目標及足夠的案例，便可以取得一份經過驗證的 RoutineKeel 工作流包。
+
+使用者不需要編寫 Python、不需要手動設計每個節點，也不需要理解內部資料結構。
+2.2 使用者角色
+文字Markdown
+CSVExcel
+統計圖表
+角色	需要完成的事情
+非技術業務使用者	描述工作、提供案例、確認成果與發布
+業務專家	補足隱含規則、判斷成功標準
+流程維護者	查看版本、測試、執行歷史及失敗原因
+技術管理者（選用）	核准高風險工具與外部存取權限
+Codex 開發代理	依階段開發 Compiler，不承擔正式業務決策
+
+
+
+2.3 實作範圍
+文字Markdown
+CSVExcel
+統計圖表
+優先級	能力	規劃
+P0	專案建立、保存、開啟及續編	必做
+P0	文字與 Mermaid 流程理解	必做
+P0	Workflow IR 與完整節點合約	必做
+P0	Tool Registry、工具配置及程式生成	必做
+P0	流程封裝及 flow_base 相容	必做
+P0	自動驗證、重播、失敗修正	必做
+P1	成功案例資料夾逆向分析	必做
+P1	確定性分支、執行期 LLM 隔離與成本限制	必做
+P1	人工決策、審核及正式發布	必做
+P2	操作影片分析與流程推導	延伸功能，須獨立驗收
+P2	跨來源證據融合	延伸功能
+
+
+
+2.4 本次不做什麼
+不建立全新的執行引擎、不取代 flow_base 佇列及成果管理、不自行實作通用雲端部署平台、不保證從單次成功案例推論出所有例外，不允許 LLM 在未經授權情況下任意執行系統指令或發布含外部副作用的工作流。
+
+初版也不實作一般性的無限迴圈、任意動態圖重建或跨機分散式流程調度。
+2.5 成功標準（建議驗收目標）
+以下為新系統的目標門檻，而非現有成果。
+文字Markdown
+CSVExcel
+統計圖表
+指標	目標
+基本流程編譯	文字及 Mermaid 黃金案例各至少 5 件可完成生成與執行
+無開發人員介入	定義好的 20 件低風險範例，至少 16 件可由使用者自行完成轉換
+合約一致性	正式發布的流程包 100% 通過契約驗證
+發布安全性	未授權外部副作用自動執行案例為 0
+專案持久化	關閉、重開後，100% 恢復已提交的專案版本及輸入參照
+回歸相容	原有底座與兩個範例工作流的既有測試不得因新增模組退化
+重跑安全	以 100 次隔離執行測試確認成果與紀錄不混用
+執行期 AI 成本	沒有 LLM 節點的工作流，正式執行期 LLM API 呼叫數必須為 0
+平台驗收	Windows、macOS、Linux 完成自動化相容性測試；桌面操作另以實機驗收
+
+
+
+3. G3M：目標、缺口與衡量
+文字Markdown
+CSVExcel
+統計圖表
+Goal	Gap	Metric
+自動理解業務流程	人類描述不完整	節點推導正確率、待確認規則數
+自動產生可靠程式	LLM 生成結果可能不一致	合約通過率、重播通過率
+降低重複開發	工具無法充分共用	已有工具重用比例
+提高反覆執行可靠性	缺乏完整重試與恢復設計	可恢復成功率、重複副作用事件數
+降低 AI 使用成本	過度依賴執行期 LLM	每次執行 Tokens、非 LLM 節點比例
+讓非技術人員自行完成	需要開發人員判斷	無開發人員介入的轉換成功率
+確保業務結果正確	技術測試不等於業務驗收	人工退件率、正式成果缺陷率
+
+
+
+4. 基本設計假設與限制
+本規格採以下假設，未經實測前不得視為已確認：
+- A-01：新增模組設於 workflow_studio/，與現有 flow_base 保持分離。
+- A-02：沿用專案目前使用的 Python 開發環境與測試習慣，不另指定新的技術框架。
+- A-03：語言模型由可替換的供應介面提供，支援使用者自行設定可用模型及額度。
+- A-04：第一個可交付版本以本機單使用者為主，不建立複雜帳號與多租戶體系。
+- A-05：所有工作流生成與修改先在草稿區操作，只有通過驗證的版本才能正式發布。
+- A-06：第一版優先生成靜態 DAG；簡單分枝可編譯為受控的複合 Handler，不要求修改現有 Runtime 的圖執行語意。
+- A-07：影片分析只推導可觀察的行為，不把影片中未出現的判斷當成既定事實。
+- A-08：未來可擴充多使用者與遠端服務，但本次不提前實作。
+5. 系統架構
+5.1 前後端模組架構圖（SVG）
+設計期與執行期分離。Compiler 產生符合既有 Runtime 契約的流程包，並不取代執行底座。
+5.2 新增專案目錄
+原始碼、Release 與本機使用維持相同元件位置：
+RoutineKeel/
+├── .venv/                       # 執行時建立，不打包
+├── flow_base/                   # 共用底座，含 share_logs、share_states
+├── workflows/                   # FLOW_<名稱> 可執行流程
+├── blueprints/                  # 待轉換藍圖
+├── workflow_studio/             # 設計期套件
+│   ├── pyproject.toml
+│   ├── AGENTS.md
+│   ├── README.md
+│   ├── .env.example
+│   ├── src/workflow_studio/
+│   │   ├── contracts/
+│   │   ├── storage/
+│   │   ├── project/
+│   │   ├── ingestion/
+│   │   ├── discovery/
+│   │   ├── ir/
+│   │   ├── registry/
+│   │   ├── compiler/
+│   │   ├── verifier/
+│   │   ├── governance/
+│   │   ├── llm/
+│   │   ├── service.py
+│   │   ├── cli.py
+│   │   └── ui/
+│   └── docs/
+├── tests/
+│   └── studio/
+└── tools/
+
+
+各模組責任如下：
+文字Markdown
+CSVExcel
+統計圖表
+模組	責任
+project	專案 CRUD、版本、續編、備份及封存
+ingestion	檔案與資料夾讀取、預覽、安全檢查
+discovery	LLM 業務流程分析、證據融合、缺口識別
+ir	Workflow IR、依賴圖與合約驗證
+registry	工具能力描述與匹配
+compiler	IR 轉換、Handler 生成、打包
+verifier	契約檢查、重播、故障與安全測試
+governance	決策門檻、批准、發布及版本回滾
+llm	模型呼叫介面、Streaming、Token 帳本
+service	共用應用服務入口
+ui	非技術人員工作台
+storage	專案持久化及資料遷移
+
+
+
+5.3 設計原則
+1. Studio 與 flow_base 使用明確介面溝通。
+2. Studio 不直接修改 flow_base 執行資料表。
+3. 優先使用既有 WorkflowService，不得繞過既有安全及成果發布機制。
+4. 所有 Compiler 模組可個別測試、替換。
+5. 新 IR 有獨立版本，不取代既有 flow.json 的版本編號。
+6. 新增任何 Runtime 擴充前，必須證明現有 Adapter 無法安全表達該功能。
+7. 工具能力目錄只宣告可用工具，不代表自動授予執行權限。
+
+6. 完整使用流程
+#chatgpt-mermaid-_r_7jl_{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;fill:rgb(13, 13, 13);}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#chatgpt-mermaid-_r_7jl_ .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-_r_7jl_ .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-_r_7jl_ .error-icon{fill:rgb(243, 243, 243);}#chatgpt-mermaid-_r_7jl_ .error-text{fill:rgb(13, 13, 13);stroke:rgb(13, 13, 13);}#chatgpt-mermaid-_r_7jl_ .edge-thickness-normal{stroke-width:1px;}#chatgpt-mermaid-_r_7jl_ .edge-thickness-thick{stroke-width:3.5px;}#chatgpt-mermaid-_r_7jl_ .edge-pattern-solid{stroke-dasharray:0;}#chatgpt-mermaid-_r_7jl_ .edge-thickness-invisible{stroke-width:0;fill:none;}#chatgpt-mermaid-_r_7jl_ .edge-pattern-dashed{stroke-dasharray:3;}#chatgpt-mermaid-_r_7jl_ .edge-pattern-dotted{stroke-dasharray:2;}#chatgpt-mermaid-_r_7jl_ .marker{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-_r_7jl_ .marker.cross{stroke:rgb(143, 143, 143);}#chatgpt-mermaid-_r_7jl_ svg{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;}#chatgpt-mermaid-_r_7jl_ p{margin:0;}#chatgpt-mermaid-_r_7jl_ .label{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";color:rgb(13, 13, 13);}#chatgpt-mermaid-_r_7jl_ .cluster-label text{fill:rgb(13, 13, 13);}#chatgpt-mermaid-_r_7jl_ .cluster-label span{color:rgb(13, 13, 13);}#chatgpt-mermaid-_r_7jl_ .cluster-label span p{background-color:transparent;}#chatgpt-mermaid-_r_7jl_ .label text,#chatgpt-mermaid-_r_7jl_ span{fill:rgb(13, 13, 13);color:rgb(13, 13, 13);}#chatgpt-mermaid-_r_7jl_ .node rect,#chatgpt-mermaid-_r_7jl_ .node circle,#chatgpt-mermaid-_r_7jl_ .node ellipse,#chatgpt-mermaid-_r_7jl_ .node polygon,#chatgpt-mermaid-_r_7jl_ .node path{fill:rgb(240, 234, 251);stroke:rgb(184, 151, 244);stroke-width:1px;}#chatgpt-mermaid-_r_7jl_ .rough-node .label text,#chatgpt-mermaid-_r_7jl_ .node .label text,#chatgpt-mermaid-_r_7jl_ .image-shape .label,#chatgpt-mermaid-_r_7jl_ .icon-shape .label{text-anchor:middle;}#chatgpt-mermaid-_r_7jl_ .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#chatgpt-mermaid-_r_7jl_ .rough-node .label,#chatgpt-mermaid-_r_7jl_ .node .label,#chatgpt-mermaid-_r_7jl_ .image-shape .label,#chatgpt-mermaid-_r_7jl_ .icon-shape .label{text-align:center;}#chatgpt-mermaid-_r_7jl_ .node.clickable{cursor:pointer;}#chatgpt-mermaid-_r_7jl_ .root .anchor path{fill:rgb(143, 143, 143)!important;stroke-width:0;stroke:rgb(143, 143, 143);}#chatgpt-mermaid-_r_7jl_ .arrowheadPath{fill:rgb(143, 143, 143);}#chatgpt-mermaid-_r_7jl_ .edgePath .path{stroke:rgb(143, 143, 143);stroke-width:1px;}#chatgpt-mermaid-_r_7jl_ .flowchart-link{stroke:rgb(143, 143, 143);fill:none;}#chatgpt-mermaid-_r_7jl_ .edgeLabel{background-color:rgb(252, 252, 252);text-align:center;}#chatgpt-mermaid-_r_7jl_ .edgeLabel p{background-color:rgb(252, 252, 252);}#chatgpt-mermaid-_r_7jl_ .edgeLabel rect{opacity:0.5;background-color:rgb(252, 252, 252);fill:rgb(252, 252, 252);}#chatgpt-mermaid-_r_7jl_ .labelBkg{background-color:rgba(252, 252, 252, 0.5);}#chatgpt-mermaid-_r_7jl_ .cluster rect{fill:rgb(243, 243, 243);stroke:rgba(0, 0, 0, 0.1);stroke-width:1px;}#chatgpt-mermaid-_r_7jl_ .cluster text{fill:rgb(13, 13, 13);}#chatgpt-mermaid-_r_7jl_ .cluster span{color:rgb(13, 13, 13);}#chatgpt-mermaid-_r_7jl_ div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:12px;background:rgb(243, 243, 243);border:1px solid rgba(0, 0, 0, 0.1);border-radius:2px;pointer-events:none;z-index:100;}#chatgpt-mermaid-_r_7jl_ .flowchartTitleText{text-anchor:middle;font-size:18px;fill:rgb(13, 13, 13);}#chatgpt-mermaid-_r_7jl_ rect.text{fill:none;stroke-width:0;}#chatgpt-mermaid-_r_7jl_ .icon-shape,#chatgpt-mermaid-_r_7jl_ .image-shape{background-color:rgb(252, 252, 252);text-align:center;}#chatgpt-mermaid-_r_7jl_ .icon-shape p,#chatgpt-mermaid-_r_7jl_ .image-shape p{background-color:rgb(252, 252, 252);padding:2px;}#chatgpt-mermaid-_r_7jl_ .icon-shape .label rect,#chatgpt-mermaid-_r_7jl_ .image-shape .label rect{opacity:0.5;background-color:rgb(252, 252, 252);fill:rgb(252, 252, 252);}#chatgpt-mermaid-_r_7jl_ .label-icon{display:inline-block;height:1em;overflow:visible;vertical-align:-0.125em;}#chatgpt-mermaid-_r_7jl_ .node .label-icon path{fill:currentColor;stroke:revert;stroke-width:revert;}#chatgpt-mermaid-_r_7jl_ .node .neo-node{stroke:rgb(184, 151, 244);}#chatgpt-mermaid-_r_7jl_ [data-look="neo"].node rect,#chatgpt-mermaid-_r_7jl_ [data-look="neo"].cluster rect,#chatgpt-mermaid-_r_7jl_ [data-look="neo"].node polygon{stroke:url(#chatgpt-mermaid-_r_7jl_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-_r_7jl_ [data-look="neo"].swimlane.cluster rect{filter:none;}#chatgpt-mermaid-_r_7jl_ [data-look="neo"].node path{stroke:url(#chatgpt-mermaid-_r_7jl_-gradient);stroke-width:1px;}#chatgpt-mermaid-_r_7jl_ [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-_r_7jl_ [data-look="neo"].node .neo-line path{stroke:rgb(184, 151, 244);filter:none;}#chatgpt-mermaid-_r_7jl_ [data-look="neo"].node circle{stroke:url(#chatgpt-mermaid-_r_7jl_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-_r_7jl_ [data-look="neo"].node circle .state-start{fill:#000000;}#chatgpt-mermaid-_r_7jl_ [data-look="neo"].icon-shape .icon{fill:url(#chatgpt-mermaid-_r_7jl_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-_r_7jl_ [data-look="neo"].icon-shape .icon-neo path{stroke:url(#chatgpt-mermaid-_r_7jl_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-_r_7jl_ .node text{font-size:14px;font-weight:600;letter-spacing:normal;fill:rgb(107, 58, 180);}#chatgpt-mermaid-_r_7jl_ .edgeLabels text{font-size:13px;font-weight:600;letter-spacing:-0.08px;fill:rgb(107, 58, 180);}#chatgpt-mermaid-_r_7jl_ .node tspan[font-weight="normal"],#chatgpt-mermaid-_r_7jl_ .edgeLabels tspan[font-weight="normal"]{font-weight:600;}#chatgpt-mermaid-_r_7jl_ .edgeLabel .label rect{opacity:1;rx:13px;ry:13px;fill:rgb(249, 245, 254);stroke:rgb(215, 206, 229);stroke-width:1px;}#chatgpt-mermaid-_r_7jl_ .node rect,#chatgpt-mermaid-_r_7jl_ .node circle,#chatgpt-mermaid-_r_7jl_ .node ellipse,#chatgpt-mermaid-_r_7jl_ .node polygon,#chatgpt-mermaid-_r_7jl_ .node path{fill:rgb(239, 229, 254);stroke:rgba(0, 0, 0, 0.1);stroke-width:1px;}#chatgpt-mermaid-_r_7jl_ .node rect{rx:16px;ry:16px;}#chatgpt-mermaid-_r_7jl_ .mermaid-decision .label-container{fill:rgb(249, 245, 254);stroke:rgb(215, 206, 229);stroke-dasharray:2,2;}#chatgpt-mermaid-_r_7jl_ .edgePaths .flowchart-link{stroke:rgb(143, 143, 143);stroke-width:1px;stroke-linecap:round;stroke-linejoin:round;}#chatgpt-mermaid-_r_7jl_ .marker{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-_r_7jl_ :root{--mermaid-font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";}建立或開啟專案定義目標、成功標準與交付物提供文字、流程圖、成功案例或影片資料預覽與安全掃描LLM 推導業務流程生成 Workflow IR契約與證據完整？補證據、產生候選或詢問人類匹配既有工具有可用工具？生成新 Handler 與測試組裝 Adapter靜態驗證及重播通過？定位錯誤與有限次修正產生可發布流程包需要人工核准？使用者確認正式發布flow_base 重複執行否是否是否是是否
+
+
+
+
+
+流程控制規則
+- 發現階段可以產生多個候選方案，不能自動把低證據可信度的推測變成已確認規則。
+- 靜態驗證失敗不得進入動態執行。
+- 動態測試只允許在隔離的測試工作區中進行。
+- 自動修復須限制次數；預設最多兩輪，之後呈現失敗證據。
+- 只有明確標記為可發布的版本才能進入正式流程目錄。
+- 發布後修改必須產生新的版本，不得就地修改原有正式流程包。
+- 不能從單次成功重播推導出整個工作流已涵蓋所有輸入與異常。
+7. 功能規格
+7.1 功能清單與 CRUD
+文字Markdown
+CSVExcel
+統計圖表
+編號	功能	Create	Read	Update	Delete／封存
+FR-01	Studio 專案	建立	開啟、列出	改名稱、目標、設定	軟刪除
+FR-02	來源資料	匯入	預覽、瀏覽	替換、更新說明	移除參照
+FR-03	流程草稿	AI 生成	查看版本與差異	編輯並建立新 Revision	捨棄草稿
+FR-04	業務規則	推導或手動建立	查看證據	修改條件及確認狀態	移除
+FR-05	工具註冊	新增工具描述	查看能力	修改版本、平台、政策	停用／封存
+FR-06	節點	自動或手動新增	查看合約	修改輸入、輸出、依賴	刪除並檢查引用
+FR-07	測試案例	從範例或 LLM 建立	查看預期／實際	修改驗收與輸入	刪除或封存
+FR-08	生成版本	生成新版本	查看程式、報告	新增後續版本	封存未發布版本
+FR-09	人工決策	建立待辦	查看理由	批准、退回、撤回	封存決策
+FR-10	正式發布	發布	查看版本及歷史	發布新版、回退指標	停用發布
+
+
+
+所有已發布或被執行紀錄引用的物件，不得因刪除草稿而破壞歷史。必要時使用 tombstone、不可變快照或解除使用者介面的可見關聯。
+7.2 FR-11：定義工作目標
+使用者至少需提供：
+- 任務名稱。
+- 要完成的工作。
+- 至少一項輸入。
+- 期望輸出。
+- 可觀察的成功條件。
+如果無法描述完整成功條件，允許先儲存草稿，但不得直接進入自動發布。
+
+LLM 可提出補充建議，例如檔案格式、輸出命名、品質條件及人工審閱需求。
+7.3 FR-12：多來源流程發現
+文字Markdown
+CSVExcel
+統計圖表
+來源	須產生的資訊	限制
+文字	工作步驟、順序、輸入輸出、疑義	不將描述中的模糊語意直接視為已確認
+Mermaid	節點、連線、可辨識條件	不支援的語法須顯示位置與原因
+手繪圖片	候選流程節點、文字及連線	辨識不明處標記待確認
+成功資料夾	檔案類型、內容摘要、時間關聯、資料流候選	不將時間先後直接當成因果證據
+操作影片	畫面步驟、可能使用工具、輸入輸出及操作時間點	未錄到的動作不得自行確認
+執行紀錄	時間戳、事件、輸出、失敗與重試歷史	無關的歷史資料不得混入同一流程
+
+
+
+每項推論都需保存 source_id、evidence_locator、claim、confidence_label、verified_by。
+
+confidence_label 至少支援：
+- observed
+- inferred
+- verified
+- human_confirmed
+- conflicted
+其中 verified 必須有可查的驗證依據；不得僅因 LLM 信心高而設定。
+7.4 FR-13：自動工具配置
+工具匹配順序：
+1. 既有可信 Handler。
+2. 既有受控程式或工具。
+3. 已核准的第三方能力。
+4. 新生成的 Handler。
+5. 無法安全完成時標記需人工處理。
+比對條件：
+- 輸入與輸出型別。
+- 是否支援目標平台。
+- 是否需要外部網路。
+- 是否存取機密資料。
+- 是否產生外部副作用。
+- 成本及資源需求。
+- 測試覆蓋與信任狀態。
+不得單純根據 LLM 推薦分數就執行未核准工具。
+7.5 FR-14：程式及流程包生成
+生成器必須輸出：
+- 流程名稱、識別碼及版本。
+- Adapter、Handler、流程設定。
+- flow.json。
+- 必要依賴宣告及相容資訊。
+- 節點輸入／輸出合約。
+- 測試案例。
+- 使用者操作文件。
+- 稽核與證據摘要。
+- 可由現有發行工具處理的套件。
+不能硬寫 flow_base 內部私有路徑。
+
+當既有契約不支援某一功能時，Compiler 必須回報 IR_UNSUPPORTED_FEATURE，不得產生表面上合法、但執行語意錯誤的流程。
+7.6 FR-15：執行期 LLM 隔離
+每個節點須明確標記：
+
+deterministic、model_inference、llm、human_approval 或 composite_branch。
+
+對 llm 節點：
+- 所有使用者可見生成文字必須 Streaming。
+- 最終結構化輸出通過完整驗證後才提交。
+- 對不完整的串流不得宣告成功。
+- 記錄可取得的輸入、輸出、快取 Tokens；無法取得時標記 unavailable。
+- 設定模型、最大呼叫數、Timeout、預算與失敗策略。
+- 每次呼叫須與專案、版本、Run、Step 關聯。
+- 不將 Compiler 開發階段 Tokens 算到正式流程執行成本。
+8. Workflow IR 技術契約
+8.1 IR 與執行流程分離
+新增 Workflow IR v1，作為 Compiler 的統一中介表示。
+
+它不應等同於現有的 flow_base.contracts.Workflow。
+
+流程為：
+
+Workflow IR → 靜態驗證 → Lowering → 現有 Workflow/Step → Adapter/Handler → Package
+
+其中 Lowering 需負責處理語意轉換與相容性限制。
+8.2 基本資料模型
+以下為概念範例：
+{
+  "ir_version": "1.0",
+  "workflow_id": "course-subtitles",
+  "revision": 3,
+  "goal": {
+    "description": "產生可供人工確認的字幕",
+    "success_policy": "review_required"
+  },
+  "inputs": {
+    "video": {
+      "type": "file",
+      "required": true
+    }
+  },
+  "nodes": [
+    {
+      "id": "extract_audio",
+      "kind": "deterministic",
+      "tool": "media.extract_audio",
+      "inputs": {
+        "video": "input://video"
+      },
+      "outputs": {
+        "audio": {
+          "type": "file",
+          "format": "wav"
+        }
+      },
+      "cacheable": true,
+      "side_effects": "local_write",
+      "retry": "transient_only",
+      "evidence_refs": ["source-001"]
+    }
+  ]
+}
+
+
+此為新 IR 的設計範例，不能直接當成現有 flow.json 執行。
+8.3 每個節點的強制契約
+文字Markdown
+CSVExcel
+統計圖表
+欄位	規則
+id	同一流程內唯一且穩定
+kind	使用受控節點種類
+tool	必須可解析到 Tool Registry
+inputs	所有必填值都有來源及型別
+outputs	定義型別、名稱及驗證規則
+depends_on	不得參照不存在的節點
+preconditions	明確的執行前提
+postconditions	可機器驗證的成功條件
+side_effects	none、local_write、external
+retry_policy	需說明可否安全重試
+cache_policy	需定義有效的快取指紋
+platform_requirements	明確的作業環境需求
+evidence_refs	指向原始資料或人工確認紀錄
+
+
+
+8.4 變數參照與檔案位置
+所有節點使用邏輯參照，不保存機器專屬的絕對路徑：
+input://video
+artifact://extract_audio/audio
+output://subtitles
+secret://provider_key
+
+
+Runtime Adapter 負責將邏輯位置解析到本次執行工作區。
+
+每個輸出必須同時具有：
+- 穩定的邏輯產物 ID。
+- 相對位置或受控儲存參照。
+- 內容型別。
+- SHA-256。
+- 來源 Run、Step 及版本。
+- 必要的完整性驗證資訊。
+8.5 條件分支
+初版只支援有限、確定性且可驗證的條件分支。
+
+例如：
+id: check_file
+kind: composite_branch
+
+condition:
+  operator: file_size_gt
+  input: input://file
+  value: 104857600
+
+branches:
+  true: process_large_file
+  false: process_small_file
+
+output:
+  schema: processed-file-v1
+
+
+Lowering 必須將它編譯成現有 Runtime 可安全執行的複合 Handler；分支內部的結果都應符合共同輸出契約。
+
+不得使用任意 eval、任意 Shell 指令或由文字直接執行未授權程式。
+
+無法安全轉換的複雜分支須停止編譯。
+
+9. State 管理、持久化與資料模型
+9.1 專案生命週期
+將「專案是否存在」與「目前產生的工作流版本處於何種狀態」分離。
+
+專案狀態：
+active
+archived
+deleted
+
+
+工作流版本狀態：
+#chatgpt-mermaid-_r_7ke_{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;fill:rgb(13, 13, 13);}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#chatgpt-mermaid-_r_7ke_ .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-_r_7ke_ .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-_r_7ke_ .error-icon{fill:rgb(243, 243, 243);}#chatgpt-mermaid-_r_7ke_ .error-text{fill:rgb(13, 13, 13);stroke:rgb(13, 13, 13);}#chatgpt-mermaid-_r_7ke_ .edge-thickness-normal{stroke-width:1px;}#chatgpt-mermaid-_r_7ke_ .edge-thickness-thick{stroke-width:3.5px;}#chatgpt-mermaid-_r_7ke_ .edge-pattern-solid{stroke-dasharray:0;}#chatgpt-mermaid-_r_7ke_ .edge-thickness-invisible{stroke-width:0;fill:none;}#chatgpt-mermaid-_r_7ke_ .edge-pattern-dashed{stroke-dasharray:3;}#chatgpt-mermaid-_r_7ke_ .edge-pattern-dotted{stroke-dasharray:2;}#chatgpt-mermaid-_r_7ke_ .marker{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-_r_7ke_ .marker.cross{stroke:rgb(143, 143, 143);}#chatgpt-mermaid-_r_7ke_ svg{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;}#chatgpt-mermaid-_r_7ke_ p{margin:0;}#chatgpt-mermaid-_r_7ke_ defs [id$="-barbEnd"]{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-_r_7ke_ g.stateGroup text{fill:rgb(184, 151, 244);stroke:none;font-size:10px;}#chatgpt-mermaid-_r_7ke_ g.stateGroup text{fill:rgb(13, 13, 13);stroke:none;font-size:10px;}#chatgpt-mermaid-_r_7ke_ g.stateGroup .state-title{font-weight:bolder;fill:rgb(13, 13, 13);}#chatgpt-mermaid-_r_7ke_ g.stateGroup rect{fill:rgb(240, 234, 251);stroke:rgb(184, 151, 244);}#chatgpt-mermaid-_r_7ke_ g.stateGroup line{stroke:rgb(143, 143, 143);stroke-width:1;}#chatgpt-mermaid-_r_7ke_ .transition{stroke:rgb(143, 143, 143);stroke-width:1;fill:none;}#chatgpt-mermaid-_r_7ke_ .stateGroup .composit{fill:transparent;border-bottom:1px;}#chatgpt-mermaid-_r_7ke_ .stateGroup .alt-composit{fill:#e0e0e0;border-bottom:1px;}#chatgpt-mermaid-_r_7ke_ .state-note{stroke:rgb(246, 142, 188);fill:rgb(243, 243, 243);}#chatgpt-mermaid-_r_7ke_ .state-note text{fill:rgb(13, 13, 13);stroke:none;font-size:10px;}#chatgpt-mermaid-_r_7ke_ .stateLabel .box{stroke:none;stroke-width:0;fill:rgb(240, 234, 251);opacity:0.5;}#chatgpt-mermaid-_r_7ke_ .edgeLabel .label rect{fill:rgb(240, 234, 251);opacity:0.5;}#chatgpt-mermaid-_r_7ke_ .edgeLabel{background-color:rgb(252, 252, 252);text-align:center;}#chatgpt-mermaid-_r_7ke_ .edgeLabel p{background-color:rgb(252, 252, 252);}#chatgpt-mermaid-_r_7ke_ .edgeLabel rect{opacity:0.5;background-color:rgb(252, 252, 252);fill:rgb(252, 252, 252);}#chatgpt-mermaid-_r_7ke_ .edgeLabel .label text{fill:rgb(13, 13, 13);}#chatgpt-mermaid-_r_7ke_ .label div .edgeLabel{color:rgb(13, 13, 13);}#chatgpt-mermaid-_r_7ke_ .stateLabel text{fill:rgb(13, 13, 13);font-size:10px;font-weight:bold;}#chatgpt-mermaid-_r_7ke_ .node circle.state-start{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-_r_7ke_ .node .fork-join{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-_r_7ke_ .node circle.state-end{fill:rgb(184, 151, 244);stroke:transparent;stroke-width:1.5;}#chatgpt-mermaid-_r_7ke_ .end-state-inner{fill:transparent;stroke-width:1.5;}#chatgpt-mermaid-_r_7ke_ .node rect{fill:rgb(240, 234, 251);stroke:rgb(184, 151, 244);stroke-width:1px;}#chatgpt-mermaid-_r_7ke_ .node polygon{fill:rgb(240, 234, 251);stroke:rgb(184, 151, 244);stroke-width:1px;}#chatgpt-mermaid-_r_7ke_ [id$="-barbEnd"]{fill:rgb(143, 143, 143);}#chatgpt-mermaid-_r_7ke_ .statediagram-cluster rect{fill:rgb(240, 234, 251);stroke:rgb(184, 151, 244);stroke-width:1px;}#chatgpt-mermaid-_r_7ke_ .cluster-label,#chatgpt-mermaid-_r_7ke_ .nodeLabel{color:rgb(13, 13, 13);}#chatgpt-mermaid-_r_7ke_ .statediagram-cluster rect.outer{rx:5px;ry:5px;}#chatgpt-mermaid-_r_7ke_ .statediagram-state .divider{stroke:rgb(184, 151, 244);}#chatgpt-mermaid-_r_7ke_ .statediagram-state .title-state{rx:5px;ry:5px;}#chatgpt-mermaid-_r_7ke_ .statediagram-cluster.statediagram-cluster .inner{fill:transparent;}#chatgpt-mermaid-_r_7ke_ .statediagram-cluster.statediagram-cluster-alt .inner{fill:rgb(243, 243, 243);}#chatgpt-mermaid-_r_7ke_ .statediagram-cluster .inner{rx:0;ry:0;}#chatgpt-mermaid-_r_7ke_ .statediagram-state rect.basic{rx:5px;ry:5px;}#chatgpt-mermaid-_r_7ke_ .statediagram-state rect.divider{stroke-dasharray:10,10;fill:rgb(243, 243, 243);}#chatgpt-mermaid-_r_7ke_ .note-edge{stroke-dasharray:5;}#chatgpt-mermaid-_r_7ke_ .statediagram-note rect{fill:rgb(243, 243, 243);stroke:rgb(246, 142, 188);stroke-width:1px;rx:0;ry:0;}#chatgpt-mermaid-_r_7ke_ .statediagram-note rect{fill:rgb(243, 243, 243);stroke:rgb(246, 142, 188);stroke-width:1px;rx:0;ry:0;}#chatgpt-mermaid-_r_7ke_ .statediagram-note text{fill:rgb(13, 13, 13);}#chatgpt-mermaid-_r_7ke_ .statediagram-note .nodeLabel{color:rgb(13, 13, 13);}#chatgpt-mermaid-_r_7ke_ .statediagram .edgeLabel{color:red;}#chatgpt-mermaid-_r_7ke_ [id$="-dependencyStart"],#chatgpt-mermaid-_r_7ke_ [id$="-dependencyEnd"]{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);stroke-width:1;}#chatgpt-mermaid-_r_7ke_ .statediagramTitleText{text-anchor:middle;font-size:18px;fill:rgb(13, 13, 13);}#chatgpt-mermaid-_r_7ke_ [data-look="neo"].statediagram-cluster rect{fill:rgb(240, 234, 251);stroke:url(#chatgpt-mermaid-_r_7ke_-gradient);stroke-width:1;}#chatgpt-mermaid-_r_7ke_ [data-look="neo"].statediagram-cluster rect.outer{rx:5px;ry:5px;filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-_r_7ke_ .node .neo-node{stroke:rgb(184, 151, 244);}#chatgpt-mermaid-_r_7ke_ [data-look="neo"].node rect,#chatgpt-mermaid-_r_7ke_ [data-look="neo"].cluster rect,#chatgpt-mermaid-_r_7ke_ [data-look="neo"].node polygon{stroke:url(#chatgpt-mermaid-_r_7ke_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-_r_7ke_ [data-look="neo"].swimlane.cluster rect{filter:none;}#chatgpt-mermaid-_r_7ke_ [data-look="neo"].node path{stroke:url(#chatgpt-mermaid-_r_7ke_-gradient);stroke-width:1px;}#chatgpt-mermaid-_r_7ke_ [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-_r_7ke_ [data-look="neo"].node .neo-line path{stroke:rgb(184, 151, 244);filter:none;}#chatgpt-mermaid-_r_7ke_ [data-look="neo"].node circle{stroke:url(#chatgpt-mermaid-_r_7ke_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-_r_7ke_ [data-look="neo"].node circle .state-start{fill:#000000;}#chatgpt-mermaid-_r_7ke_ [data-look="neo"].icon-shape .icon{fill:url(#chatgpt-mermaid-_r_7ke_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-_r_7ke_ [data-look="neo"].icon-shape .icon-neo path{stroke:url(#chatgpt-mermaid-_r_7ke_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-_r_7ke_ :root{--mermaid-font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";}draftdiscoveringneeds_clarificationir_readygeneratingverifyingverifiedrejectedawaiting_approvalapprovedpublished
+
+
+
+
+
+任何正在執行的工作被取消、逾時或中斷時，也必須儲存原因與最後可確認的完成階段。
+
+正式發布的 Revision 為不可變內容。修改時產生新 Revision；發布前失敗不得破壞上一個正式版本。
+9.2 儲存設計
+建議 Studio 使用獨立儲存區，降低對既有 flow_base migration 的改動：
+share_states/
+└── workflow_studio/
+    ├── studio.sqlite3
+    └── projects/
+        └── <project_id>/
+            ├── project.json
+            ├── sources/
+            ├── previews/
+            ├── evidence/
+            ├── revisions/
+            │   └── rev-0001/
+            │       ├── workflow.ir.json
+            │       └── assumptions.json
+            ├── golden_cases/
+            ├── builds/
+            └── reports/
+
+
+預設將使用者明確匯入的來源保存為專案副本。若使用者選擇只參照原檔，重新開啟時必須確認原檔是否存在且指紋未變。
+
+專案資料和正式工作流執行資料不能混用。
+9.3 Studio 資料表
+文字Markdown
+CSVExcel
+統計圖表
+資料表	主要欄位
+studio_projects	project_id, name, goal_json, status, created_at, updated_at
+studio_sources	source_id, project_id, kind, path, hash, status
+studio_evidence	evidence_id, source_id, locator, claim, confidence_label
+studio_revisions	revision_id, project_id, parent_id, ir_hash, status
+studio_tools	tool_id, version, contract_json, trust_status, disabled_at
+studio_test_cases	case_id, project_id, input_ref, expected_ref, status
+studio_builds	build_id, revision_id, package_hash, status, report_ref
+studio_approvals	approval_id, revision_id, artifact_hash, decision, created_at
+studio_events	event_id, project_id, revision_id, type, payload, created_at
+
+
+
+所有參照使用穩定識別碼；所有結構化欄位須經版本化契約驗證。
+
+資料表 migration 必須可重複套用，升級前保存一致性備份，未知較新版本不得強制寫入。
+9.4 新增、修改、刪除一致性
+例如使用者刪除一個流程節點：
+- 檢查是否有其他節點依賴它。
+- 有依賴時要求先調整連線，或在同一筆編輯交易中完成更新。
+- 產生新的 Revision。
+- 讓受影響的測試與 Build 失效。
+- 不刪除歷史 Revision 的節點。
+- 既有正式發布版本保持不變。
+專案刪除同樣不能直接破壞 flow_base 的正式成果及歷史紀錄。
+
+10. API 與服務介面
+Studio 必須提供統一服務介面，讓 CLI、圖形工作台及未來外部整合共用。
+
+以下使用 HTTP 風格描述操作語意，不代表本次必須建立 HTTP Server；初版可由本機 Service 實作相同能力。
+文字Markdown
+CSVExcel
+統計圖表
+操作	介面	功能
+建立專案	POST /studio/projects	建立草稿
+查詢專案	GET /studio/projects/{id}	還原目前狀態
+更新專案	PATCH /studio/projects/{id}	更新目標與設定
+刪除專案	DELETE /studio/projects/{id}	軟刪除
+匯入來源	POST /studio/projects/{id}/sources	上傳或匯入
+更新來源	PATCH /studio/sources/{id}	修改描述或替換
+移除來源	DELETE /studio/sources/{id}	刪除參照
+開始分析	POST /studio/projects/{id}/discover	開始 Streaming 分析
+查詢事件	GET /studio/projects/{id}/events	顯示分析及生成進度
+建立版本	POST /studio/projects/{id}/revisions	保存 IR
+生成流程包	POST /studio/revisions/{id}/compile	產生候選包
+驗證流程包	POST /studio/builds/{id}/verify	產生驗證報告
+人工批准	POST /studio/builds/{id}/approve	綁定內容指紋
+發布	POST /studio/builds/{id}/publish	安裝正式版本
+
+
+
+回應格式應延續既有結構化回應風格：
+{
+  "ok": false,
+  "error": {
+    "code": "EVIDENCE_INSUFFICIENT",
+    "message": "現有資料無法判定分支條件",
+    "details": {
+      "missing_rules": ["reject_condition"]
+    }
+  }
+}
+
+
+更新操作需使用預期版本或內容指紋防止覆蓋其他編輯。
+10.1 LLM Streaming 事件格式
+{
+  "event": "analysis.delta",
+  "project_id": "project-001",
+  "revision_id": "rev-0002",
+  "sequence": 18,
+  "content": "正在分析輸出資料與來源關係..."
+}
+
+
+其他事件包括：
+- analysis.started
+- analysis.delta
+- analysis.completed
+- analysis.failed
+- generation.started
+- generation.delta
+- generation.completed
+- verification.completed
+- approval.required
+完成事件須代表實際持久化成功。中途斷線後，使用者可以重新讀取已保存的事件與草稿，不可把未完成的內容顯示為正式結果。
+
+11. UI 設計規格
+11.1 主要畫面 SVG Layout
+畫面示意：上方是專案操作，左側是來源，中間為可編輯流程，右側顯示節點合約、證據、測試與核准資訊。
+11.2 UI 色彩規範
+預設淺色模式。
+文字Markdown
+CSVExcel
+統計圖表
+用途	色彩
+頁面背景	#F8FAFC
+主要面板	#FFFFFF
+文字	#0F172A
+主要操作	#2563EB
+成功	#15803D
+待確認	#B45309
+失敗	#B91C1C
+分隔線	#CBD5E1
+
+
+
+狀態不能只用顏色表達，必須搭配文字及圖示。
+
+上傳來源須有內容預覽；無法提供可信預覽的格式，初版應拒收並說明原因，不得假裝已完成分析。畫面及預覽圖縮放時一律保留原始寬高比。
+
+LLM 分析文字要逐步出現，並提供停止操作；已保存的最終版本和正在生成中的文字必須視覺區分。
+
+12. 非功能需求
+文字Markdown
+CSVExcel
+統計圖表
+類別	要求
+相容性	不破壞現有 flow_base 契約、CLI 與發行流程
+跨平台	Windows、macOS、Linux；平台專屬依賴需明確宣告
+可用性	可從專案開啟、恢復未完成設計及查看歷史
+持久化	重要寫入採原子操作，版本不可變
+效能	不使用 LLM 的專案 CRUD、基本檢查不得觸發模型呼叫
+安全	路徑限制、符號連結檢查、壓縮檔攻擊防護
+隱私	原始案例預設保存在本機；送往外部模型前需明確顯示範圍
+工具治理	不允許來源資料自行授予工具權限
+成本	設計期及執行期用量分別計算
+維護	小模組、穩定契約、版本化資料與增量測試
+可恢復	保留最後成功草稿及已驗證的生成版本
+可測試	每個正式節點具有可執行驗收條件或明確人工 Gate
+
+
+
+對本機初版，建議採取小型、自用工具可承受的最低必要複雜度；不提前引入分散式叢集或企業級權限管理。
+12.1 基準效能測試
+測試數值以下列固定測試集為準，硬體資訊及測試環境必須隨報告記錄：
+- 100 個來源檔案的清單及基本中繼資料分析：不呼叫 LLM。
+- 20 節點 IR 靜態檢查：目標 p95 小於 500 ms（不含檔案讀取及模型）。
+- 100 次專案建立／更新／重開：不得產生資料損壞。
+- 100 次不同輸入的流程執行：不得混合成果或識別碼。
+- 20 個受控故障點：不得損壞上一個正式發布版本。
+上述門檻應在指定硬體、SSD、本機及固定測試資料下驗證；不能推論為所有電腦的保證。
+13. Error Handling 與 Edge／Abuse Cases
+13.1 錯誤碼
+文字Markdown
+CSVExcel
+統計圖表
+錯誤碼	觸發條件	系統處理
+INPUT_INVALID	格式或欄位不合法	拒收並指出問題
+SOURCE_PREVIEW_UNAVAILABLE	無法安全預覽來源	拒收或要求轉換格式
+EVIDENCE_INSUFFICIENT	無法還原必要業務規則	保存草稿並要求補證據
+IR_SCHEMA_INVALID	中介表示不符合契約	不進入生成
+IR_UNSUPPORTED_FEATURE	Runtime 不支援且無安全轉換方式	停止生成
+TOOL_NOT_ALLOWED	未授權工具	拒絕呼叫
+CONTRACT_MISMATCH	節點輸入輸出不相容	標出節點
+LLM_STREAM_INTERRUPTED	模型回應中斷	保留草稿，不提交未驗證輸出
+BUDGET_EXCEEDED	預算不足	停止新模型呼叫
+TEST_FAILED	生成流程未通過測試	保存報告、允許修正
+APPROVAL_REQUIRED	需人工核准	保持未發布
+PLATFORM_UNSUPPORTED	缺少平台能力	阻擋對應平台發布
+REVISION_CONFLICT	使用舊版本覆寫新版本	拒絕更新並顯示差異
+PUBLISH_FAILED	封裝或發布失敗	保留上一成功版本
+
+
+
+13.2 必須覆蓋的例外場景
+文字Markdown
+CSVExcel
+統計圖表
+情境	預期處理
+空白輸入或空資料夾	說明缺少資料，不生成虛構工作流
+影片只有部分操作	標記未知步驟，不自行補成已驗證流程
+同一檔案重複匯入	依指紋處理，不重複占用必要儲存空間
+壓縮檔包含 ../ 路徑	拒絕路徑穿越
+壓縮檔大量膨脹	在安全限制下停止解壓
+來源文件含「忽略先前指令」	當成資料，不賦予指令權限
+工具要求讀取其他專案	拒絕未授權存取
+節點依賴循環	靜態驗證失敗
+LLM 輸出錯誤 JSON	不提交，最多有限次修復
+自動修復持續失敗	停止並呈現可檢查報告
+生成時斷線	恢復已保存草稿，不視為完成
+同時點擊兩次發布	使用唯一鍵與版本檢查，避免重複發布
+發布途中中斷	正式版本指標不指向不完整成果
+外部動作結果不明	不自動重試，先核對外部結果
+使用者修改已核准流程	原核准失效，須重新驗證與核准
+工作流重跑	使用新的 run_id，保留原歷史
+跨平台依賴不可用	明確阻擋該平台，不靜默更換演算法
+
+
+
+14. 驗收條件與 BDD 測試
+AC-01：文字流程自動轉換
+Feature: 將文字流程轉成可執行工作流
+
+  Scenario: 有足夠條件的低風險流程
+    Given 使用者提供工作目標、輸入與輸出
+    And 流程包含三個可驗證的確定性步驟
+    When 系統完成流程分析及生成
+    Then 必須產生有效的 Workflow IR
+    And 所有輸入輸出契約必須通過檢查
+    And 必須產生符合 flow_base 契約的流程包
+    And 必須通過正式測試後才能發布
+
+
+AC-02：專案續編
+Feature: 持續編輯工作流專案
+
+  Scenario: 關閉後重新開啟
+    Given 使用者已建立專案並儲存第三版草稿
+    When 使用者關閉並重新開啟 Studio
+    Then 必須還原第三版草稿
+    And 還原來源參照與已保存證據
+    And 已發布的舊版本不得被修改
+
+
+AC-03：模型輸出失敗
+Feature: 語言模型串流中斷
+
+  Scenario: 收到不完整內容
+    Given 語言模型正在輸出流程分析
+    When 回應於中途斷線
+    Then 畫面必須顯示中斷狀態
+    And 不得將不完整內容標記為已驗證
+    And 仍可重新開啟上一個有效草稿
+
+
+AC-04：保護外部副作用
+Feature: 外部副作用需要授權
+
+  Scenario: 未授權的寄送節點
+    Given 生成流程包含對外寄送動作
+    And 尚未取得需要的授權
+    When 使用者嘗試發布工作流
+    Then 必須拒絕發布
+    And 顯示待授權的操作與原因
+    And 不得執行寄送
+
+
+AC-05：執行期不必要的 LLM 呼叫
+Feature: 確定性流程執行
+
+  Scenario: 流程不包含 LLM 節點
+    Given 已發布的流程只包含確定性 Handler
+    When 使用者透過 flow_base 執行流程
+    Then 工作流必須正常完成
+    And 流程直接呼叫的 LLM API 次數必須為零
+
+
+AC-06：資料夾來源驗證
+給予一組已知輸入、完整中間產物及正式成果，系統應能產生候選資料流、指出每項依賴的證據、執行 Golden Case 重播，並對無法證明的步驟保留待確認狀態。
+AC-07：跨平台
+同一份 IR 必須可以產生平台需求報告。若 Windows 可執行而 macOS 缺少必要工具，系統須明確標註 macOS 不支援，不能宣稱已通過跨平台驗證。
+AC-08：影片推導
+對包含已知 5 個操作步驟的固定測試影片，應產生具有時間位置及來源證據的候選操作表；無法辨識的操作不得被標成已確認，也不得僅憑影片就自行授權正式執行。
+
+第二部分：非技術規格文件（白話版）
+本部分專供沒有程式開發經驗的使用者閱讀。
+1. 這個工具要做什麼？
+RoutineKeel 將新增一個「工作流程製作工作台」。
+
+原本，你可能知道如何完成某件工作，卻不知道如何把它做成其他人可以一鍵使用的工具。
+
+新的工作台會協助你把現有工作方法整理成可重複使用的流程。
+
+例如，你平常要處理課程影片：
+1. 找到影片。
+2. 產生字幕。
+3. 檢查字幕是否正確。
+4. 製作交付檔案。
+5. 請老師確認。
+你不必逐步教電腦如何寫程式，只需要告訴它要完成什麼工作，並提供能讓它理解工作方法的資料。
+2. 可以提供哪些資料？
+
+文字說明
+
+用自己的話描述工作，例如「先整理檔案，再轉換格式，最後產生報告」。
+
+
+
+流程圖
+
+上傳手繪圖或提供現成流程圖，讓工作台理解工作順序與不同情況的處理方式。
+
+
+
+一個已成功完成工作的資料夾
+
+裡面可以有原始資料、過程中產生的檔案、最後成果，以及操作紀錄。
+
+
+
+操作影片
+
+提供實際完成工作的錄影，系統會嘗試辨識操作順序與使用的工具。此功能安排在後續擴充階段。
+
+
+
+你可以同時提供多種資料。提供的資訊越完整，通常越有助於確認實際工作方法。
+3. 一般使用者怎麼操作？
+1. 建立一個工作專案
+   
+   幫它取個名字，例如「課程字幕製作」。寫下你希望完成的任務，以及最後想得到哪些檔案。
+2. 提供一個已完成的例子
+   
+   選擇文字、流程圖、資料夾或影片。上傳前後可以先預覽內容，確認選對資料。
+3. 讓系統整理工作方法
+   
+   畫面會逐步顯示理解到的工作步驟，並標記哪些內容已經確認、哪些仍不確定。
+4. 查看與調整流程
+   
+   不需要編寫程式。你可以改名稱、調整步驟順序、選擇不同的處理方法，或回答幾個重要問題。
+5. 進行試做
+   
+   系統使用你提供的測試資料實際試做，並將結果與你認為正確的成果比較。
+6. 確認並發布
+   
+   當成果符合要求，就可以保存成一個日後反覆使用的工具。
+
+4. 畫面會長怎樣？（SVG 示意）
+左邊提供工作範例，中間看工作順序，右邊查看問題與試做結果。
+畫面預設使用明亮的白色與淡灰色背景，藍色代表主要操作，綠色代表已完成，橘黃色表示需要確認，紅色表示無法繼續。
+5. 會看到哪些提示？
+文字Markdown
+CSVExcel
+統計圖表
+情況	畫面提示
+資料不夠完整	「目前還無法判斷這個步驟的處理方式，請提供另一個例子。」
+已找到適合的工具	「已找到可以完成這個工作的方式。」
+正在整理工作	「正在分析你提供的資料，整理可能的工作順序……」
+需要人類確認	「這項決定可能影響正式結果，請確認後再繼續。」
+試做成功	「已完成試做，結果符合目前設定的檢查條件。」
+試做失敗	「試做結果未符合要求，請查看不同的部分。」
+成功發布	「工作流程已儲存，以後可以直接開啟使用。」
+已有更新版本	「目前已有新的版本，可以比較後選擇是否使用。」
+外部操作受到限制	「這個步驟會影響其他地方的資料，需要先取得允許。」
+
+
+
+6. 使用上的限制
+工作台不保證只看一份成功成果，就能理解所有可能發生的情況。對不確定的內容，它會保留問題，而不是自行編造規則。
+
+操作影片也可能因為畫面不清楚、錄影不完整或部分動作沒有顯示，而無法還原所有工作步驟。
+
+系統完成試做，不代表所有業務情況都已經驗證成功。正式使用前，仍應檢查結果是否符合自己的要求。
+
+涉及刪除重要資料、對外寄送、修改其他系統內容等操作時，可能需要另外確認。
+7. 專案管理
+使用者可以：
+- 建立與重新命名專案。
+- 隨時儲存草稿。
+- 關閉後繼續上次進度。
+- 替換或移除已提供的資料。
+- 修改工作步驟並保存新版本。
+- 查看舊版本和試做結果。
+- 封存不再使用的專案。
+- 保留已正式使用版本的歷史紀錄。
+使用者不用從頭重來。 即使後續補充新的範例，也可以從現有專案繼續修改。
+
+第三部分：Codex 分階段開發計畫
+1. 開發策略
+本次拆分為 14 個 Stage（Stage 0～13）。
+
+每個 Stage 都需完成程式修改、測試、文件更新及 Git Commit，驗收成功後才能進入下一階段。
+開發階段總覽
+1. Stage 0：建立專案骨架與規範 — 建立基礎結構、開發指引、測試及持久化策略。
+2. Stage 1：建立專案管理與持久化 — 支援 CRUD、版本及續編。
+3. Stage 2：實作來源匯入與預覽 — 處理文字、Mermaid、檔案及資料夾。
+4. Stage 3：建立 Workflow IR 與合約檢查 — 定義可編譯的統一流程格式。
+5. Stage 4：建立工具能力目錄 — 找到可重用的 Handler。
+6. Stage 5：實作文字與 Mermaid 流程發現 — LLM 自動解析業務描述。
+7. Stage 6：實作成功資料夾逆向分析 — 從成果與證據推導候選流程。
+8. Stage 7：實作 Compiler 與流程包生成 — 產出符合 flow_base 的工作流。
+9. Stage 8：建立獨立驗證與自動修正 — 重播、比對、測試與有限次修復。
+10. Stage 9：支援條件分支與執行期 LLM 隔離 — 增加必要的動態能力。
+11. Stage 10：加入操作影片分析 — 擴充多模態流程證據。
+12. Stage 11：完成 Studio 工作台與人工發布治理 — 實現非技術人員操作閉環。
+13. Stage 12：補齊整合、回歸及邊界測試 — 跨平台與可靠性驗證。
+14. Stage 13：完成文件、打包與交付 — 操作說明、限制、已知問題及發布。
+
+Stage 0～8 為第一條核心開發主線；Stage 9～11 完成完整產品能力；Stage 12～13 為正式驗收及交付。
+
+下列路徑是建議新增的檔案配置，Codex 應先核對實際程式碼，若已有等價模組，應重用而非重複建立。
+2. 全階段共用 Codex 規則
+以下內容建議放入：
+
+workflow_studio/AGENTS.md
+
+# RoutineKeel Workflow Studio — Codex Working Agreements
+
+## Project goal
+Develop a Workflow Compiler and Studio that converts business-process
+evidence into tested, versioned, executable RoutineKeel workflow packages.
+
+## Scope
+- Main implementation: workflow_studio/
+- Tests: tests/studio/
+- Reuse existing flow_base public contracts and services.
+- Preserve existing CLI, MCP, workflow manifests, and releases.
+- Do not rewrite existing subtitle or copy workflows.
+
+## Exploration order
+1. Read repository README and docs/structure.md.
+2. Read flow_base/docs/architecture.md.
+3. Inspect flow_base/contracts.py and workspace.py.
+4. Inspect core/service.py and existing adapters.
+5. Read adjacent tests before implementing changes.
+
+## Engineering rules
+- Make small, reversible changes.
+- Separate workflow design from runtime execution.
+- Every new object supports create, read, update and delete/archive.
+- Projects must persist and reopen correctly.
+- Every accepted upload must have a usable preview.
+- Preserve aspect ratio during display scaling.
+- All visible LLM output must stream.
+- Treat external inputs and model outputs as untrusted.
+- Never execute arbitrary shell commands from LLM output.
+- Preserve existing public contracts unless migration is approved.
+- No automatic external side effects without authorization.
+- Do not publish workflows that fail validation.
+- Prefer existing utilities and stable interfaces.
+
+## Validation
+- Add tests for changed behavior.
+- Run focused tests after each edit.
+- Run relevant existing flow_base regression tests.
+- Report skipped tests separately from passed tests.
+- Never claim platform verification without executing it.
+
+## Stage handoff format
+1. Scope completed
+2. Files created/modified
+3. Contract or data changes
+4. Tests and exact commands
+5. Passed/failed/skipped results
+6. Remaining risks
+7. Rollback instructions
+8. Commit hash
+
+## Completion rule
+Stop when the current stage is done.
+Do not start the next stage automatically.
+
+
+
+
+Stage 0：建立專案骨架與規範
+目標
+
+建立 Workflow Studio 的獨立套件、模組邊界、開發規範、測試環境、設定樣板與資料遷移基礎。
+
+前置條件
+
+可以讀取現有 RoutineKeel 程式碼及測試。以目前 checkout 的實際版本為準。
+
+Codex Instructions
+
+直接貼給 Codex 執行 Stage 0。
+長期規範寫入 workflow_studio/AGENTS.md。
+
+任務：
+建立獨立的 Workflow Studio 專案骨架。
+不要實作 LLM 推理、流程生成或圖形介面。
+
+先檢查：
+- README.md
+- docs/structure.md
+- flow_base/docs/architecture.md
+- flow_base/src/flow_base/contracts.py
+- 現有測試與套件管理方式
+
+新增或修改：
+- workflow_studio/pyproject.toml
+- workflow_studio/AGENTS.md
+- workflow_studio/README.md
+- workflow_studio/.env.example
+- workflow_studio/src/workflow_studio/__init__.py
+- workflow_studio/src/workflow_studio/service.py
+- workflow_studio/src/workflow_studio/storage/
+- workflow_studio/src/workflow_studio/contracts/
+- workflow_studio/docs/architecture.md
+- workflow_studio/docs/migration-strategy.md
+- tests/studio/test_smoke.py
+
+步驟：
+1. 確認現有公開契約和版本基線。
+2. 建立 Studio 模組結構與可匯入套件。
+3. 建立 lint、format、pytest 設定。
+4. 建立環境變數樣板，不存真實金鑰。
+5. 建立 Storage Repository 抽象介面。
+6. 定義獨立儲存區及 migration/seed 策略。
+7. 提供一個可呼叫的 StudioService。
+8. 加入 smoke tests。
+9. 記錄可重現的測試與啟動指令。
+
+輸出格式：
+- 修改檔案清單
+- 架構摘要
+- 測試命令與結果
+- 相容性風險
+- Commit hash
+
+測試：
+- 套件匯入成功
+- StudioService 可初始化
+- Storage 介面可建立測試實例
+- 沒有修改 flow_base 公開契約
+
+DoD：
+獨立套件可安裝、匯入、測試。
+有 README、AGENTS.md、環境樣板與遷移策略。
+既有工作流不受影響。
+完成後停止，不進入 Stage 1。
+
+
+
+風險與回滾：只新增 Studio 骨架；若有問題，回退本階段 Commit 即可，不涉及使用者資料。
+
+Stage 1：建立專案管理與持久化
+目標
+
+讓 Workflow Studio 能建立、開啟、更新、封存專案，並完整保存草稿與版本。
+
+前置條件
+
+Stage 0 的套件、Storage Repository 與 migration 策略。
+
+Codex Instructions
+
+直接貼給 Codex 執行 Stage 1。
+遵守 workflow_studio/AGENTS.md。
+
+任務：
+實作 Studio 專案 CRUD、持久化、版本與續編。
+不要實作流程推理或生成器。
+
+新增或修改：
+- src/workflow_studio/project/models.py
+- src/workflow_studio/project/service.py
+- src/workflow_studio/storage/repository.py
+- src/workflow_studio/storage/migrations/
+- src/workflow_studio/service.py
+- tests/studio/test_projects.py
+- tests/studio/test_migrations.py
+
+以上 src 路徑相對 workflow_studio 專案根目錄。
+
+步驟：
+1. 定義 Project、Revision、ProjectStatus 合約。
+2. 實作 create/get/list/update/archive。
+3. 實作 Revision 新增、查詢、捨棄草稿。
+4. 已發布 Revision 必須不可變。
+5. 加入版本檢查，避免過期資料覆蓋。
+6. 使用原子寫入和一致性資料保存策略。
+7. 建立 schema migration 與可用備份。
+8. 確保刪除專案不影響 flow_base 歷史成果。
+9. 建立重新開啟專案測試。
+
+輸出格式：
+- 資料模型與 migration 清單
+- CRUD 方法與狀態轉移
+- 修改檔案
+- 測試結果
+- 回滾程序與 Commit hash
+
+測試：
+- 完整 CRUD
+- 重複建立與重複更新
+- 過期版本修改
+- 關閉後重新開啟
+- migration 重複執行
+- 模擬寫入中斷
+- 不修改正式發布版本
+
+DoD：
+所有專案狀態均可持久化。
+已提交 Revision 在重開後可還原。
+所有 CRUD 與資料遷移測試通過。
+完成後停止。
+
+
+
+風險與回滾：此階段開始產生持久化資料。回滾前備份 Studio 儲存區，必要時還原相容版本，不可直接用舊程式覆寫新版資料。
+
+Stage 2：實作來源匯入與預覽
+目標
+
+讓使用者匯入文字、Mermaid、圖片、資料夾與支援的檔案，取得安全預覽及來源資訊。
+
+前置條件
+
+Stage 1 的 Project Service 與持久化機制。
+
+Codex Instructions
+
+直接貼給 Codex 執行 Stage 2。
+本階段不呼叫 LLM。
+
+任務：
+完成來源資料的匯入、預覽、更新和移除。
+
+新增或修改：
+- src/workflow_studio/ingestion/models.py
+- src/workflow_studio/ingestion/text.py
+- src/workflow_studio/ingestion/mermaid.py
+- src/workflow_studio/ingestion/folder.py
+- src/workflow_studio/ingestion/preview.py
+- src/workflow_studio/ingestion/security.py
+- src/workflow_studio/project/service.py
+- tests/studio/test_ingestion.py
+- tests/studio/test_preview.py
+- tests/studio/test_upload_security.py
+
+步驟：
+1. 定義 Source 與 Preview 合約。
+2. 支援文字、Mermaid、支援的圖片和資料夾。
+3. 建立檔案清單、內容類型及內容指紋。
+4. 支援可讀的內容預覽和資料夾樹狀預覽。
+5. 實作來源新增、讀取、替換和移除。
+6. 拒絕無法安全預覽的格式。
+7. 阻擋路徑穿越、符號連結逃逸及壓縮炸彈。
+8. 預覽圖片時保持原始寬高比。
+9. 保存來源與專案的關聯及版本。
+
+輸出格式：
+- 支援格式矩陣
+- 來源與預覽契約
+- 修改檔案
+- 測試結果
+- 不支援格式及原因
+- Commit hash
+
+測試：
+- 空白輸入
+- 中文檔名和空格路徑
+- 重複檔案
+- 無效 Mermaid
+- 大量檔案
+- 損壞檔案
+- 惡意 ZIP
+- 預覽比例
+- 刪除後重新開啟
+
+DoD：
+所有接受的來源都能預覽。
+所有來源支援 CRUD。
+沒有越權讀取或任意解壓行為。
+完成後停止。
+
+
+
+風險與回滾：注意來源資料可能非常大。移除匯入資料時只清理 Studio 自己管理的副本，不得刪除使用者原始檔。
+
+Stage 3：建立 Workflow IR 與契約驗證
+目標
+
+建立與現有 flow_base 相互獨立的 Workflow IR v1，並能靜態驗證所有步驟與依賴。
+
+前置條件
+
+Stage 1、2 的持久化及來源資料管理。
+
+Codex Instructions
+
+直接貼給 Codex 執行 Stage 3。
+
+任務：
+定義 Workflow IR v1 和完整的驗證器。
+不要修改既有 flow_base Workflow 或 Step 定義。
+
+新增或修改：
+- src/workflow_studio/ir/models.py
+- src/workflow_studio/ir/validator.py
+- src/workflow_studio/ir/references.py
+- src/workflow_studio/ir/versioning.py
+- src/workflow_studio/contracts/workflow_ir.schema.json
+- src/workflow_studio/project/service.py
+- tests/studio/test_ir_contracts.py
+- tests/studio/test_ir_graph.py
+- tests/studio/test_ir_versions.py
+
+步驟：
+1. 定義 Workflow、Node、Port、Condition、EvidenceRef。
+2. 定義輸入、輸出、前置與完成條件。
+3. 定義副作用、Retry、Cache、Platform、LLM Policy。
+4. 檢查節點 ID 唯一、依賴存在且無循環。
+5. 檢查所有引用與輸入輸出型別。
+6. 支援不可變 Revision。
+7. 對未知欄位或版本拒絕靜默接受。
+8. 建立有效與無效 IR fixtures。
+9. 加入相容性及版本變更測試。
+
+輸出格式：
+- IR 契約文件
+- 驗證規則表
+- 修改檔案
+- 測試結果
+- 尚未支援的流程語意
+- Commit hash
+
+測試：
+- 有效線性流程
+- 有效靜態 DAG
+- 缺少輸入來源
+- 輸出型別不相容
+- 循環依賴
+- 不存在的工具
+- 非法路徑
+- 版本衝突
+
+DoD：
+所有無效 IR 都能在程式生成前被拒絕。
+合法 IR 可儲存、讀取並保持內容一致。
+既有 flow_base 契約不變。
+完成後停止。
+
+
+
+風險與回滾：IR 是後續所有模組的共同合約。應先凍結 v1 基本欄位；未來擴充使用版本升級，不得任意改寫已保存的 IR。
+
+Stage 4：建立工具能力目錄
+目標
+
+讓 Compiler 能根據節點需求查找、驗證與選擇已存在的工具，避免不必要的程式生成。
+
+前置條件
+
+Stage 3 的 IR、Port 及 Node Contract。
+
+Codex Instructions
+
+直接貼給 Codex 執行 Stage 4。
+
+任務：
+實作 Tool Registry 與 Capability Matching。
+不要建立可任意執行 Shell 的通用工具。
+
+新增或修改：
+- src/workflow_studio/registry/models.py
+- src/workflow_studio/registry/catalog.py
+- src/workflow_studio/registry/matcher.py
+- src/workflow_studio/registry/policy.py
+- src/workflow_studio/registry/builtin.py
+- src/workflow_studio/storage/repository.py
+- tests/studio/test_registry.py
+- tests/studio/test_matching.py
+- tests/studio/test_tool_policy.py
+
+步驟：
+1. 定義工具 ID、版本、輸入輸出與能力描述。
+2. 保存平台、資源、權限及副作用資訊。
+3. 註冊已驗證的內部工具。
+4. 支援新增、查詢、更新、停用及封存工具。
+5. 實作契約相容性比對。
+6. 優先選擇已驗證的低風險工具。
+7. 回報缺少的能力，不得自行授權工具。
+8. 建立工具目錄的變更與相容性測試。
+
+輸出格式：
+- Tool Registry 契約
+- 匹配規則及排序依據
+- 修改檔案
+- 測試結果
+- 安全限制
+- Commit hash
+
+測試：
+- 完全匹配
+- 輸出型別不符
+- 工具版本不符
+- 平台不支援
+- 未核准外部工具
+- 已停用工具
+- 重複註冊工具
+
+DoD：
+可查詢並選擇合法工具。
+未核准工具不得進入可執行流程。
+完成後停止。
+
+
+
+風險與回滾：預設工具白名單應非常小，先支援純檔案及資料轉換；不把通用系統指令執行器當作一般工具註冊。
+
+Stage 5：實作文字與 Mermaid 流程發現
+目標
+
+讓使用者提供業務文字或 Mermaid，LLM 自動產生候選 Workflow IR、證據與待確認問題。
+
+前置條件
+
+Stage 2 的資料來源、Stage 3 的 IR、Stage 4 的工具目錄。
+
+Codex Instructions
+
+直接貼給 Codex 執行 Stage 5。
+
+任務：
+完成文字與 Mermaid 的流程發現。
+所有可見 LLM 輸出必須 Streaming。
+
+新增或修改：
+- src/workflow_studio/llm/provider.py
+- src/workflow_studio/llm/streaming.py
+- src/workflow_studio/llm/usage.py
+- src/workflow_studio/discovery/text.py
+- src/workflow_studio/discovery/mermaid.py
+- src/workflow_studio/discovery/planner.py
+- src/workflow_studio/discovery/evidence.py
+- src/workflow_studio/service.py
+- tests/studio/test_discovery.py
+- tests/studio/test_llm_streaming.py
+
+步驟：
+1. 建立可替換的 LLM Provider 介面。
+2. 將輸入資料視為不可信內容。
+3. 解析業務目標、成功標準與步驟。
+4. 輸出具備證據引用的候選 IR。
+5. 區分已觀察、合理推論及待確認規則。
+6. 使用 Registry 為節點提出工具候選。
+7. 對每次推理提供串流事件。
+8. 完成後驗證結構化結果才保存。
+9. 保存用量、模型資訊及錯誤狀態。
+10. 斷線時保留上一個有效版本。
+
+輸出格式：
+- Discovery Result 契約
+- Streaming 事件格式
+- LLM 用量紀錄
+- 修改檔案
+- 測試結果
+- 待確認事項
+- Commit hash
+
+測試：
+- 正常文字流程
+- 正常 Mermaid
+- 無效流程描述
+- 模糊分支
+- 工具缺失
+- Prompt Injection
+- 不合法模型輸出
+- 串流中斷
+- 模型不可用
+- 預算超限
+
+DoD：
+可以從文字及 Mermaid 產生有效候選 IR。
+所有可見 LLM 生成文字均 Streaming。
+不完整推理結果不能被視為已完成。
+完成後停止。
+
+
+
+風險與回滾：模型可能推論出不存在的步驟。須保留證據來源與未確認條件，不能只輸出一份看似完整的流程圖。
+
+Stage 6：實作成功資料夾逆向分析
+目標
+
+從一次成功工作的原始檔、中間成果、最終成果與紀錄，建立候選資料流及可重播案例。
+
+前置條件
+
+Stage 2～5 的匯入、IR、工具目錄與流程發現服務。
+
+Codex Instructions
+
+直接貼給 Codex 執行 Stage 6。
+
+任務：
+從成功案例資料夾推導候選工作流。
+不得只憑時間先後宣稱已證明因果關係。
+
+新增或修改：
+- src/workflow_studio/discovery/folder.py
+- src/workflow_studio/discovery/evidence_graph.py
+- src/workflow_studio/discovery/provenance.py
+- src/workflow_studio/verifier/golden_cases.py
+- src/workflow_studio/project/service.py
+- tests/studio/test_folder_discovery.py
+- tests/studio/test_provenance.py
+- tests/studio/fixtures/golden_cases/
+
+步驟：
+1. 盤點來源檔案及完整性指紋。
+2. 區分可能的輸入、中間產物和交付物。
+3. 分析時間、格式、內容及日誌關係。
+4. 建立證據圖。
+5. 產生候選資料流與每條關係的依據。
+6. 標記缺少證據的步驟。
+7. 建立 Golden Case 的輸入與預期結果。
+8. 支援使用者確認、替換和移除候選關係。
+9. 保存後可重新開啟及繼續分析。
+
+輸出格式：
+- Evidence Graph
+- 候選 Workflow IR
+- 已確認／推論／未知規則清單
+- Golden Cases
+- 測試與檔案清單
+- Commit hash
+
+測試：
+- 完整成功資料夾
+- 只有最終成果
+- 缺少中間資料
+- 時間順序誤導
+- 同名不同內容
+- 多個候選流程
+- 隱藏敏感資訊
+- 跨平台路徑
+
+DoD：
+能重建已知範例的候選資料流。
+無法證明的關係保持待確認。
+Golden Case 可交給後續 Verifier 使用。
+完成後停止。
+
+
+
+風險與回滾：內容分析可能讀取敏感資料。來源副本、內容摘要及傳給模型的範圍必須分離管理。
+
+Stage 7：實作 Compiler 與流程包生成
+目標
+
+將通過檢查的 IR 轉換成既有 flow_base 能執行的 Workflow、Adapter、Handler 與流程包。
+
+這是整個專案最核心的階段。
+
+前置條件
+
+Stage 3 的 IR、Stage 4 的工具目錄、Stage 5～6 的候選工作流。
+
+Codex Instructions
+
+直接貼給 Codex 執行 Stage 7。
+
+任務：
+將有效 Workflow IR 編譯成 RoutineKeel 工作流包。
+此階段先支援線性與靜態 DAG。
+不得重寫 flow_base Engine。
+
+先查閱：
+- flow_base/contracts.py
+- flow_base/workspace.py
+- flow_base/core/service.py
+- 現有 Adapter 與發行工具
+
+新增或修改：
+- src/workflow_studio/compiler/lowering.py
+- src/workflow_studio/compiler/generator.py
+- src/workflow_studio/compiler/handlers.py
+- src/workflow_studio/compiler/package.py
+- src/workflow_studio/compiler/compatibility.py
+- src/workflow_studio/compiler/templates/
+- tests/studio/test_compiler.py
+- tests/studio/test_generated_packages.py
+- tests/studio/test_runtime_compatibility.py
+
+步驟：
+1. 驗證 IR 與 Registry 中的工具。
+2. 轉換為現有 Workflow/Step 語意。
+3. 產生 Adapter 與必要 Handler。
+4. 優先重用可信工具，不重複生成相同功能。
+5. 生成符合現有版本契約的 flow.json。
+6. 產生套件描述、依賴及完整性資訊。
+7. 在隔離測試工作區建置流程包。
+8. 用既有 plan/prepare/verify 測試可用性。
+9. 產生使用者 README 與契約文件。
+10. 封裝完成前不得自動安裝到正式工作區。
+
+輸出格式：
+- 生成檔案清單
+- IR 到 Runtime 的映射報告
+- Workflow Package 路徑
+- 測試結果
+- 不支援功能與原因
+- Commit hash
+
+測試：
+- 單步驟流程
+- 多步驟 DAG
+- 工具缺失
+- 參數不相容
+- 非法輸出路徑
+- 套件完整性錯誤
+- 原有檔案複製流程相容
+- 不支援 IR 正確阻擋
+
+DoD：
+至少兩個固定 Golden Cases 能生成流程包，
+並在獨立測試工作區由 flow_base 正常執行。
+既有 flow_base 公開介面不變。
+完成後停止。
+
+
+
+風險與回滾：生成程式的安全性是主要風險。必須限制安裝與執行範圍，不可用成功打包代替安全驗證。回滾只撤銷未發布候選包。
+
+Stage 8：建立獨立驗證與自動修正
+目標
+
+對生成的流程包進行獨立檢查、Golden Case 重播、故障測試及有限次自動修正。
+
+前置條件
+
+Stage 7 的 Compiler 與可執行候選包。
+
+Codex Instructions
+
+直接貼給 Codex 執行 Stage 8。
+
+任務：
+建立獨立 Workflow Verifier。
+不要讓生成器自行宣稱測試已通過。
+
+新增或修改：
+- src/workflow_studio/verifier/static.py
+- src/workflow_studio/verifier/replay.py
+- src/workflow_studio/verifier/artifacts.py
+- src/workflow_studio/verifier/security.py
+- src/workflow_studio/verifier/repair.py
+- src/workflow_studio/verifier/report.py
+- tests/studio/test_verifier.py
+- tests/studio/test_replay.py
+- tests/studio/test_repair.py
+
+步驟：
+1. 實作靜態契約驗證。
+2. 在獨立工作區執行 Golden Case。
+3. 比對正式成果的結構和內容。
+4. 對允許差異的結果使用明確驗收規則。
+5. 檢查輸出、日誌、狀態及副作用。
+6. 在測試環境注入受控故障。
+7. 產生結構化失敗報告。
+8. 提供最多兩輪的局部自動修復。
+9. 每輪修復產生新版本並完整重測。
+10. 測試不通過時保持不可發布。
+
+輸出格式：
+- Verification Report
+- Golden Case 差異
+- 安全與契約檢查
+- 修復紀錄
+- 測試結果
+- Commit hash
+
+測試：
+- 完全相符
+- 輸出缺漏
+- 資料內容錯誤
+- 中途崩潰
+- 重複提交
+- 不可安全重試的副作用
+- 修復兩次仍失敗
+- 發布版本不可變
+
+DoD：
+測試報告可重現。
+失敗版本不能發布。
+修復失敗不破壞上一個有效版本。
+完成後停止。
+
+
+
+風險與回滾：應防止自動修復為了讓測試通過而修改成功標準。Verifier 的業務驗收條件必須與生成程式分離保存。
+
+Stage 9：支援條件分支與執行期 LLM 隔離
+目標
+
+補足初版確定性分支與執行期語意處理能力，讓不需要 LLM 的流程完全不呼叫外部模型。
+
+前置條件
+
+Stage 7、8 已可生成及驗證靜態流程包。
+
+Codex Instructions
+
+直接貼給 Codex 執行 Stage 9。
+
+任務：
+支援有限確定性分支，以及受預算控制的 LLM 節點。
+所有可見 LLM 輸出必須 Streaming。
+
+新增或修改：
+- src/workflow_studio/ir/conditions.py
+- src/workflow_studio/compiler/branch_lowering.py
+- src/workflow_studio/compiler/llm_handler.py
+- src/workflow_studio/llm/streaming.py
+- src/workflow_studio/llm/usage.py
+- src/workflow_studio/verifier/branch_tests.py
+- tests/studio/test_branches.py
+- tests/studio/test_llm_runtime.py
+- tests/studio/test_llm_budget.py
+
+步驟：
+1. 定義受控條件運算子。
+2. 將簡單分支編譯為複合 Handler。
+3. 所有分支必須遵守共同輸出契約。
+4. 保存分支選擇和依據。
+5. 禁止任意程式碼條件表達式。
+6. LLM 節點與確定性節點分離。
+7. LLM 可見輸出必須使用 Streaming。
+8. 最終模型輸出必須通過結構化驗證。
+9. 加入呼叫次數、預算、逾時和錯誤處理。
+10. 沒有 LLM 節點時禁止執行期 LLM API 呼叫。
+11. 保留設計期與執行期的不同用量紀錄。
+
+輸出格式：
+- Branch Contract
+- LLM Node Contract
+- 成本與用量報告
+- 修改檔案
+- 測試結果
+- Commit hash
+
+測試：
+- 條件成立與不成立
+- 不合法條件
+- 分支輸出不同型別
+- 不支援的複雜分支
+- 模型輸出錯誤
+- 串流中斷
+- 預算不足
+- 無 LLM 流程的零 API 呼叫
+
+DoD：
+簡單分支可執行、追蹤及測試。
+LLM 節點遵守 Streaming 和預算限制。
+沒有 LLM 節點的正式流程不呼叫模型 API。
+完成後停止。
+
+
+
+風險與回滾：如果現有 Runtime 無法安全表達某類分支，禁止自行新增不相容行為；先保留 Compiler 層的明確阻擋，另行提出 Runtime 擴充規格。
+
+Stage 10：加入操作影片分析
+目標
+
+讓使用者透過操作錄影提供流程證據，系統能產生具備時間位置的候選步驟，並與既有流程分析整合。
+
+前置條件
+
+Stage 2 的來源預覽及 Stage 5～6 的流程發現。
+
+Codex Instructions
+
+直接貼給 Codex 執行 Stage 10。
+
+任務：
+增加操作影片的流程發現能力。
+此階段不實作任意桌面操作控制器。
+
+新增或修改：
+- src/workflow_studio/ingestion/video.py
+- src/workflow_studio/ingestion/video_preview.py
+- src/workflow_studio/discovery/video.py
+- src/workflow_studio/discovery/evidence_fusion.py
+- src/workflow_studio/llm/provider.py
+- tests/studio/test_video_ingestion.py
+- tests/studio/test_video_discovery.py
+- tests/studio/fixtures/video_cases/
+
+步驟：
+1. 讀取支援的影片格式和基本資訊。
+2. 產生可預覽的時間軸與代表影格。
+3. 預覽保持原始寬高比例。
+4. 從畫面推導操作候選和時間位置。
+5. 將推導結果記錄為證據。
+6. 與文字、檔案及其他來源比對。
+7. 對無法觀察的操作標記未知。
+8. 使用 LLM 時提供 Streaming 分析進度。
+9. 限制上傳大小與分析資源。
+10. 保存來源及結果以支援重新開啟。
+
+輸出格式：
+- Video Evidence Timeline
+- 候選步驟清單
+- 來源位置與可信度
+- 未知操作清單
+- 測試結果
+- Commit hash
+
+測試：
+- 正常短影片
+- 無畫面或損壞影片
+- 影片缺少操作片段
+- 同時存在多種來源
+- 來源互相衝突
+- 敏感畫面
+- 預覽比例
+- 串流中斷
+
+DoD：
+固定影片案例可產生具時間證據的候選步驟。
+不可直接將猜測標示為已驗證規則。
+不允許影片內容取得程式執行權限。
+完成後停止。
+
+
+
+風險與回滾：影片理解結果可能不完整，故此功能應能獨立停用，且停用後不影響文字、Mermaid 及資料夾來源的流程編譯。
+
+Stage 11：完成 Studio 工作台與人工發布治理
+目標
+
+讓非技術使用者從建立專案、輸入資料、查看候選流程、確認規則，到試做與發布，都能透過圖形介面完成。
+
+前置條件
+
+Stage 1～10 的服務、狀態、編譯及驗證功能。
+
+Codex Instructions
+
+直接貼給 Codex 執行 Stage 11。
+
+任務：
+建立非技術使用者可操作的 Studio UI 與發布治理。
+沿用現有可用的本機 UI 模式，不重建底座介面。
+
+新增或修改：
+- src/workflow_studio/ui/app.py
+- src/workflow_studio/ui/project_view.py
+- src/workflow_studio/ui/source_view.py
+- src/workflow_studio/ui/workflow_view.py
+- src/workflow_studio/ui/verification_view.py
+- src/workflow_studio/ui/release_view.py
+- src/workflow_studio/governance/policy.py
+- src/workflow_studio/governance/approvals.py
+- src/workflow_studio/governance/release.py
+- tests/studio/test_ui_workflow.py
+- tests/studio/test_governance.py
+
+步驟：
+1. 建立淺色模式主畫面。
+2. 支援專案建立、開啟、更新及封存。
+3. 支援來源選擇與實際內容預覽。
+4. 顯示流程圖、證據及待確認問題。
+5. 支援節點更新與刪除。
+6. 顯示 LLM Streaming 分析狀態。
+7. 提供驗證報告、錯誤原因和差異比較。
+8. 定義低、中、高風險發布政策。
+9. 需要核准的動作必須有明確決策紀錄。
+10. 核准綁定版本與內容指紋。
+11. 發布後修改必須重新驗證。
+12. 失敗時保留上一個成功發布版本。
+
+輸出格式：
+- 主要畫面與操作流程
+- UI 對應服務清單
+- 發布政策
+- 修改檔案
+- 測試結果
+- Commit hash
+
+測試：
+- 從建立到發布的完整操作
+- 關閉重開
+- 節點更新與刪除
+- 上傳預覽與等比縮放
+- LLM Streaming
+- 未通過測試拒絕發布
+- 未核准副作用拒絕發布
+- 重複點擊發布
+- 發布失敗回復
+
+DoD：
+非技術使用者可用 UI 完成低風險流程轉換。
+有明確的正式發布與回滾操作。
+不必手動修改程式或設定檔。
+完成後停止。
+
+
+
+風險與回滾：GUI 差異可能影響跨平台使用。UI 必須透過 Service 操作，不能把業務規則寫進畫面程式；這樣即使 GUI 有問題，CLI 與既有 Runtime 仍能工作。
+
+Stage 12：整合測試、回歸測試與邊界測試補齊
+目標
+
+對 Studio、Compiler、生成流程包及既有 Runtime 進行完整相容性測試。
+
+前置條件
+
+所有功能階段已完成，或明確標記為未支援。
+
+Codex Instructions
+
+直接貼給 Codex 執行 Stage 12。
+
+任務：
+完成整合、回歸、邊界、安全及跨平台測試。
+除修正測試揭露的缺陷外，不新增產品功能。
+
+新增或修改：
+- tests/studio/test_end_to_end.py
+- tests/studio/test_regression.py
+- tests/studio/test_edge_cases.py
+- tests/studio/test_security_end_to_end.py
+- tests/studio/test_platform_matrix.py
+- tests/studio/test_performance.py
+- tests/studio/fixtures/
+- workflow_studio/docs/test-report.md
+- 必要的現有 CI 設定
+
+步驟：
+1. 建立固定 Golden Case 測試集。
+2. 驗證文字及 Mermaid 轉換。
+3. 驗證成功資料夾推導。
+4. 驗證影片分析及證據融合。
+5. 驗證生成流程包在 flow_base 執行。
+6. 測試 CRUD、續編、版本與發布回滾。
+7. 測試 100 次執行的隔離性。
+8. 測試故障、中斷、重試及重複提交。
+9. 測試敏感資訊及越權工具存取。
+10. 執行既有 flow_base 全部相關測試。
+11. 在 Windows、macOS、Linux 執行平台 CI。
+12. 將真機 UI 未測項目明確列出。
+13. 逐項核對 AC-01～AC-08。
+
+輸出格式：
+- 測試環境
+- 精確命令
+- passed/failed/skipped
+- AC 驗收矩陣
+- 平台相容矩陣
+- 效能數據
+- 未解問題
+- Commit hash
+
+DoD：
+所有 P0/P1 功能通過驗收。
+既有 Runtime 回歸測試沒有新增失敗。
+所有不能通過的 P2 功能必須阻擋正式啟用。
+未經測試不得宣稱平台相容。
+完成後停止。
+
+
+
+風險與回滾：大型回歸可能揭露與新增功能無關的既有缺陷，報告必須區分基線失敗與新增失敗；不能為了讓 CI 變綠而直接刪除測試。
+
+Stage 13：完成文件化與交付
+目標
+
+完成安裝、操作、維護、升級、限制、回滾及開發文件，交付可由非技術人員使用的 Studio。
+
+前置條件
+
+Stage 12 已產生測試報告與平台驗證結果。
+
+Codex Instructions
+
+直接貼給 Codex 執行 Stage 13。
+
+任務：
+完成正式文件、打包、版本標記與交付。
+不得重新設計尚未驗收的核心功能。
+
+新增或修改：
+- workflow_studio/README.md
+- workflow_studio/docs/user-guide.md
+- workflow_studio/docs/developer-guide.md
+- workflow_studio/docs/architecture.md
+- workflow_studio/docs/workflow-ir.md
+- workflow_studio/docs/known-issues.md
+- workflow_studio/docs/test-report.md
+- workflow_studio/docs/upgrade-and-rollback.md
+- 必要的發行與打包工具
+
+步驟：
+1. 更新模組架構與資料流說明。
+2. 寫出非技術使用者完整操作指南。
+3. 說明文字、流程圖、資料夾和影片來源限制。
+4. 說明工作流測試、核准和發布。
+5. 說明 LLM 用量與資料隱私。
+6. 文件化開發者契約及擴充 Handler 方法。
+7. 文件化平台相容性與不支援項目。
+8. 提供專案備份、遷移與回滾方法。
+9. 產生正式發行包並驗證完整性。
+10. 使用乾淨工作區測試安裝與啟動。
+11. 檢查發行包不含私人資料、金鑰或測試機路徑。
+12. 保存最終版本、測試報告及 Commit hash。
+
+輸出格式：
+- 發行版本
+- 發行包及檔案清單
+- 安裝與啟動方法
+- 測試結果
+- 支援平台
+- 已知問題
+- 回滾步驟
+- Commit hash
+
+DoD：
+非技術使用者能依指南建立第一個工作流。
+開發者能依契約新增工具和節點。
+正式發行包可安裝、驗證並正常執行。
+所有限制和未驗收功能已明確文件化。
+完成後停止，不自動發布至外部平台。
+
+
+
+風險與回滾：發行前必須保留上一版安裝包和專案資料備份，防止不相容更新造成既有工作流無法使用。
+
+第四部分：整體驗收與交付判定
+1. 完成標準
+最終驗收檢查表
+
+0/10 項
+
+
+
+[ ] 原有 flow_base 可正常運作，公開契約保持相容
+[ ] Studio 可以建立、更新、刪除及續編專案
+[ ] 所有接受的來源檔案都能預覽
+[ ] Workflow IR 可以完整驗證
+[ ] 既有工具可重用，新 Handler 有測試
+[ ] 可從文字、Mermaid 與成功資料夾建立候選流程
+[ ] 可生成由 flow_base 實際執行的流程包
+[ ] 設計期與執行期 LLM 已隔離，輸出使用 Streaming
+[ ] 重播、故障、權限及回歸測試通過
+[ ] 有發布核准、版本回滾及正式操作文件
+此表為開發驗收清單，勾選不代表實際測試已通過；正式結果仍以 Stage 12 的測試證據為準。
+影片分析列為 P2；未通過獨立驗收時，可標記為實驗功能並預設停用，不阻擋已驗證的 P0/P1 核心能力交付。
+2. 建議第一個真實驗收案例
+我建議不要直接使用最複雜的字幕工作流作為第一個完整生成案例，而是利用 RoutineKeel 已有的檔案複製流程，逐步擴充成：
+
+「資料夾中的檔案 → 按規則整理 → 轉換格式 → 產生清單 → 輸出結果」
+
+這個案例足以測試輸入參數、依賴、檔案操作、錯誤處理、快取、續跑、跨平台和完整成果交付，卻不需要一開始就處理大型模型或語音辨識。
+
+等這條流程能由使用者提供描述、讓 Compiler 自動生成並通過 Golden Case 後，再以現有字幕流程作為較高複雜度的逆向工程基準。
+3. 開發完成後應產生的正式交付物
+文字Markdown
+CSVExcel
+統計圖表
+交付物	內容
+Workflow Studio 套件	獨立可安裝模組
+Workflow IR v1	可版本化、可驗證的流程中介規格
+Tool Registry	可重用工具能力描述
+Workflow Compiler	IR 到 RoutineKeel 流程包的轉換
+Workflow Verifier	自動測試、重播及故障檢查
+Studio 使用介面	非技術人員可操作的專案工作台
+Governance	核准、發布、版本與回滾
+Golden Case 測試集	可持續評估轉換品質的案例
+技術與操作文件	開發者及一般使用者指南
+Codex 階段成果	各 Stage Commit、測試報告及風險記錄
+
+
+
+4. 總結
+這份規格的核心設計可以濃縮為：
+業務流程 → 工作流工程 → 穩定執行
+使用者提供目標與證據，LLM 承擔主要工程轉換，RoutineKeel 負責正式執行與成果管理。
+Process Discovery
+
+Workflow IR
+
+Compiler & Verifier
+
+flow_base
+
+
+
+最重要的開發界線是：Workflow Compiler 不等於 flow_base。 前者負責理解、設計、產生與驗證工作流；後者繼續負責執行、紀錄、恢復和交付。這樣可以充分保留 RoutineKeel 現有的工程投資，也能逐步提升 AI 將業務流程轉成可執行工具的能力。

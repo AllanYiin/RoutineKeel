@@ -42,3 +42,10 @@ Thumbs.db
 *.pth
 *.whl
 *.zip
+# Show the shared runtime locations in the source tree without tracking user data.
+!/flow_base/share_states/
+/flow_base/share_states/*
+!/flow_base/share_states/.gitkeep
+!/flow_base/share_logs/
+/flow_base/share_logs/*
+!/flow_base/share_logs/.gitkeep

@@ -208,7 +208,7 @@ while time.time() < deadline and not marker.exists():
 time.sleep(30)
 """
     env = os.environ.copy()
-    env['PYTHONPATH'] = str(Path(__file__).resolve().parents[1] / 'routinekeel/flow_base/src')
+    env['PYTHONPATH'] = str(Path(__file__).resolve().parents[1] / 'flow_base/src')
     parent = subprocess.Popen([sys.executable, '-c', code, str(tmp_path), str(marker), str(log)],
                               env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     try:

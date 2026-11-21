@@ -99,6 +99,11 @@ if [ ! -f "$marker" ] || [ "$(cat "$marker")" != "$expected" ] || ! valid_runtim
   trap - EXIT HUP INT TERM
 fi
 if [ "${1:-}" = '--bootstrap-only' ]; then exit 0; fi
+if [ "${1:-}" = '--install-blueprint-media' ]; then
+  media_wheel="$HERE/@MEDIA_WHEEL@"
+  "$python" -I -c 'import hashlib,pathlib,sys; sys.exit(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest() != sys.argv[2])' "$media_wheel" '@MEDIA_SHA256@' || exit 2
+  exec "$UV" pip install --offline --no-config --no-deps --python "$python" "$media_wheel"
+fi
 if [ "${1:-}" = '--install-mcp' ]; then
   "$UV" pip install --no-config --python "$python" --no-build 'mcp==2.3.0'
   exit $?

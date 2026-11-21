@@ -270,9 +270,9 @@ def test_revoked_during_publish_preparation_preserves_previous_manifest(tmp_path
 
 def test_case_assets_use_immutable_image_version_without_desktop(tmp_path):
     from PIL import Image
-    from workflow_studio.ui.model import StudioUIModel
+    from workflow_studio.conversation.session import StudioSession
 
-    model = StudioUIModel(tmp_path / "studio")
+    model = StudioSession(tmp_path / "studio")
     model.create_project("圖片案例", "複製圖片", "位元組相符")
     first, second = tmp_path / "first.png", tmp_path / "second.png"
     Image.new("RGB", (120, 60), "red").save(first)

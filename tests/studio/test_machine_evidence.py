@@ -271,16 +271,16 @@ def test_model_repair_carries_only_system_downgrade_across_rounds(tmp_path):
 
 
 def test_ui_model_attaches_and_reopens_machine_proof_without_granting_approval(tmp_path):
-    from workflow_studio.ui.model import StudioUIModel
+    from workflow_studio.conversation.session import StudioSession
 
     studio, p, _, _, verifier, _, report, _ = verified_case(tmp_path)
     runtime = verifier.runtime_python
     studio.close()
-    model = StudioUIModel(tmp_path / "studio", runtime_python=runtime)
+    model = StudioSession(tmp_path / "studio", runtime_python=runtime)
     model.select_project(p.project_id)
     revision = model.attach_machine_evidence(model.project().version, report["report_id"])
     assert model.build_id is None and model.approval_id is None
-    reopened = StudioUIModel(tmp_path / "studio", runtime_python=runtime)
+    reopened = StudioSession(tmp_path / "studio", runtime_python=runtime)
     reopened.select_project(p.project_id)
     proof = reopened.machine_evidence_details(revision.ir["evidence"][-1]["verified_by"])
     assert proof["report_id"] == report["report_id"]

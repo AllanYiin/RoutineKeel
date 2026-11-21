@@ -44,8 +44,8 @@ jobs:
         shell: bash
         run: |
           export FLOW_BASE_TEST_PWSH="$(command -v pwsh)"
-          uv export --frozen --project "routinekeel/flows/課程影片產生字幕/src/ai_flow01/profiles/asr-cpu" --no-dev --no-emit-project --output-file dist/subtitle-test-requirements.txt --quiet
-          uv run --locked --project routinekeel/flow_base --extra mcp --group dev --with-requirements dist/subtitle-test-requirements.txt python -m pytest tests routinekeel/flows --ignore=tests/studio -q
+          uv export --frozen --project "workflows/FLOW_課程影片產生字幕/src/ai_flow01/profiles/asr-cpu" --no-dev --no-emit-project --output-file dist/subtitle-test-requirements.txt --quiet
+          uv run --locked --project flow_base --extra mcp --group dev --with-requirements dist/subtitle-test-requirements.txt python -m pytest tests workflows --ignore=tests/studio -q
           (cd dist/release && sha256sum -c SHA256SUMS)
       - name: Keep verified release assets
         if: github.event_name == 'workflow_dispatch'
@@ -84,8 +84,8 @@ jobs:
         run: python tools/release.py
       - name: Test packages and source with optional MCP
         run: |
-          uv export --frozen --project "routinekeel/flows/課程影片產生字幕/src/ai_flow01/profiles/asr-cpu" --no-dev --no-emit-project --output-file dist/subtitle-test-requirements.txt --quiet
-          uv run --locked --python 3.12 --project routinekeel/flow_base --extra mcp --group dev --with-requirements dist/subtitle-test-requirements.txt python -m pytest tests routinekeel/flows --ignore=tests/studio -q
+          uv export --frozen --project "workflows/FLOW_課程影片產生字幕/src/ai_flow01/profiles/asr-cpu" --no-dev --no-emit-project --output-file dist/subtitle-test-requirements.txt --quiet
+          uv run --locked --python 3.12 --project flow_base --extra mcp --group dev --with-requirements dist/subtitle-test-requirements.txt python -m pytest tests workflows --ignore=tests/studio -q
 
   publish:
     needs: [build, platform-acceptance, studio-acceptance]
