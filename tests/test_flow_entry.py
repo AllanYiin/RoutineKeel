@@ -13,7 +13,7 @@ from flow_base.runtime import atomic_json
 from flow_base.workspace import Workspace
 from test_workspace import workspace, cli, ROOT
 
-spec = importlib.util.spec_from_file_location('entry_profile', ROOT/'routinekeel/flow_base/scripts/flow_base_profile.py')
+spec = importlib.util.spec_from_file_location('entry_profile', ROOT/'flow_base/scripts/flow_base_profile.py')
 profile = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(profile)
 
@@ -89,7 +89,7 @@ def test_invalid_module_is_rejected(workspace, module):
 
 
 def run_chat(workspace, folder, text, *args):
-    env = dict(os.environ, PYTHONPATH=str(ROOT/'routinekeel/flow_base/src'), PYTHONDONTWRITEBYTECODE='1')
+    env = dict(os.environ, PYTHONPATH=str(ROOT/'flow_base/src'), PYTHONDONTWRITEBYTECODE='1')
     return subprocess.run([sys.executable, '-m', 'flow_base', '--workspace', str(workspace),
                            'launch', '--folder', str(folder), *args], input=text,
                           capture_output=True, text=True, env=env, timeout=40)

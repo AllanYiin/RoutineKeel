@@ -206,7 +206,7 @@ def test_missing_business_rule_is_preserved_as_a_question_without_retry(tmp_path
 
 
 def test_ui_model_repair_completes_without_editing_code(tmp_path):
-    from workflow_studio.ui.model import StudioUIModel
+    from workflow_studio.conversation.session import StudioSession
 
     studio, p, build, _, repair, prepared = setup(tmp_path)
     runtime_python, provider, budget = (
@@ -215,7 +215,7 @@ def test_ui_model_repair_completes_without_editing_code(tmp_path):
         repair.budget,
     )
     studio.close()
-    model = StudioUIModel(tmp_path / "studio", runtime_python=runtime_python)
+    model = StudioSession(tmp_path / "studio", runtime_python=runtime_python)
     model.select_project(p.project_id)
     model.provider, model.budget = provider, budget
     model.build_id = build["build_id"]
@@ -334,7 +334,7 @@ def test_two_model_repairs_fix_csv_algorithm_and_parameter_with_frozen_cases(tmp
     from compiler_helpers import build_ir, runtime_python
     from generated_cases import csv_parameters
     from test_generated_handlers import program_ir
-    from workflow_studio.ui.model import StudioUIModel
+    from workflow_studio.conversation.session import StudioSession
 
     parameters = csv_parameters()
     parameters["program"] = parameters["program"].replace(">=", ">")
@@ -343,7 +343,7 @@ def test_two_model_repairs_fix_csv_algorithm_and_parameter_with_frozen_cases(tmp
     payload["goal"]["description"] = "篩選未結帳且金額至少 100 的訂單"
     studio, p, revision, policy = build_ir(tmp_path, payload)
     studio.close()
-    model = StudioUIModel(tmp_path / "studio", runtime_python=runtime_python())
+    model = StudioSession(tmp_path / "studio", runtime_python=runtime_python())
     model.select_project(p.project_id)
     source, expected = tmp_path / "input.csv", tmp_path / "expected.csv"
     source.write_bytes(b"id,amount,status\nA,100,open\nB,150,closed\nC,105,open\nD,99,open\n")

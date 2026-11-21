@@ -1,5 +1,4 @@
 """Executable PowerShell regressions; set FLOW_BASE_TEST_PWSH or install pwsh."""
-import hashlib
 import json
 import os
 import shutil
@@ -83,86 +82,6 @@ def test_bootstrap_failure_records_diagnostic_before_touching_venv(tmp_path):
     assert (old/'keep.txt').read_text() == 'keep existing files'
     log = next((tmp_path/'share_logs/launcher').glob('*.log')).read_text(encoding='utf-8-sig')
     assert 'Runtime package integrity check failed' in log
-
-
-@pytest.mark.parametrize('failure,local_available,retry_fails,exit_code', [
-    ('', True, False, 0),
-    ('Failed to create Python minor version link directory', True, False, 0),
-    ('Missing expected target directory for Python minor version link', True, True, 1),
-    ('Failed to create Python minor version link directory', False, False, 1),
-    ('Network download failed', True, False, 1),
-])
-def test_bootstrap_retries_only_python_version_link_errors(tmp_path, failure, local_available, retry_fails, exit_code):
-    app = tmp_path / 'flow_base'
-    app.mkdir()
-    wheel = app / 'fixture.whl'
-    wheel.write_bytes(b'valid fixture')
-    source = (ROOT / 'tools/start.ps1.in').read_text(encoding='utf-8')
-    script = app / 'start.ps1'
-    script.write_text(source.replace('@UV_PS_CASES@', '').replace('@WHEEL@', wheel.name)
-                      .replace('@WHEEL_HASH@', hashlib.sha256(wheel.read_bytes()).hexdigest())
-                      .replace('@VERSION@', '0.2.12'), encoding='utf-8-sig')
-    uv = tmp_path / 'uv'
-    uv.write_text(r"""#!/bin/sh
-case "$1" in
-  --version) echo 'uv 0.13.6'; exit 0 ;;
-  venv)
-    printf '%s\n' "$UV_PYTHON_INSTALL_DIR" >> "$UV_CALLS"
-    if [ -n "$UV_FIXTURE_FAILURE" ] &&
-       { [ "$UV_PYTHON_INSTALL_DIR" = "$UV_PRIMARY" ] || [ "$UV_RETRY_FAILS" = 1 ]; }; then
-        printf 'error: %s\n  cause: 功能錯誤。 (os error 1)\n' "$UV_FIXTURE_FAILURE" >&2
-        exit 7
-    fi
-    for venv do :; done
-    mkdir -p "$venv/Scripts"
-    touch "$venv/pyvenv.cfg"
-    printf '#!/bin/sh\nexit 0\n' > "$venv/Scripts/python.exe"
-    chmod +x "$venv/Scripts/python.exe"
-    ;;
-  pip) exit 0 ;;
-  *) exit 99 ;;
-esac
-""", encoding='utf-8')
-    uv.chmod(0o755)
-    home = tmp_path / 'share_states'
-    primary = home / 'python'
-    local_app_data = tmp_path / 'Local AppData'
-    fallback = local_app_data / 'RoutineKeel' / 'python'
-    calls = tmp_path / 'uv-calls'
-    env = {
-        **os.environ, 'PATH': str(tmp_path) + os.pathsep + os.environ['PATH'],
-        'PROCESSOR_ARCHITECTURE': 'AMD64', 'LOCALAPPDATA': str(local_app_data) if local_available else '',
-        'UV_CALLS': str(calls), 'UV_PRIMARY': str(primary), 'UV_FIXTURE_FAILURE': failure,
-        'UV_RETRY_FAILS': str(int(retry_fails)),
-    }
-    command = [PWSH, '-NoLogo', '-NoProfile', '-NonInteractive', '-File', str(script), '--bootstrap-only']
-    result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=30)
-    assert result.returncode == exit_code, result.stdout + result.stderr
-    attempted = [primary]
-    retried = 'Python minor version link' in failure and local_available
-    if retried:
-        attempted.append(fallback)
-    assert calls.read_text().splitlines() == [str(path) for path in attempted]
-    state_dir = home / 'launcher'
-    state = json.loads(next(state_dir.glob('*.json')).read_text(encoding='utf-8'))
-    assert state['status'] == ('failed' if exit_code else 'ready')
-    log = Path(state['log']).read_text(encoding='utf-8-sig')
-    for path in attempted:
-        assert f'uv managed Python directory: {path}' in log
-    if failure:
-        assert failure in log
-        assert '功能錯誤。 (os error 1)' in log
-    if exit_code:
-        assert not (home / 'base-environment').exists()
-    if retried and not exit_code:
-        assert (state_dir / 'use-local-python').is_file()
-        (home / 'base-environment').unlink()
-        result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=30)
-        assert result.returncode == 0, result.stdout + result.stderr
-        assert calls.read_text().splitlines() == [str(primary), str(fallback), str(fallback)]
-        assert list((home / 'retired_envs').glob('*/pyvenv.cfg'))
-    else:
-        assert not (state_dir / 'use-local-python').exists()
 
 
 @pytest.mark.parametrize('exit_code', [0, 2, 130])

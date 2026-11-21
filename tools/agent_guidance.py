@@ -1,6 +1,5 @@
 """Ship host-agent instructions separately from runtime and domain implementations."""
 from pathlib import Path
-from shutil import copyfile
 
 WORKSPACE_GUIDE = '''# flow_base 工作區的 Agent 入口
 
@@ -25,20 +24,12 @@ def write_package_guide(destination, project):
     else:
         content = '''# 流程包 Agent 入口
 
-先讀 ../flow_base/AGENTS.md 的通用執行契約，以及本目錄 flow.json、README.md 與 settings.json（若存在）。用同層底座 catalog → plan → run 執行本流程，不重新發明實作。工作區為共同父目錄；流程能力、參數及驗收由本包宣告，不把規則寫入底座。
+先讀 ../../flow_base/AGENTS.md 的通用執行契約，以及本目錄 flow.json、README.md 與 settings.json（若存在）。用根層底座 catalog → plan → run 執行本流程，不重新發明實作。工作區為上兩層的 RoutineKeel 根目錄；流程能力、參數及驗收由本包宣告，不把規則寫入底座。
 '''
     if destination.parent.name == 'workflows':
-        content = content.replace('../flow_base', '../../flow_base').replace('../.venv', '../../.venv')
-        content = content.replace('../share_states', '../../flow_base/share_states').replace('../share_logs', '../../flow_base/share_logs')
+        content = content.replace('../../flow_base', '../../../flow_base').replace('../.venv', '../../.venv')
+        content = content.replace('../share_states', '../../../flow_base/share_states').replace('../share_logs', '../../../flow_base/share_logs')
         content = content.replace('共用執行工作區是父資料夾', '共用執行工作區是上兩層的 RoutineKeel 根目錄')
-        content = content.replace('工作區為共同父目錄', '工作區為上兩層的 RoutineKeel 根目錄')
+        content = content.replace('工作區為上兩層的 RoutineKeel 根目錄', '工作區為上兩層的 RoutineKeel 根目錄')
         content = content.replace('同層底座', '工作區根目錄的底座')
     (destination / 'AGENTS.md').write_text(content, encoding='utf-8')
-
-    skills = project / 'skills'
-    if skills.resolve() == project.resolve() / 'skills':
-        for bundle in sorted(skills.glob('*.skill')):
-            if bundle.is_file() and not bundle.is_symlink():
-                output = destination / 'skills' / bundle.name
-                output.parent.mkdir(exist_ok=True)
-                copyfile(bundle, output)

@@ -89,7 +89,7 @@ print('FIXTURE_RESULT='+json.dumps(answer))
         if k.upper() in {"SYSTEMROOT", "WINDIR", "PATH", "TEMP", "TMP", "USERPROFILE", "HOME"}
     }
     env.update(
-        PYTHONPATH=str(ROOT / "routinekeel/flow_base/src"),
+        PYTHONPATH=str(ROOT / "flow_base/src"),
         PYTHONIOENCODING="utf-8",
         WORKFLOW_STUDIO_SECRET_PROVIDER_KEY="fixture-key",
     )

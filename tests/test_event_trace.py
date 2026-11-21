@@ -137,7 +137,7 @@ def test_two_process_writers_share_single_lock(tmp_path):
     )
     root = Path(__file__).resolve().parents[1]
     env = os.environ.copy()
-    env['PYTHONPATH'] = str(root / 'routinekeel/flow_base/src')
+    env['PYTHONPATH'] = str(root / 'flow_base/src')
     children = [subprocess.Popen([sys.executable, '-c', code, str(runtime.home), str(tmp_path / 'logs')],
                                  env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE) for _ in range(2)]
     errors = [child.communicate(timeout=20)[1].decode('utf-8', 'replace') for child in children]
@@ -151,7 +151,7 @@ def test_workflow_records_before_after_and_delivery(tmp_path):
     source = tmp_path / 'input.txt'
     source.write_text('evidence', encoding='utf-8')
     env = os.environ.copy()
-    env['PYTHONPATH'] = str(root / 'routinekeel/flow_base/src')
+    env['PYTHONPATH'] = str(root / 'flow_base/src')
     result = subprocess.run([sys.executable, '-m', 'flow_base', '--workspace', str(tmp_path),
                              'run', '--task', 'ai_flow02', '--input', str(source),
                              '--output', str(tmp_path / 'output')],

@@ -2,57 +2,62 @@
 
 ## SNAPSHOT — 當前狀態
 
-最後更新：2026-11-21T01:59+08:00
-交接狀態：refined
+最後更新：2026-11-21T22:22+08:00
+交接狀態：verified
 
 ### 目標與授權範圍
 
-使用者要求 GitHub Release 的輸出採 RoutineKeel/.venv、flow_base/{share_logs,share_states}、workflows/FLOW_*、blueprints、workflow_studio 結構；補充主線為 Studio 產生藍圖包，底座轉換為真實 workflow，GitHub 保留2–3個案例，不持續擴充內建流程。已明確授權「commit push」。本次不合併、不發布 Release、不執行付費模型。
+統一 GitHub 原始碼、Release 與本機使用的目錄。依使用者最新決定，以 E 槽功能為主，字幕保留 GitHub 0.5.0；Workflow Studio 以宿主對話引導，排除 Tk Windows 桌面版。提交與推送交付分支，維持既有合併／發布 Gate；不執行付費生成或正式工作流。
 
 ### 目前進度
 
-實作與本機驗證完成，交付分支 codex/release-workspace-layout。來源為 GitHub main 的4c9f457，隔離工作樹 C:/Users/allan/.codex/worktrees/release-workspace-layout/RoutineKeel；E:/PycharmProjects/RoutineKeel 的既有 dirty 工作樹完整保留，沒有拷入0.2.14未提交功能。
-
-預設 tools/release.py 產生5個ZIP：底座、Studio、字幕與複製兩個既有案例、RoutineKeel-workspace完整包。分包沿用同一相對位置；流程在workflows/FLOW_*，底座狀態與紀錄在flow_base內，.venv首次啟動才建立。--project仍只建置指定套件。完整包排除環境、模型、私人設定與成果，保留空blueprints目錄。Runtime、計畫、交付引用、輸出防護、三平台入口與生成指引支援新結構；舊平面工作區仍相容。字幕review-import與recover-run使用工作區根目錄解析相對路徑，沒有修改領域算法。
-
-README與規格改為Studio→藍圖→底座的產品方向，只保留現有兩個案例。這不是把main尚未完成的藍圖轉換功能宣稱完成。Windows完整底座與流程回歸429 passed/26 skipped；最後打包與Studio安裝保護23 passed/1 skipped。五ZIP CRC/SHA256全部通過，乾淨Windows首次準備與UV_OFFLINE=1再次啟動均ready。GitHub三平台CI與遠端交付狀態以本分支實際查詢為準；不沿用本檔舊Stage13或PR3狀態推定本次發布。
+原始碼改為根層 flow_base/、workflows/FLOW_*/、blueprints/、workflow_studio/；共享狀態／日誌在 flow_base，.venv 首次啟動建立。整合底座的 ZIP 更新、藍圖首裝、宿主／真人待辦及可選媒體元件；保留 GitHub 字幕 0.5.0。版本為 flow_base 0.2.15、字幕 0.5.0、複製範例 0.2.3、Studio 0.2.0。Studio Tk 程式與專屬測試已移至 E 槽忽略的本機備份，保留無視窗控制器，CLI 預設 guide，另有 projects/status。五 ZIP 已建置；底座／流程 529 passed、28 skipped、1 deselected，Studio 515 passed，封裝／更新 90 passed。交付分支 codex/unified-source-layout，C 工作樹由 main 180a134 建立；E 原 staging 保留，D 安裝只做唯讀核對，未升級或執行。
 
 ### 下一步
 
-依使用者已授權的commit/push交付此分支並建立draft PR；若遠端分支已存在，檢查其最新CI與PR狀態。不要自動合併main或勾選publish_release。GitHub三平台及真人走查尚未在此文件中宣稱通過。
+完成最後來源同步、封裝核對與交付分支提交推送並建立 PR；後續核對 GitHub 三平台 CI。main 合併與 Release 發布仍依既有 Gate；不覆蓋舊發布、不啟動付費功能。
 
 ### DECISIONS
 
-- 主包包含Studio與底座，現有課程字幕／檔案複製僅為參考案例；不新增領域流程或擴大案例清單。
-- 從最新main另建隔離工作樹，保留其他分支、PR11與E工作樹未提交內容。本次沒有更改已安裝D:/RoutineKeel的正式套件。
-- 新結構由workflows目錄判定；舊式平面配置仍相容。根層.venv由啟動器建立，不打包可執行環境或快取。
-- 實際發行仍保留workflow_dispatch、main、publish_release及三平台成功Gate。使用者只授權commit/push，不能當作合併或發行授權。
-- 先前Stage0–13資料保留在歷史，驗收依當前程式、測試與本次CI，不把舊DEVNOTE的PR3開放狀態當最新事實。
+- 以使用者後續明確決定取代本輪先前的 main-only 提案：E 底座功能為主，字幕使用 GitHub 0.5.0，Studio 排除 Tk。
+- 目錄改名不改 flow_id/job_id/run_id 或 Python namespace。舊平面工作區仍相容；流程更新依既有識別碼保留安裝資料夾。
+- 流程 ZIP 接受新舊結構；隨包的 skills/*.skill 為不執行的資料，納入備份、更新與回退。拒絕其他任意巢狀檔案與越界路徑。
+- 保留 SQLite、FileLock、uv 與本機無常駐服務架構；未做資料庫 schema 遷移。回退前保存整組最新 DB、專案、發布快照與成果。
+- Studio 對話 guide 是引導資料；宿主使用自己的提問介面與模型並保存實際回答。未答不視為同意，沒有宣稱自動逐層訪談狀態／藍圖匯出已完成。
+- 既有核心的版本／證據／驗收／人工核准保持分離。來源與工具回傳是資料，不構成工具、外傳、付費或發布授權。
+- 私人 Reel、長文藍圖、設定、模型與成果不加入 Git／ZIP；GitHub 只保留字幕與複製兩個參考流程。
+- 保留原始 E staged .idea；本輪僅在乾淨 C 分支提交選定整合。D:/RoutineKeel 的既有資料與已安裝版本未改動。
 
 ### LANDMINES
 
-- 本地使用main既有版本底座0.2.12、字幕0.4.1、Studio0.1.0；E工作樹未提交0.2.14功能沒有混入。本次解決發行結構，未實作未完成的Studio藍圖轉換能力。
-- Windows本機測試已過；26與1項skip包含平台／既有環境限制，不代表macOS/Linux原生GUI、Finder或真人驗收。
-- 完整ZIP約3.4MB為乾淨建置候選，不含D工作區的私人Reel、長文藍圖、媒體或來源。dist與運行資料不提交。
-- 原E工作樹的dirty內容、.idea與先前其他專案進度不在本次提交範圍。
+- 三平台 GitHub CI、真人對話體驗與正式付費／生成結果尚未在本輪完成驗收。Studio 先前 Stage0–13 的 Tk 視窗 Gate 為退役版歷史，不能當作新對話功能完成證據。
+- Windows 整合測試有 ctranslate2/pkg_resources 棄用警告；測試結束另見第三方 pyreadline3 Console.__del__ 的忽略清理訊息。529 項測試無失敗，原始日誌保留。
+- D 安裝仍為 0.2.14+layout1，目錄已符合要求；新版 0.2.15 候選未安裝到 D，不宣稱正式工作流已驗收。
+- source／E／C 備份及測試產物只在 dist，不提交。E 舊字幕與 Tk 原始碼已完整備份；不要用 git reset --hard 來回復使用者的既有修改。
 
 ### 證據索引
 
-- 使用者本輪Release目錄要求、Studio/藍圖/底座與2–3案例方向、commit push授權
+- docs/layout-migration.md
+- workflow_studio/docs/host-conversation.md
 - tools/release.py
-- .github/workflows/packages.yml
+- tools/studio_release.py
+- tests/test_source_layout.py
 - tests/test_release_layout.py
-- routinekeel/flow_base/docs/test-report.md
-- D:/RoutineKeel/flow_base/share_states/verification/github-release-layout-summary.json
+- E:/PycharmProjects/RoutineKeel/dist/layout-integrated-runtime-tests.xml
+- E:/PycharmProjects/RoutineKeel/dist/layout-conversation-studio-tests.xml
+- E:/PycharmProjects/RoutineKeel/dist/layout-final-package-tests.xml
+- E:/PycharmProjects/RoutineKeel/dist/layout-source-backup/
+- E:/PycharmProjects/RoutineKeel/dist/installed-layout-verification.json
 
 ### VALIDATION
 
-- 完整底座與兩流程回歸 — PASS：pytest tests routinekeel/flows --ignore=tests/studio -q：429 passed,26 skipped；完整log在D:/RoutineKeel/flow_base/share_states/verification/github-release-layout-full-tests.log。
-- 最終打包／Studio保護 — PASS：pytest tests/test_release_layout.py tests/studio/test_distribution_package.py tests/studio/test_distribution_bootstrap.py -q：23 passed,1 skipped。
-- 乾淨發行ZIP與分包 — PASS：5 ZIP CRC、SHA256SUMS與分包／完整包逐檔相同；真實ZIP內wheel完成catalog、plan、run、cache，輸出防護正例負例通過。
-- Windows正式入口 — PASS：乾淨ZIP首次run_app.bat --prepare-only --offline成功，首次下載Python/底座依賴；隨後UV_OFFLINE=1再啟動ready。未下載模型或付費呼叫。
-- GitHub CI依賴組合 — PASS：uv run --locked --project routinekeel/flow_base --extra mcp --group dev --with-requirements dist/subtitle-test-requirements.txt 成功。
-- GitHub三平台CI／發布 — NOT_RUN：尚需以提交後GitHub的最新分支與PR查詢；未自動合併或發布Release。
+- 整合底座與流程回歸 — PASS：E:/PycharmProjects/RoutineKeel/dist/layout-integrated-runtime-tests.xml：529 passed、28 skipped、1 deselected；使用字幕 asr-cpu 鎖定測試依賴。
+- 對話版 Studio 完整回歸 — PASS：E:/PycharmProjects/RoutineKeel/dist/layout-conversation-studio-tests.xml：515 passed，無 Tk 專屬測試。
+- 發行結構／附件更新 — PASS：E:/PycharmProjects/RoutineKeel/dist/layout-final-package-tests.xml：90 passed，含新舊 ZIP、技能附件更新與回退。
+- Studio lint 與格式 — PASS：ruff check 全部通過；158 files already formatted。
+- E 原 staging 與狀態搬移 — PASS：git diff --cached --binary 與 dist/layout-source-backup/index.patch 相同；runtime-before/verification.json 核對移動前後 SQLite bytes。
+- D 實際安裝結構 — PASS：E:/PycharmProjects/RoutineKeel/dist/installed-layout-verification.json：三流程位於 workflows/FLOW_*，home/logs 在 flow_base；唯讀檢查，provider_calls=0。
+- GitHub main 合併／Release 發布／付費生成 — NOT_RUN：依既有手動 Gate；本輪先交付分支與候選，不修改已發布 Release 或啟動生成。
 
 # HISTORY
 
@@ -159,3 +164,10 @@ PR #3 第三輪 CI Ubuntu401/3skip、macOS402/2skip、Windows383/21skip 均成�
 <!-- devnote-review:7c712d47fba770a0b1975863 -->
 
 完成新式Runtime路徑與Release結構，預設5ZIP含Studio完整包、保留舊平面相容性與2個案例。修正字幕審閱與恢復的工作區相對路徑，新增真實解壓包測試。Windows底座與流程429pass/26skip，最終打包23pass/1skip，5ZIPCRC與SHA正常，乾淨首啟動及離線再啟動ready。使用者授權commit/push，使用隔離分支交付，未處理其他dirty工作或自動發布。
+
+
+## [2026-11-21T22:22+08:00] 統一來源與發行結構，採 E 底座、字幕 0.5.0 與對話 Studio
+
+<!-- devnote-review:31c008ec83cdfd64a262168a -->
+
+依使用者選擇整合 E 底座與 GitHub 字幕 0.5.0，將原始碼搬至與安裝相同的根層結構。排除 Studio Tk 並保留無視窗核心，新增 guide 入口及驗證。更新／回退支援巢狀流程與技能附件，五 ZIP 已建置；529／515／90 項測試通過。舊來源、SQLite、Tk 與 E staging 有備份與核對；D 僅唯讀檢查，未執行付費生成或發布。

@@ -4,13 +4,12 @@
 
 ```sh
 python tools/release.py
-uv export --frozen --project "routinekeel/flows/課程影片產生字幕/src/ai_flow01/profiles/asr-cpu" --no-dev --no-emit-project --output-file dist/subtitle-test-requirements.txt --quiet
-uv run --locked --project routinekeel/flow_base --extra mcp --group dev --with-requirements dist/subtitle-test-requirements.txt python -m pytest tests routinekeel/flows --ignore=tests/studio -q
+uv run --locked --project flow_base --group dev pytest tests workflows -q
 ```
 
 `dist/workspace/` 是供測試的已安裝套件布局，`dist/release/` 是待上傳的獨立 ZIP、`SHA256SUMS` 與 `versions.json`。每次建置會重新產生這些目錄。若只建底座，用 `python tools/release.py --project flow_base`；流程可用中文目錄名稱或其 Python 套件名選取。執行完整測試前請先打包所有元件。
 
-新增工作流時，在 `routinekeel/flows/` 建立使用者看得懂的子目錄，提供 `pyproject.toml`、`flow.template.json`、`README.md` 與程式碼。打包工具會發現有模板的流程，檢查套件與模板版本，並生成相應入口。可在 `[tool.routinekeel]` 的 `archive-name` 指定唯一的英數下載名稱。更改執行邏輯時，更新相應套件版本與模板、鎖定檔。
+新增工作流時，在 `workflows/` 建立使用者看得懂的子目錄，提供 `pyproject.toml`、`flow.template.json`、`README.md` 與程式碼。打包工具會發現有模板的流程，檢查套件與模板版本，並生成相應入口。可在 `[tool.routinekeel]` 的 `archive-name` 指定唯一的英數下載名稱。更改執行邏輯時，更新相應套件版本與模板、鎖定檔。
 
 ## GitHub 發行
 

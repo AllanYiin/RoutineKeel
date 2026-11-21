@@ -10,7 +10,7 @@ from flow_base.cli import main
 
 def test_runtime_version_matches_package_metadata():
     root = Path(__file__).resolve().parents[1]
-    project = tomllib.loads((root / 'routinekeel/flow_base/pyproject.toml').read_text(encoding='utf-8'))
+    project = tomllib.loads((root / 'flow_base/pyproject.toml').read_text(encoding='utf-8'))
     assert flow_base.__version__ == project['project']['version']
 
 

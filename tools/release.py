@@ -1,4 +1,4 @@
-"""Build component ZIPs and a clean RoutineKeel workspace distribution."""
+"""Build one ZIP per component in dist, with a separate test workspace."""
 from pathlib import Path
 import argparse
 import ast
@@ -16,7 +16,7 @@ from agent_guidance import write_package_guide, write_workspace_guide
 
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / 'dist'
-PRODUCT = ROOT / 'routinekeel'
+PRODUCT = ROOT
 BASE = PRODUCT / 'flow_base'
 STUDIO = PRODUCT / 'workflow_studio'
 
@@ -68,7 +68,7 @@ def project_info(path):
 
 
 def discover_projects():
-    flows = [p for p in sorted((PRODUCT / 'flows').iterdir())
+    flows = [p for p in sorted((PRODUCT / 'workflows').iterdir())
              if (p / 'flow.template.json').is_file()]
     projects = [BASE, *flows]
     names, archives = set(), set()
@@ -81,7 +81,7 @@ def discover_projects():
     return projects
 
 
-def write_bootstrap(dest, wheel, version):
+def write_bootstrap(dest, wheel, version, media_wheel=None):
     assets = json.loads((ROOT / 'tools/uv-assets.json').read_text(encoding='utf-8'))
 
     def asset(suffix):
@@ -103,6 +103,8 @@ def write_bootstrap(dest, wheel, version):
         template = (ROOT / 'tools' / f'{name}.in').read_text(encoding='utf-8')
         body = template.replace('@WHEEL@', wheel.name).replace('@WHEEL_HASH@', sha(wheel))
         body = body.replace('@VERSION@', version)
+        body = body.replace('@MEDIA_WHEEL@', media_wheel.name if media_wheel else '')
+        body = body.replace('@MEDIA_SHA256@', sha(media_wheel) if media_wheel else '')
         body = body.replace('@UV_SH_CASES@', '\n'.join(sh_cases)).replace('@UV_PS_CASES@', '\n'.join(ps_cases))
         (dest / name).write_text(body, encoding='utf-8-sig' if name.endswith('.ps1') else 'utf-8', newline='\n')
     (dest / 'start.sh').chmod(0o755)
@@ -128,7 +130,6 @@ def write_ui_launchers(dest):
 def build_project(path, staging):
     name, version, archive_name = project_info(path)
     if path == STUDIO:
-        project_info(BASE)
         from studio_release import build_studio
         return build_studio(path, staging, root=ROOT, base=BASE,
                             run=run, write_bootstrap=write_bootstrap)
@@ -144,7 +145,7 @@ def build_project(path, staging):
              '--project', str(validation), '--strict'])
     run(['uv', 'build', '--wheel', '--out-dir', str(wheels)], cwd=path)
     wheel = wheels / f'{name.replace("-", "_")}-{version}-py3-none-any.whl'
-    relative = Path('flow_base') if path == BASE else Path('workflows') / ('FLOW_' + path.name)
+    relative = path.relative_to(ROOT)
     dest = staging / 'workspace' / relative
     dest.mkdir(parents=True)
     shutil.copyfile(wheel, dest / wheel.name)
@@ -152,12 +153,23 @@ def build_project(path, staging):
     shutil.copyfile(path / 'LICENSE' if (path / 'LICENSE').is_file() else ROOT / 'LICENSE', dest / 'LICENSE')
     write_package_guide(dest, path)
     if path == BASE:
-        write_bootstrap(dest, wheel, version)
+        # Optional local media operations are a separate, offline-installable distribution.
+        media = BASE / 'components/blueprint_media'
+        run(['uv', 'build', '--wheel', '--out-dir', str(wheels)], cwd=media)
+        media_wheel = wheels / f'routinekeel_blueprint_media-{project_info(media)[1]}-py3-none-any.whl'
+        shutil.copyfile(media_wheel, dest / media_wheel.name)
+        write_bootstrap(dest, wheel, version, media_wheel)
+        (dest / 'blueprint-tools.json').write_text(json.dumps({
+            'media': {'wheel':media_wheel.name, 'sha256':sha(media_wheel),
+                     'operations':['audio.timeline','subtitle.srt','video.compose']}
+        }, indent=2), encoding='utf-8')
         run([sys.executable, str(launcher), '--root', str(dest), '--flow-base-package'])
         write_ui_launchers(dest)
         shutil.copyfile(path / 'docs/user-guide.md', dest / 'user-guide.md')
         shutil.copyfile(path / 'docs/mcp-local.md', dest / 'mcp-local.md')
-        sources = [(BASE, 'routinekeel/flow_base/'), (ROOT / 'tools', 'tools/')]
+        shutil.copyfile(path / 'docs/blueprint-install.md', dest / 'blueprint-install.md')
+        sources = [(BASE, 'flow_base/'), (ROOT / 'tools', 'tools/'),
+                   (ROOT / 'examples/blueprint-install', 'examples/blueprint-install/')]
     else:
         manifest = json.loads((path / 'flow.template.json').read_text(encoding='utf-8'))
         if manifest['version'] != version or (manifest.get('module') or manifest.get('id')) != name:
@@ -168,7 +180,9 @@ def build_project(path, staging):
         for doc in ('settings.example.json', 'WORKFLOW_AUDIT.md', 'PROVENANCE.md'):
             if (path / doc).is_file():
                 shutil.copyfile(path / doc, dest / doc)
-        sources = [(path, f'routinekeel/flows/{path.name}/')]
+        if (path / 'skills').is_dir():
+            shutil.copytree(path / 'skills', dest / 'skills')
+        sources = [(path, f'workflows/{path.name}/')]
     source_archive(dest / 'source.zip', sources)
 
     output = staging / 'release' / f'{archive_name}-{version}.zip'
@@ -208,7 +222,7 @@ def write_workspace_archive(staging, reports):
         '# RoutineKeel\n\n'
         '主要方向：workflow_studio 設計 → blueprints 藍圖包 → flow_base 轉換為可執行 workflow。\n'
         'GitHub 保留課程字幕、檔案複製兩個參考案例，不以持續增加內建流程作為產品主線。\n\n'
-        'Studio 入口：workflow_studio/open_studio.bat（Windows）或 open_studio.command／open_studio.sh。\n'
+        'Studio 入口：在宿主對話讀 workflow_studio/AGENTS.md；studio.bat／studio.sh guide 提供引導資料，不開原生視窗。\n'
         '底座入口：flow_base/run_app.bat；參考流程位於 workflows/FLOW_<名稱>/。\n'
         'Studio 的已實作能力與驗收範圍見 workflow_studio/README.md。\n'
         '首次啟動建立 .venv；共用紀錄與狀態位於 flow_base/share_logs、flow_base/share_states。\n'
@@ -245,7 +259,7 @@ def main():
     if args.project:
         selected = ('flow_base' if args.project == 'base' else
                     'workflow_studio' if args.project == 'studio' else args.project)
-        projects = [p for p in projects if selected in (p.name, project_info(p)[0])]
+        projects = [p for p in projects if selected in (p.name, p.name.removeprefix("FLOW_"), project_info(p)[0])]
         if len(projects) != 1:
             parser.error(f'Unknown or ambiguous component: {args.project}')
 

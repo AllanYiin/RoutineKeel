@@ -9,8 +9,7 @@ from workflow_studio.compiler.package import digest, write_wheel
 from workflow_studio.compiler.template_registry import verify_template
 
 
-@pytest.mark.parametrize("line_ending", [b"\n", b"\r\n"], ids=["lf", "crlf"])
-def test_pre_generation_template_remains_verifiable_and_executable(tmp_path, line_ending):
+def test_pre_generation_template_remains_verifiable_and_executable(tmp_path):
     studio, p, build, cases, verifier, policy = verification_case(tmp_path)
     package = build["path"] / "package"
     manifest = json.loads((package / "flow.json").read_text(encoding="utf-8"))
@@ -20,9 +19,8 @@ def test_pre_generation_template_remains_verifiable_and_executable(tmp_path, lin
     import workflow_studio.compiler.template_registry as registry
 
     old_code = (Path(registry.__file__).parent / "templates/v1/runtime_adapter.py.txt").read_bytes()
-    # Git may already have checked this .txt file out as CRLF on Windows.
-    old_code = old_code.replace(b"\r\n", b"\n").replace(b"\n", line_ending)
     assert verify_template("runtime_adapter.py", old_code) == "v1"
+    assert verify_template("runtime_adapter.py", old_code.replace(b"\n", b"\r\n")) == "v1"
     candidate = build["path"] / "legacy.whl"
     write_wheel(
         candidate,
