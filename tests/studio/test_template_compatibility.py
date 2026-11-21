@@ -1,3 +1,4 @@
+import ast
 import json
 import zipfile
 from pathlib import Path
@@ -69,3 +70,17 @@ def test_doubled_carriage_returns_do_not_gain_template_trust(name):
     malformed = content.replace(b"\r\n", b"\n").replace(b"\n", b"\r\r\n")
     with pytest.raises(StudioError):
         verify_template(name, malformed)
+
+
+def test_newline_normalization_cannot_change_a_trusted_string_literal(tmp_path, monkeypatch):
+    import workflow_studio.compiler.template_registry as registry
+    from workflow_studio.contracts import StudioError
+
+    trusted = b'VALUE = """left\nright"""\n'
+    changed = trusted.replace(b"\n", b"\r\r\n")
+    assert ast.parse(trusted).body[0].value.value != ast.parse(changed).body[0].value.value
+    (tmp_path / "runtime_adapter.py").write_bytes(trusted)
+    monkeypatch.setattr(registry, "ROOT", tmp_path)
+    monkeypatch.setattr(registry, "LEGACY", {})
+    with pytest.raises(StudioError):
+        registry.verify_template("runtime_adapter.py", changed)

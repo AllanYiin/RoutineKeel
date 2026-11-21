@@ -10,6 +10,8 @@ LEGACY = {"v1": ROOT / "templates/v1"}
 
 
 def canonical_code(content):
+    # Only normalize standard CRLF. Collapsing repeated CR can change the
+    # value of a multiline string while incorrectly retaining template trust.
     return content.replace(b"\r\n", b"\n")
 
 

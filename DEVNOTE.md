@@ -2,7 +2,7 @@
 
 ## SNAPSHOT — 當前狀態
 
-最後更新：2026-11-21T22:45+08:00
+最後更新：2026-11-21T22:48+08:00
 交接狀態：verified
 
 ### 目標與授權範圍
@@ -15,9 +15,11 @@
 
 已提交推送 9d07e1b 並建立 draft PR #13。首輪 CI 五個工作成功，Windows Studio 為 508 passed／6 skipped／1 failed；失敗來自 CRLF 模板再轉一次而產生 CRCRLF 的測試資料。已固定受控模板 Git checkout 為 LF，並以 LF／CRLF 兩種來源實際驗證、執行舊套件；另驗證 CRCRLF 仍被拒絕，未改動或放寬模板信任邏輯。修正專項 5 passed，lint／format 通過。
 
+推送修正前偵測到遠端 Copilot 提交 5a9febd，已 fetch 並以 merge 保留歷史。其擴張 canonical_code 的規則會將改變多行字串內容的 CRCRLF 程式視為可信，新增行為測試已在該版本實際重現失敗。維持原來只轉換標準 CRLF 的嚴格邏輯，修正測試與 checkout 根因；模板／安全專項 9 passed。
+
 ### 下一步
 
-提交並推送換行修正，核對 PR #13 新 head 的六個三平台驗證工作；未全數成功前不得宣稱三平台通過。之後重建綁定最終提交的候選，更新本機 dist。main 合併與發布仍依既有 Gate。
+完成保留雙方歷史的整合提交及推送，核對最新 head 的六個 CI 工作；未成功前不宣稱三平台通過。最後從最終提交重建、核對及同步候選 ZIP。合併 main 與發布仍須既有 Gate。
 
 ### DECISIONS
 
@@ -66,6 +68,7 @@
 - GitHub main 合併／Release 發布／付費生成 — NOT_RUN：依既有手動 Gate；本輪先交付分支與候選，不修改已發布 Release 或啟動生成。
 - 首輪 GitHub 三平台 CI — FAIL：https://github.com/AllanYiin/RoutineKeel/actions/runs/44914045009：五個成功，Windows Studio test_template_compatibility 的錯誤 CRCRLF fixture 失敗；原始 job 136875728407。
 - CRLF 修正回歸 — PASS：dist/template-newline-tests.xml：5 passed；包含 LF／CRLF 舊模板 wheel 執行及異常換行拒絕。git check-attr 確認 templates/** 為 text eol=lf；模板驗證程式未修改。
+- 並行修正整合與信任邊界 — PASS：test_newline_normalization_cannot_change_a_trusted_string_literal 在遠端 5a9febd 的廣泛規則下實際失敗，恢復原嚴格規則後與模板／安全案例共 9 passed；dist/template-newline-tests.xml。
 
 # HISTORY
 
@@ -186,3 +189,10 @@ PR #3 第三輪 CI Ubuntu401/3skip、macOS402/2skip、Windows383/21skip 均成�
 <!-- devnote-review:7de286b9c6e1e5f0c6388108 -->
 
 PR #13 首輪 CI 僅 Windows Studio 失敗：模板為 CRLF 時測試再次替換 LF，生成 CRCRLF。固定模板 checkout 為 LF，改以 LF／CRLF 兩種來源做舊套件實際執行測試，並確認異常 CRCRLF 仍拒絕。專項 5 passed、lint／format 通過；未放寬模板信任邏輯，等待新提交三平台 CI。
+
+
+## [2026-11-21T22:48+08:00] 整合遠端修正並保持模板信任邊界
+
+<!-- devnote-review:4c9eafee521c5fdafd1c116f -->
+
+遠端出現 Copilot 5a9febd，先 fetch 並 merge 保留歷史，不強推。實測其換行正規化會接受改變字串內容的模板，維持原有嚴格規則並用新增反例保護。模板與安全專項 9 passed；等待新 head 三平台 CI。
