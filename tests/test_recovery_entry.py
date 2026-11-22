@@ -5,12 +5,12 @@ import shutil
 import subprocess
 import sys
 from contextlib import closing
-from pathlib import Path
 from types import SimpleNamespace
+
 import pytest
 from flow_base.runtime import FlowError, read_json
 from flow_base.workspace import Workspace
-from test_workspace import workspace, cli, ROOT
+from test_workspace import ROOT
 
 
 def test_recovery_launch_skips_model_preparation(workspace):
@@ -19,7 +19,7 @@ def test_recovery_launch_skips_model_preparation(workspace):
         [sys.executable, '-m', 'flow_base', '--workspace', str(workspace),
          'launch', '--folder', str(workspace/'ai_flow01'), '--action', 'recover-run'],
         env={**os.environ, 'PYTHONPATH': str(ROOT/'flow_base/src')},
-        capture_output=True, text=True, timeout=40,
+        capture_output=True, text=True, timeout=40, check=False,
     )
     assert result.returncode != 0
     assert 'RECOVERY_SELECTION' in result.stdout
@@ -69,6 +69,6 @@ def test_generated_recovery_entry_delegates_without_new_installer(tmp_path):
     # Replace only the delegated entry with a harmless argument recorder.
     (tmp_path/'run_app.sh').write_text('#!/bin/sh\nprintf "%s\\n" "$@"\nexit 7\n')
     p=subprocess.run(['sh',str(tmp_path/'recover_failed_run.sh'),'--params','a b.json'],
-                     input='',capture_output=True,text=True)
+                     input='',capture_output=True,text=True, check=False)
     assert p.returncode==7
     assert p.stdout.splitlines()==['--action','restore-job','--params','a b.json']

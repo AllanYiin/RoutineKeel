@@ -54,7 +54,7 @@ def main(argv):
             worker = subprocess.Popen(command, stdin=subprocess.DEVNULL,
                                       stdout=sys.stdout.buffer, stderr=subprocess.STDOUT,
                                       start_new_session=True,
-                                      preexec_fn=before_exec if sys.platform.startswith('linux') else None)
+                                      preexec_fn=before_exec if sys.platform.startswith('linux') else None)  # noqa: PLW1509 -- isolated single-thread guardian sets the parent-death signal before exec
         except OSError as exc:
             os.write(identity_fd, f'ERR:{exc.errno or 0}'.encode('ascii'))
             return 127

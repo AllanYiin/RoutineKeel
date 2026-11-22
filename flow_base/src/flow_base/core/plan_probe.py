@@ -5,8 +5,8 @@ import argparse
 import sqlite3
 import tempfile
 import traceback
-from contextlib import closing
 from pathlib import Path
+
 from pydantic import ValidationError
 
 from ..runtime import FlowError, Runtime, atomic_json, read_json
@@ -40,7 +40,7 @@ class ReadOnlyRuntime(Runtime):
 
 
 def probe(request, temporary):
-    from ..engine import plan, _execution_identity, _execution_spec_hash
+    from ..engine import _execution_identity, _execution_spec_hash, plan
     from ..outputs import choose_output
 
     workspace = Workspace(Path(request['workspace']))
@@ -54,12 +54,18 @@ def probe(request, temporary):
     source = Path(request['source']) if request.get('source') else None
     output = Path(request['output']) if request.get('output') else None
     result = plan(workspace.runtime, task, workflow, source, output)
+    from .agent import describe
+    result["invocation"]=describe(task)
     resolved_output = choose_output(workspace.runtime, task, source, output)
     fingerprint = None
     if source is not None and source.is_file() and resolved_output is not None:
         _, input_hash, _ = _execution_identity(workspace.runtime, task, source, resolved_output)
         fingerprint = _execution_spec_hash(workspace.runtime, task, workflow, input_hash,
                                            resolved_output, bool(request.get('offline')))
+    result["next_actions"]=([] if result.get("blocked") or not fingerprint else
+        [{"tool":"submit_workflow","arguments":{"workflow_id":task.manifest.id,"source":str(source),
+          "output":str(output) if output else None,"overrides":request.get("overrides") or {},
+          "offline":bool(request.get("offline")),"execution_spec_hash":fingerprint}}])
     return {'plan': result, 'execution_spec_hash': fingerprint,
             'flow_id_status': task.flow_id_status,
             'estimates_status': 'declared' if result.get('estimates') else 'unknown'}
@@ -86,7 +92,7 @@ def main(argv=None):
                     'message': '計畫輸入、流程設定或本機環境未通過檢查。',
                     'details': {'exception_type': type(exc).__name__}}})
         return 2
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- the isolated planning process returns a structured error to its caller
         atomic_json(args.response, {'ok': False, 'error': {'code': 'PLAN_PROBE_FAILED',
                     'message': '隔離計畫程序未能完成；請查本機診斷。',
                     'details': {'exception_type': type(exc).__name__,

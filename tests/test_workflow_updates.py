@@ -8,13 +8,13 @@ import zipfile
 from pathlib import Path
 
 import pytest
-
-from flow_base import package_updates as updates
 from flow_base.core.queue import QueueStore
 from flow_base.core.service import WorkflowService
 from flow_base.core.types import StartRequest
 from flow_base.runtime import FlowError, atomic_json
-from test_workspace import cli, workspace  # noqa: F401 (pytest fixture)
+from test_workspace import cli
+
+from flow_base import package_updates as updates
 
 
 def release(path, version='1.1.0', *, workflow_id='updatable', module='updatable_flow', extra=None):
@@ -119,7 +119,7 @@ def test_reject_invalid_or_wrong_attachment_without_touching_installed_files(ins
     elif kind == 'same_version':
         release(archive, '1.0.0', extra={'README.md': b'changed under same version'})
     elif kind in {'private', 'outputs', 'nested'}:
-        release(archive, extra={dict(private='settings.json', outputs='outputs/result.txt', nested='../outside')[kind]: b'BAD'})
+        release(archive, extra={{'private': 'settings.json', 'outputs': 'outputs/result.txt', 'nested': '../outside'}[kind]: b'BAD'})
     elif kind == 'base':
         with zipfile.ZipFile(archive, 'w') as z:
             z.writestr('flow_base/start.sh', 'exit 0')
@@ -189,9 +189,8 @@ def test_active_work_and_concurrent_operations_block_update(installed, busy):
         QueueStore(runtime).submit(workflow_id=flow.manifest.id, flow_id=flow.flow_id,
             source='input', output='output', overrides={}, offline=True, spec_hash='a' * 64)
     if busy == 'lock':
-        with updates.package_lock(service.workspace):
-            with pytest.raises(FlowError) as exc:
-                service.update_workflow(archive, plan_hash=plan['plan_hash'])
+        with updates.package_lock(service.workspace), pytest.raises(FlowError) as exc:
+            service.update_workflow(archive, plan_hash=plan['plan_hash'])
     else:
         with pytest.raises(FlowError) as exc:
             service.update_workflow(archive, plan_hash=plan['plan_hash'])
@@ -246,7 +245,7 @@ WorkflowService(root).update_workflow(archive, plan_hash=plan_hash)
 '''
     env = dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parents[1] / 'flow_base/src'))
     result = subprocess.run([sys.executable, '-c', script, str(service.workspace.root), str(archive),
-                             str(task), plan['plan_hash'], crash_at], env=env, capture_output=True, timeout=20)
+                             str(task), plan['plan_hash'], crash_at], env=env, capture_output=True, timeout=20, check=False)
     assert result.returncode == 77, result.stderr
     archive.unlink()
     with pytest.raises(FlowError) as blocked:
@@ -307,7 +306,7 @@ def test_cli_attachment_preview_apply_recover_and_rollback(installed):
     assert snapshot(task) == before
 
 
-def test_real_flow_runs_before_after_update_and_after_rollback(workspace):  # noqa: F811
+def test_real_flow_runs_before_after_update_and_after_rollback(workspace):
     task = workspace / 'ai_flow02'
     old = json.loads((task / 'flow.json').read_text(encoding='utf-8'))
     parts = list(map(int, old['version'].split('.')))
@@ -353,7 +352,8 @@ def test_real_flow_runs_before_after_update_and_after_rollback(workspace):  # no
 def test_stdio_attachment_update_and_rollback(installed):
     pytest.importorskip('mcp')
     import asyncio
-    from test_mcp_stdio import client_for, call
+
+    from test_mcp_stdio import call, client_for
     service, task, archive, _ = installed
 
     async def exercise():

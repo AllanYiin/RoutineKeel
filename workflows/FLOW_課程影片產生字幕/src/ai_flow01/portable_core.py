@@ -3,8 +3,15 @@ flow_base supplies generic runtime services; this package owns ASR and review.
 See PROVENANCE.md for scope and upstream hash.
 """
 from __future__ import annotations
-import csv, hashlib, html, json, math, re, shutil, unicodedata, wave
-from datetime import datetime, timezone
+
+import csv
+import hashlib
+import json
+import math
+import re
+import unicodedata
+import wave
+from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 
@@ -511,7 +518,7 @@ def approve(out: Path, config: dict, reviewer: str, reviewed_issues: int, source
         raise ValueError("Reviewed issue count does not match QA.json")
     write_json(out / "approval.json", {
         "reviewer": reviewer.strip(), "reviewed_issues": reviewed_issues,
-        "confirmed_at_utc": datetime.now(timezone.utc).isoformat(),
+        "confirmed_at_utc": datetime.now(UTC).isoformat(),
         "srt_sha256": sha256(out / "subtitles.zh-TW.srt"),
         "review_sha256": sha256(out / "review.csv"),
     })

@@ -7,7 +7,6 @@ import tempfile
 import wave
 from pathlib import Path
 
-
 MODEL_RATE = 44_100
 ASR_RATE = 16_000
 WINDOW = 10 * MODEL_RATE
@@ -141,6 +140,7 @@ def load_separator(weights):
 
 def verify_separator(req):
     import importlib.metadata
+
     import torch
     # Check the denoiser's actual non-Torch path before any long recording runs.
     probe = torch.sin(torch.arange(MODEL_RATE).float() / 11)[None, :].repeat(2, 1) * 0.01
@@ -247,8 +247,9 @@ def normalized_wave(samples, dest, frames):
 
 
 def prepare_audio(req):
-    import av
     import json
+
+    import av
     import numpy as np
 
     dest = Path(req["output"])

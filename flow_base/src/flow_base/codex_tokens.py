@@ -6,13 +6,13 @@ another window. See README for the distinction between observed receipts and bil
 from __future__ import annotations
 
 import argparse
-from copy import deepcopy
-from datetime import datetime, timezone
 import json
 import os
-from pathlib import Path
 import re
 import sys
+from copy import deepcopy
+from datetime import UTC, datetime
+from pathlib import Path
 
 FIELDS = ('input_tokens', 'cached_input_tokens', 'cache_write_input_tokens',
           'output_tokens', 'reasoning_output_tokens', 'total_tokens')
@@ -22,7 +22,7 @@ LIMIT = 16 * 1024 * 1024  # Skip oversized non-token transcript lines without re
 
 
 def now():
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def count(value):

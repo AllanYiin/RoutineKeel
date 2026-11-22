@@ -30,7 +30,7 @@ def command(tool, args, cwd):
         cwd=cwd,
         stdin=subprocess.DEVNULL,
         capture_output=True,
-        timeout=120,
+        timeout=120, check=False,
     )
     require(proc.returncode == 0, f"{tool} 無法處理媒體 (exit {proc.returncode})")
     return proc.stdout

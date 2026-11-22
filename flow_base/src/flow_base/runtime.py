@@ -223,6 +223,8 @@ class Runtime:
                     db.execute("PRAGMA journal_mode=WAL")
             from .core.lifecycle import RunStore
             from .execution.supervisor import identity_matches
+            from .storage.delivery import recover_graph_previews
+            recover_graph_previews(self)
             store = RunStore(self)
             store.reconcile(identity_matches)
             from .storage.delivery import delivery_root, recover_transactions

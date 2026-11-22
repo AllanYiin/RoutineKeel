@@ -1,9 +1,9 @@
 """Offline diagnostic queries for the CLI and future service adapters."""
 from __future__ import annotations
 
-import os
-import json
 import errno
+import json
+import os
 import re
 import shutil
 import sqlite3

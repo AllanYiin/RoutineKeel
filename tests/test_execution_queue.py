@@ -1,14 +1,14 @@
 """Durable execution ID precedes Run ID and survives independent worker restart."""
 import subprocess
 import sys
-import pytest
+import time
 
+import pytest
 from flow_base.core.queue import QueueStore
 from flow_base.core.service import WorkflowService
 from flow_base.core.types import StartRequest, SubmitRequest
 from flow_base.execution.queue_worker import run_queue_worker
 from flow_base.runtime import FlowError
-from test_workspace import workspace
 
 
 def test_submit_idempotency_then_independent_worker_completes(workspace):
@@ -100,7 +100,21 @@ def test_two_independent_workers_never_duplicate_a_queued_run(workspace):
                'queue-worker', '--idle-timeout', '2', '--poll-interval', '0.1']
     workers = [subprocess.Popen(command, stdin=subprocess.DEVNULL,
                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) for _ in range(2)]
-    outputs = [worker.communicate(timeout=20) for worker in workers]
+    queue = QueueStore(service.workspace.runtime)
+    try:
+        # Once one worker owns the run, both workers must complete the race and exit
+        # within the original deadline. Interpreter startup precedes ownership.
+        startup_deadline = time.monotonic() + 40
+        while queue.get(execution_id)['run_id'] is None:
+            assert any(worker.poll() is None for worker in workers), 'Neither worker claimed the run'
+            assert time.monotonic() < startup_deadline, 'Worker startup did not produce a run ID'
+            time.sleep(0.1)
+        outputs = [worker.communicate(timeout=20) for worker in workers]
+    finally:
+        for worker in workers:
+            if worker.poll() is None:
+                worker.terminate()
+                worker.communicate(timeout=5)
     assert sorted(worker.returncode for worker in workers) == [0, 2], outputs
     status = service.get_workflow_status(execution_id)
     assert status['status'] == 'succeeded'

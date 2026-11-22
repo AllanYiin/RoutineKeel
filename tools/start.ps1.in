@@ -130,7 +130,7 @@ function Test-FlowRuntime {
         return ($LASTEXITCODE -eq 0)
     } catch { return $false }
 }
-$Expected = $Actual + '|' + $env:FLOW_BASE_WORKSPACE + '|Windows|' + $env:PROCESSOR_ARCHITECTURE
+$Expected = $Actual + '|@CONTRACTS_SHA256@|' + $env:FLOW_BASE_WORKSPACE + '|Windows|' + $env:PROCESSOR_ARCHITECTURE
 $Saved = if (Test-Path $Marker) { (Get-Content -Raw $Marker).Trim() } else { '' }
 if (($Saved -ne $Expected) -or (-not (Test-FlowRuntime))) {
     $Lock = Join-Path $env:FLOW_BASE_HOME 'bootstrap.lock'
@@ -156,7 +156,9 @@ if (($Saved -ne $Expected) -or (-not (Test-FlowRuntime))) {
         & $UvExe venv --no-config --no-project --python 3.12 $Venv
         if ($LASTEXITCODE -ne 0) { throw 'Virtual environment creation failed.' }
         if (-not (Test-FlowPython)) { throw 'Expected local .venv with Python 3.12; refusing to install into another interpreter.' }
-        & $UvExe pip install --no-config --python $Python --no-build $Wheel
+        $ContractsWheel = Join-Path $PSScriptRoot '@CONTRACTS_WHEEL@'
+        if ((Get-FlowSha256 $ContractsWheel) -ne '@CONTRACTS_SHA256@') { throw 'Contract package integrity check failed.' }
+        & $UvExe pip install --no-config --python $Python --no-build $Wheel $ContractsWheel
         if ($LASTEXITCODE -ne 0) { throw 'Runtime installation failed.' }
         if (-not (Test-FlowRuntime)) { throw 'Installed runtime did not pass its Python/version/import check.' }
         Set-Content -Path $Marker -Value $Expected -Encoding UTF8
@@ -190,7 +192,9 @@ if (($LauncherArgs.Count -eq 1) -and ($LauncherArgs[0] -eq '--bootstrap-only')) 
     exit 0
 }
 if ($LauncherArgs.Count -eq 0) { $LauncherArgs = @('chat') }
-$Interactive = ($LauncherArgs -contains 'chat') -or (($LauncherArgs -contains 'launch') -and
+$StudioIndex = [Array]::IndexOf($LauncherArgs, 'studio')
+$StudioConfirmation = $StudioIndex -ge 0 -and $StudioIndex + 1 -lt $LauncherArgs.Count -and $LauncherArgs[$StudioIndex + 1] -eq 'reply'
+$Interactive = $StudioConfirmation -or ($LauncherArgs -contains 'chat') -or (($LauncherArgs -contains 'launch') -and
     ($LauncherArgs -notcontains '--prepare-only') -and ($LauncherArgs -notcontains '--action'))
 $LaunchPhase = 'command'
 Set-FlowLaunchState 'running'

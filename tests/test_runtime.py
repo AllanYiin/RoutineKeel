@@ -1,9 +1,10 @@
 import sys
-from pathlib import Path
+
 import pytest
-from pydantic import ValidationError
 from flow_base.contracts import AssetFile, Resource
 from flow_base.runtime import FlowError, Runtime, run_process
+from pydantic import ValidationError
+
 
 def test_process_timeout_and_no_shell():
     assert run_process([sys.executable, "-c", "print('literal; $HOME')"]).strip() == "literal; $HOME"
@@ -15,10 +16,8 @@ def test_process_timeout_and_no_shell():
 def test_exclusive_lock(tmp_path):
     r = Runtime(tmp_path)
     r.initialize()
-    with r.lock("same"):
-        with pytest.raises(FlowError) as e:
-            with r.lock("same", timeout=0.05):
-                pass
+    with r.lock("same"), pytest.raises(FlowError) as e, r.lock("same", timeout=0.05):
+        pass
     assert e.value.code == "BUSY"
 
 

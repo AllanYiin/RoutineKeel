@@ -4,25 +4,23 @@ import os
 import shutil
 import subprocess
 import sys
-from contextlib import closing
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
+from flow_base.contracts import AssetFile, Resource
+from flow_base.core.run_context import RunContext, activate
+from flow_base.diagnostics import record_exception
+from flow_base.engine import run_demo, run_workflow
 from flow_base.observability.events import EventRecorder
 from flow_base.observability.trace import span
-from flow_base.core.run_context import RunContext, activate
-from flow_base.runtime import run_process
-from flow_base.runtime import FlowError, Runtime
-from flow_base.workspace import Workspace
-from flow_base.engine import run_demo, run_workflow
-from test_workspace import workspace
-from flow_base.contracts import AssetFile, Resource
-from flow_base.resources import ensure_resource
-from flow_base.diagnostics import record_exception
 from flow_base.presentation import Reporter, append_console
+from flow_base.resources import ensure_resource
+from flow_base.runtime import FlowError, Runtime, run_process
+from flow_base.workspace import Workspace
+from package_paths import WORKSPACE
 
 
 def test_event_schema_redaction_and_cursor(tmp_path, monkeypatch):
@@ -147,7 +145,7 @@ def test_two_process_writers_share_single_lock(tmp_path):
 
 def test_workflow_records_before_after_and_delivery(tmp_path):
     root = Path(__file__).resolve().parents[1]
-    shutil.copytree(root / 'dist/workspace/workflows/FLOW_檔案複製範例', tmp_path / 'copy_flow')
+    shutil.copytree(WORKSPACE / 'workflows/FLOW_檔案複製範例', tmp_path / 'copy_flow')
     source = tmp_path / 'input.txt'
     source.write_text('evidence', encoding='utf-8')
     env = os.environ.copy()
@@ -155,7 +153,7 @@ def test_workflow_records_before_after_and_delivery(tmp_path):
     result = subprocess.run([sys.executable, '-m', 'flow_base', '--workspace', str(tmp_path),
                              'run', '--task', 'ai_flow02', '--input', str(source),
                              '--output', str(tmp_path / 'output')],
-                            env=env, capture_output=True, text=True, timeout=20)
+                            env=env, capture_output=True, text=True, timeout=20, check=False)
     assert result.returncode == 0, result.stdout[-500:]
     report = json.loads(result.stdout)['result']
     recorder = EventRecorder(Runtime(tmp_path / 'share_states'), report['run_id'],
@@ -193,9 +191,8 @@ def test_process_timeout_has_preceding_spawn_evidence(tmp_path):
     runtime.initialize()
     recorder = EventRecorder(runtime, 'run_test', tmp_path / 'logs')
     context = RunContext(runtime, 'run_test', tmp_path / 'logs', object(), event_sink=recorder)
-    with activate(context):
-        with pytest.raises(FlowError) as error:
-            run_process([sys.executable, '-c', 'import time; time.sleep(2)'], timeout=0.1)
+    with activate(context), pytest.raises(FlowError) as error:
+        run_process([sys.executable, '-c', 'import time; time.sleep(2)'], timeout=0.1)
     assert error.value.code == 'PROCESS_TIMEOUT'
     assert [event['name'] for event in recorder.read()['events']] == [
         'process.spawn_attempt', 'process.spawned', 'process.timeout', 'process.exited']
@@ -208,9 +205,8 @@ def test_resource_check_records_invalid_before_offline_failure(tmp_path):
     resource = Resource(id='fixture', revision='1', license='test', files=[
         AssetFile(path='data.bin', url='https://example.invalid/data.bin', sha256='0'*64, size=1)])
     context = RunContext(runtime, 'run_test', tmp_path / 'logs', object(), event_sink=recorder)
-    with activate(context):
-        with pytest.raises(FlowError) as error:
-            ensure_resource(runtime, resource, offline=True)
+    with activate(context), pytest.raises(FlowError) as error:
+        ensure_resource(runtime, resource, offline=True)
     assert error.value.code == 'OFFLINE_RESOURCE_MISSING'
     assert [event['name'] for event in recorder.read()['events']] == ['resource.verify_started', 'resource.invalid']
 
@@ -233,8 +229,7 @@ def test_failed_diagnostic_write_preserves_original_error(tmp_path, monkeypatch)
 
 @pytest.mark.parametrize('failure_site', ['handler', 'publish'])
 def test_failed_step_or_delivery_has_timeline(tmp_path, monkeypatch, failure_site):
-    root = Path(__file__).resolve().parents[1]
-    shutil.copytree(root / 'dist/workspace/workflows/FLOW_檔案複製範例', tmp_path / 'copy_flow')
+    shutil.copytree(WORKSPACE / 'workflows/FLOW_檔案複製範例', tmp_path / 'copy_flow')
     previous = {name: sys.modules.pop(name) for name in list(sys.modules)
                 if name == 'ai_flow02' or name.startswith('ai_flow02.')}
     try:

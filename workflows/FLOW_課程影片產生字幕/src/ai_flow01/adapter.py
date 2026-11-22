@@ -1,14 +1,30 @@
 from __future__ import annotations
+
 import json
 from pathlib import Path
-from flow_base import __version__
-from flow_base.engine import Context, merge
-from flow_base.runtime import FlowError, atomic_json, atomic_bytes, digest, read_json, require_space, sha256, memory_info, event, run_process, inspect_environment
+
+from flow_base.engine import merge
 from flow_base.resources import check_resource, ensure_resource, resource_path
-from .contracts import Workflow, Step, subtitle_workflow
+from flow_base.runtime import (
+    FlowError,
+    atomic_bytes,
+    atomic_json,
+    event,
+    inspect_environment,
+    memory_info,
+    read_json,
+    require_space,
+    run_process,
+    sha256,
+)
+
+from flow_base import __version__
+
+from .audio_preparation import preprocessing_spec
+from .contracts import Workflow, subtitle_workflow
 from .resources import SEPARATOR, SEPARATOR_PROFILE, catalogue
 from .subtitles import HANDLERS
-from .audio_preparation import preprocessing_spec
+
 
 def resolve_environment(workflow, environment):
     """Domain policy consumes the host's snapshot; never probes hardware here."""
@@ -302,8 +318,8 @@ class Adapter(BaseAdapter):
             raise FlowError('HUMAN_REVIEW_PRESENT', '已有人工修訂或核准；請使用本流程 review-build 能力，或改用新的輸出位置。')
 
     def invoke_action(self, runtime, name, parameters):
-        from pydantic import Field
         from flow_base.contracts import Contract
+        from pydantic import Field
         class RecoveryParameters(Contract):
             output: str | None = None
             raw_asr: str | None = None
@@ -389,7 +405,11 @@ class Adapter(BaseAdapter):
         return {**export['report'], 'execution_selection': workflow.execution_selection}
 
     def review_operation(self, runtime, output, operation, **kwargs):
-        from flow_base.outputs import artifact_directory, validate_tree, write_delivery_index
+        from flow_base.outputs import (
+            artifact_directory,
+            validate_tree,
+            write_delivery_index,
+        )
         validate_tree(output)
         artifacts = artifact_directory(output)
         context = read_json(artifacts/'flow_context.json')

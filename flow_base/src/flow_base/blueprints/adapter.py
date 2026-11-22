@@ -1,13 +1,14 @@
 """Trusted adapter shared by installed blueprint wheels; wheel data is never executable source."""
 
+import shutil
+
 from ..contracts import Workflow
 from ..engine import Adapter as BaseAdapter
-from ..runtime import atomic_json, atomic_copy, digest, read_json
-from .source import require
-from .sessions import Session, Assets, refs
-from .recipe import local_operations
 from ..outputs import reject_links
-import shutil
+from ..runtime import atomic_copy, atomic_json, digest, read_json
+from .recipe import local_operations
+from .sessions import Assets, Session, refs
+from .source import require
 
 ADAPTER_SOURCE = b"""from pathlib import Path
 from flow_base.blueprints.adapter import BlueprintAdapter
@@ -48,6 +49,13 @@ class BlueprintAdapter(BaseAdapter):
         return path
 
     def verify(self, runtime, workflow):
+        if self.plan_data["format"]==2:
+            from ..graph.capabilities import resolve_graph
+            live=resolve_graph(self.plan_data["graph"],runtime.workspace_root)
+            path=self.binding_path(runtime)
+            ok=(path.is_file() and digest(read_json(path))==self.plan_data["bindings_hash"] and
+                live["status"]=="ready" and live["fingerprint"]==self.plan_data["capability_fingerprint"])
+            return {"ok":ok,"profile":"core","missing":[] if ok else ["graph_bindings"]}
         installed = local_operations()
         missing = {
             n["operation"]
@@ -81,20 +89,26 @@ class BlueprintAdapter(BaseAdapter):
         require(ctx.source.stat().st_size <= 1024**2, "工作輸入描述超過 1 MiB")
         request = read_json(ctx.source)
         plan = self.plan_data
+        session_type=Session
+        if plan["format"]==2:
+            from ..graph.session import GraphSession
+            session_type=GraphSession
         if "session_id" in request:
-            session = Session(ctx.runtime, request["session_id"])
+            session = session_type(ctx.runtime, request["session_id"])
+            require(digest(plan)==digest(read_json(session.path)["plan"]),"工作執行版本已變更")
             result = session.interact("next", {}, workflow=plan["workflow"])
         else:
             bindings_path = self.binding_path(ctx.runtime)
             require(bindings_path.is_file(), "請先在此工作區完成工具綁定與驗證")
             bindings = read_json(bindings_path)
-            result = Session.begin(
+            result = session_type.begin(
                 ctx.runtime,
                 plan,
                 request,
                 ctx.source.parent,
                 bindings,
                 key=ctx.run_id.removeprefix("run_"),
+                **({"offline":ctx.offline} if plan["format"]==2 else {}),
             )
         self.assets = Assets(ctx.runtime)
         atomic_json(target, result)
@@ -109,7 +123,12 @@ class BlueprintAdapter(BaseAdapter):
             for token in set(refs(outputs)):
                 asset = self.assets.resolve(token)
                 atomic_copy(asset, folder / asset.name)
-        return {
-            "status": "complete" if outputs is not None else "review_required",
-            "blueprint": response,
-        }
+        status = response["status"] if response["status"] in {"failed","cancelled"} else (
+            "complete" if outputs is not None else "review_required"
+        )
+        report = {"status":status,"blueprint":response}
+        if self.plan_data["format"]==2:
+            business = response.get("result_status","not_evaluated")
+            report.update(status=business if outputs is not None else status, graph_result_status=business,
+                          graph_delivery_status="eligible" if business=="accepted" else "withheld")
+        return report

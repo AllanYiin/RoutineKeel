@@ -2,20 +2,17 @@
 import json
 import subprocess
 import sys
-import time
-from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
-
-from flow_base.runtime import FlowError, atomic_json
-from flow_base.workspace import Workspace
+from flow_base.contracts import Step, Workflow
 from flow_base.core.service import WorkflowService
-from flow_base.core.types import PlanRequest, StartRequest, ServiceError
+from flow_base.core.types import PlanRequest, ServiceError, StartRequest
 from flow_base.engine import Adapter, run_workflow
-from flow_base.contracts import Workflow, Step
+from flow_base.runtime import FlowError, atomic_json
 from flow_base.storage.delivery import delivery_root
-from test_workspace import workspace, cli
+from flow_base.workspace import Workspace
+from pydantic import ValidationError
+from test_workspace import cli, completed_run
 
 
 def test_readonly_discovery_does_not_persist_missing_identity(workspace):
@@ -71,12 +68,7 @@ def test_service_start_idempotency_status_and_artifacts(workspace):
                            expected_spec_hash=planned.execution_spec_hash)
     started = service.start_workflow(request)
     assert started.run_id.startswith('run_') and started.execution_spec_hash == planned.execution_spec_hash
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        status = service.get_run_status(started.run_id)
-        if status['execution_status'] in {'succeeded', 'failed', 'interrupted'}:
-            break
-        time.sleep(0.1)
+    status = completed_run(service, started.run_id)
     assert status['execution_status'] == 'succeeded'
     assert (output / 'artifacts/result.bin').read_text(encoding='utf-8') == 'service result'
     assert service.start_workflow(request).run_id == started.run_id
@@ -180,7 +172,7 @@ print(json.dumps(result, ensure_ascii=False))
 '''
     def direct_service(action):
         completed = subprocess.run([sys.executable, '-c', script, str(workspace), action,
-                                    str(source), str(output)], capture_output=True, text=True)
+                                    str(source), str(output)], capture_output=True, text=True, check=False)
         assert completed.returncode == 0, completed.stderr
         return json.loads(completed.stdout.strip().splitlines()[-1])
     direct = direct_service('run')
@@ -258,12 +250,7 @@ def test_safe_retry_reuses_original_spec_without_reexecuting_side_effects(worksp
     failed_run = ws.runtime.history()[0]['run_id']
     service = WorkflowService(workspace)
     retried = service.retry_run(failed_run)
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        state = service.get_run_status(retried.run_id)
-        if state['execution_status'] in {'succeeded', 'failed', 'interrupted'}:
-            break
-        time.sleep(0.1)
+    state = completed_run(service, retried.run_id)
     assert state['execution_status'] == 'succeeded'
     assert (output / 'artifacts/result.bin').read_text(encoding='utf-8') == 'retry result'
     assert service.retry_run(failed_run).run_id == retried.run_id

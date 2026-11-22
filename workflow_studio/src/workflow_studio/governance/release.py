@@ -83,9 +83,8 @@ class Releases:
                 raise StudioError("PUBLISH_FAILED", "發布狀態檔不屬於此 Studio 或工作區。")
             return row
 
-        if prior_pointer:
-            if owned_state(prior_pointer)["status"] == "abandoned":
-                raise StudioError("PUBLISH_FAILED", "正式指標指向已結束的準備，請核對完整備份。")
+        if prior_pointer and owned_state(prior_pointer)["status"] == "abandoned":
+            raise StudioError("PUBLISH_FAILED", "正式指標指向已結束的準備，請核對完整備份。")
         if journal.is_file():
             pending = json.loads(journal.read_text(encoding="utf-8"))
             owned = owned_state(pending)
@@ -176,11 +175,22 @@ class Releases:
             raise StudioError("PUBLISH_FAILED", "工作流識別碼與保留目錄衝突。")
         project = self.studio.projects.get(project_id)
         revision = self.studio.projects.get_revision(project_id, build["revision_id"])
+        from ..verifier.report import Verifier, legacy_admission
+
+        report = Verifier(self.studio).get(project_id, approval["report_id"])
+        builder_receipt = legacy_admission(revision.ir, build, report)
+        if report.get("builder_receipt", builder_receipt) != builder_receipt:
+            raise StudioError("TEST_FAILED", "已驗證套件與 Builder 收據不符。")
+        if (
+            self.studio.repository.connection.execute(
+                "SELECT 1 FROM studio_interviews WHERE project_id=?", (project_id,)
+            ).fetchone()
+            and not historical
+        ):
+            raise StudioError("PUBLISH_FAILED", "對話專案須從已確認藍圖經底座試做及安裝。")
         if not historical:
             if project.status != "active":
                 raise StudioError("PROJECT_INACTIVE", "請先恢復專案後再發布新版本。")
-            from ..verifier.report import Verifier
-
             Approvals(self.studio).validate_cases(
                 project_id, Verifier(self.studio).get(project_id, approval["report_id"])
             )
@@ -271,6 +281,7 @@ class Releases:
                 "manifest_hash": digest(files["flow.json"]),
                 "package_hash": build["package_hash"],
                 "previous_release_id": expected_current,
+                "builder_receipt": builder_receipt,
                 "created_at": now(),
                 "state": "published",
             }

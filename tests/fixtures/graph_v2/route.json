@@ -1,0 +1,20 @@
+{
+  "blueprint_schema_version": 2,
+  "workflow": {"id":"routing","version":"1.0.0","revision":1,"goal":"依輸入選擇校閱方式"},
+  "quality_contract":{"required_checks":["message_present"]},
+  "provenance":{"source":"fixture"},
+  "inputs":{"needs_review":{"type":"boolean"},"message":{"type":"string"}},
+  "nodes":[
+    {"kind":"join","id":"done","policy":"selected_branch","switch":"route",
+     "branches":{"true":{"result":"artifact://manual/result"},"false":{"result":"artifact://copy/result"}},
+     "outputs":{"result":{"type":"string"}}},
+    {"kind":"human_review","id":"manual","prompt":"請校閱訊息",
+     "inputs":{"message":{"source":"input://message","port":{"type":"string"}}},"outputs":{"result":{"type":"string"}}},
+    {"kind":"task","id":"copy","capability":"text.copy","capability_version":"1",
+     "permissions":[],"side_effect":"none","inputs":{"message":{"source":"input://message","port":{"type":"string"}}},
+     "outputs":{"result":{"type":"string"}}},
+    {"kind":"switch","id":"route","condition":{"source":"input://needs_review","op":"equals","value":true},
+     "routes":{"true":["manual"],"false":["copy"]},"on_error":"review_required"}
+  ],
+  "outputs":{"result":"artifact://done/result"}
+}

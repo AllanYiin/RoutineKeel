@@ -69,6 +69,8 @@ def test_archive_inventory_excludes_even_tracked_private_state(tmp_path, monkeyp
         "assets/routinekeel-logo.png": "original logo fixture",
         "flow_base/pyproject.toml": '[project]\nversion="0.2.12"\n',
         "flow_base/src/flow_base/__init__.py": "# runtime source",
+        "flow_base/components/workflow_contracts/pyproject.toml": '[project]\nversion="1.0.0"\n',
+        "flow_base/components/workflow_contracts/src/routinekeel_contracts/__init__.py": "# shared validator",
         "workflow_studio/pyproject.toml": '[project]\nversion="0.1.0"\n',
         "workflow_studio/scripts/studio_bootstrap.py": "# trusted fixture",
         "workflow_studio/docs/example.md": (
@@ -106,12 +108,15 @@ def test_archive_inventory_excludes_even_tracked_private_state(tmp_path, monkeyp
             wheels.mkdir(exist_ok=True)
             name = "flow_base-0.2.12" if kwargs["cwd"] == base else "workflow_studio-0.1.0"
             module = "flow_base" if kwargs["cwd"] == base else "workflow_studio"
+            if kwargs["cwd"].name == "workflow_contracts":
+                module, name = "routinekeel_contracts", "routinekeel_contracts-1.0.0"
             with zipfile.ZipFile(wheels / (name + "-py3-none-any.whl"), "w") as wheel:
                 wheel.write(kwargs["cwd"] / "src" / module / "__init__.py", module + "/__init__.py")
         else:
             Path(command[-1]).write_text("fixture lock", encoding="utf-8")
 
-    def boot(destination, wheel, version):
+    def boot(destination, wheel, version, *, contracts_wheel):
+        assert (destination / contracts_wheel.name).is_file()
         (destination / "start.sh").write_text("#!/bin/sh\nexit 0\n")
         (destination / "start.ps1").write_text("exit 0\n")
 

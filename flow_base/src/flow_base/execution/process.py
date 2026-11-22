@@ -1,9 +1,9 @@
 """Subprocess environment and evidence helpers shared by Runtime's facade."""
 from __future__ import annotations
 
-import os
 import hashlib
 import json
+import os
 import platform
 import queue
 import re
@@ -14,10 +14,12 @@ import sys
 import threading
 import time
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
-from datetime import datetime, timezone
 
 from filelock import FileLock
+
+from flow_base.observability.recovery import SecondaryOperation
 
 WINDOWS_ENV = frozenset({'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'PATHEXT', 'PATH',
                          'TEMP', 'TMP', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA',
@@ -43,7 +45,7 @@ def worker_environment(source=None):
 
 
 def _utc():
-    return datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+    return datetime.now(UTC).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
 
 
 def _shape(argv):
@@ -185,9 +187,10 @@ class BoundedOutput:
             except (ValueError, UnicodeError):
                 continue
             if isinstance(data, dict) and data.get('event') == 'progress':
-                try:
+                with SecondaryOperation('progress', catch=BaseException) as progress_notification:
                     progress(data)
-                except BaseException as exc:
+                if progress_notification.error is not None:
+                    exc = progress_notification.error
                     self.progress_error = type(exc).__name__
         if len(self.pending) > 16384:
             self.pending.clear()
@@ -217,7 +220,7 @@ class WindowsJob:
         self.handle = None
         if os.name != 'nt':
             return
-        try:
+        with SecondaryOperation('open Windows job') as job_setup:
             import ctypes
             from ctypes import wintypes
             class BasicLimits(ctypes.Structure):
@@ -267,7 +270,7 @@ class WindowsJob:
                 kernel.CloseHandle(handle)
                 return
             self.handle = handle
-        except Exception:
+        if job_setup.error is not None:
             self.close()
 
     def terminate(self):
@@ -307,7 +310,7 @@ def _stop_tree(process, job, grace_seconds, worker_pid=None, worker_started_at=N
             phase = 'forced'
         if not job.terminate():
             subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
         process.wait(timeout=5)
         return phase
     if process.poll() is None:
@@ -340,8 +343,8 @@ def run_process(argv, *, timeout=60, cwd=None, env=None, log=None, progress=None
                 cancel_event=None, grace_seconds=10, max_log_bytes=4_000_000,
                 max_log_segments=4):
     """Run without a shell, drain all output, and preserve bounded process evidence."""
-    from ..runtime import FlowError, atomic_json, digest
     from ..core.run_context import current
+    from ..runtime import FlowError, atomic_json, digest
     from .supervisor import process_started_at
 
     argv = [str(item) for item in argv]
@@ -399,10 +402,8 @@ def run_process(argv, *, timeout=60, cwd=None, env=None, log=None, progress=None
             except OSError:
                 pass
         if sink:
-            try:
+            with SecondaryOperation('sink.record'):
                 sink.record('process.spawn_failed', severity='ERROR', attributes={'code': 'PROCESS_START'})
-            except Exception:
-                pass
         raise FlowError('PROCESS_START', str(exc), executable=argv[0],
                         process_evidence=str(evidence_path) if evidence_path else None,
                         evidence_persisted=evidence_persisted,
@@ -437,10 +438,8 @@ def run_process(argv, *, timeout=60, cwd=None, env=None, log=None, progress=None
                     except OSError:
                         pass
                 if sink:
-                    try:
+                    with SecondaryOperation('sink.record'):
                         sink.record('process.spawn_failed', severity='ERROR', attributes={'code': 'PROCESS_START'})
-                    except Exception:
-                        pass
                 raise FlowError('PROCESS_START', 'Worker could not be started by the POSIX guardian',
                                 executable=argv[0], process_evidence=str(evidence_path) if evidence_path else None,
                                 process_evidence_snapshot=evidence)
@@ -449,10 +448,8 @@ def run_process(argv, *, timeout=60, cwd=None, env=None, log=None, progress=None
             elif process.poll() is not None:
                 process.stdout.close()
                 if sink:
-                    try:
+                    with SecondaryOperation('sink.record'):
                         sink.record('process.spawn_failed', severity='ERROR', attributes={'code': 'PROCESS_START'})
-                    except Exception:
-                        pass
                 raise FlowError('PROCESS_START', 'POSIX guardian ended before starting the Worker',
                                 executable=argv[0], process_evidence_snapshot=evidence)
         except FlowError:
@@ -492,28 +489,33 @@ def run_process(argv, *, timeout=60, cwd=None, env=None, log=None, progress=None
                 item = progress_events.get_nowait()
             except queue.Empty:
                 break
-            try:
+            with SecondaryOperation('progress', catch=BaseException) as progress_notification:
                 progress(item)
-            except BaseException as exc:
+            if progress_notification.error is not None:
+                exc = progress_notification.error
                 capture.progress_error = type(exc).__name__
 
     def drain():
         try:
-            while True:
-                block = process.stdout.read1(65536)
-                if not block:
-                    break
-                try:
-                    capture.feed(block, progress_events.put if progress else None)
-                except BaseException as exc:
-                    capture.reader_error = type(exc).__name__
-                    capture._log_disabled = True
-        except BaseException as exc:
-            capture.reader_error = type(exc).__name__
+            with SecondaryOperation('read worker output', catch=BaseException) as output_read:
+                while True:
+                    block = process.stdout.read1(65536)
+                    if not block:
+                        break
+                    with SecondaryOperation('capture.feed', catch=BaseException) as feed_outcome:
+                        capture.feed(block, progress_events.put if progress else None)
+                    if feed_outcome.error is not None:
+                        exc = feed_outcome.error
+                        capture.reader_error = type(exc).__name__
+                        capture._log_disabled = True
+            if output_read.error is not None:
+                exc = output_read.error
+                capture.reader_error = type(exc).__name__
         finally:
-            try:
+            with SecondaryOperation('process.stdout.close', catch=BaseException) as close_outcome:
                 process.stdout.close()
-            except BaseException as exc:
+            if close_outcome.error is not None:
+                exc = close_outcome.error
                 capture.reader_error = capture.reader_error or type(exc).__name__
 
     reader = threading.Thread(target=drain, name='flow-base-process-output', daemon=True)
@@ -532,18 +534,17 @@ def run_process(argv, *, timeout=60, cwd=None, env=None, log=None, progress=None
             if time.monotonic() >= deadline:
                 reason = 'timeout'
                 if sink:
-                    try:
+                    with SecondaryOperation('sink.record'):
                         sink.record('process.timeout', severity='ERROR', attributes={'code': 'PROCESS_TIMEOUT'})
-                    except Exception:
-                        pass
                 stop_phase = _stop_tree(process, job, grace_seconds, worker_pid, evidence['worker_started_at'])
                 break
             sample = _peak_rss(worker_pid or process.pid)
             peak = max(peak or 0, sample) if sample is not None else peak
             if progress is not None:
-                try:
+                with SecondaryOperation('progress', catch=BaseException) as heartbeat_notification:
                     progress({'event': 'heartbeat'})
-                except BaseException as exc:
+                if heartbeat_notification.error is not None:
+                    exc = heartbeat_notification.error
                     capture.progress_error = type(exc).__name__
             time.sleep(min(0.1, max(0.01, deadline-time.monotonic())))
         process.wait(timeout=5)
@@ -564,9 +565,10 @@ def run_process(argv, *, timeout=60, cwd=None, env=None, log=None, progress=None
         report_pending()
         if reader.is_alive():
             capture.reader_error = capture.reader_error or 'DrainTimeout'
-        try:
+        with SecondaryOperation('capture.finish', catch=BaseException) as finish_outcome:
             capture.finish()
-        except BaseException as exc:
+        if finish_outcome.error is not None:
+            exc = finish_outcome.error
             capture.reader_error = capture.reader_error or type(exc).__name__
         evidence.update(status=reason or ('succeeded' if process.returncode == 0 else 'failed'),
                         returncode=process.returncode, ended_at_utc=_utc(),
@@ -579,20 +581,22 @@ def run_process(argv, *, timeout=60, cwd=None, env=None, log=None, progress=None
                         progress_callback_error=capture.progress_error)
         evidence_persisted = False
         if evidence_path:
-            try:
+            with SecondaryOperation('write process evidence', catch=BaseException) as evidence_write:
                 atomic_json(evidence_path, evidence)
                 evidence_persisted = True
-            except BaseException as exc:
+            if evidence_write.error is not None:
+                exc = evidence_write.error
                 evidence['evidence_write_error'] = type(exc).__name__
         if sink:
-            try:
+            with SecondaryOperation('sink.record', catch=BaseException) as record_outcome:
                 if capture.truncated:
                     sink.record('process.output_truncated', severity='WARNING', attributes={'bytes': capture.total_bytes})
                 sink.record('process.exited', attributes={'status': evidence['status'],
                                                           'exit_code': process.returncode,
                                                           'duration_ms': evidence['duration_ms'],
                                                           'merged': True, 'peak_rss_bytes': peak})
-            except BaseException as event_error:
+            if record_outcome.error is not None:
+                event_error = record_outcome.error
                 evidence['event_write_error'] = type(event_error).__name__
         details = {'exit_code': process.returncode, 'output': capture.tail_text(),
                    'log': str(log) if log is not None else None,

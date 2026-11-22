@@ -9,7 +9,11 @@ from workflow_studio.contracts import StudioError
 from workflow_studio.governance.approvals import Approvals
 from workflow_studio.governance.recovery import ReleaseRecovery
 from workflow_studio.governance.release import Releases
-from workflow_studio.storage.migrations import APPLICATION_ID, MIGRATIONS, SCHEMA_VERSION
+from workflow_studio.storage.migrations import (
+    APPLICATION_ID,
+    MIGRATIONS,
+    SCHEMA_VERSION,
+)
 from workflow_studio.storage.sqlite import SQLiteRepository
 
 
@@ -238,7 +242,7 @@ def test_incomplete_wheel_is_not_marked_published(tmp_path, monkeypatch):
 
 
 def test_foreign_project_and_copied_target_cannot_claim_journal(tmp_path, monkeypatch):
-    studio, p, _, _, _, _, _, root, pending, _ = failed_publish(tmp_path, monkeypatch)
+    studio, _p, _, _, _, _, _, root, pending, _ = failed_publish(tmp_path, monkeypatch)
     other = studio.projects.create("other")
     with pytest.raises(StudioError):
         ReleaseRecovery(studio).inspect(other.project_id, pending["release_id"])

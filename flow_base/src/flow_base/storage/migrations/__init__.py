@@ -5,12 +5,12 @@ import hashlib
 import os
 import sqlite3
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
-from . import v001, v002, v003, v004
+from . import v001, v002, v003, v004, v005
 
-MIGRATIONS = (v001, v002, v003, v004)
+MIGRATIONS = (v001, v002, v003, v004, v005)
 
 
 def _tables(db):
@@ -63,7 +63,7 @@ def migrate(db: sqlite3.Connection, path: Path, *, existed: bool):
         if version != max(records, default=0):
             raise FlowError('SCHEMA_MISMATCH', '資料庫版本標記與遷移紀錄不一致', schema_version=version)
     if version == latest:
-        missing = v001.NEW_TABLES - tables
+        missing = (v001.NEW_TABLES | (v005.TABLES if latest>=5 else set())) - tables
         if missing:
             raise FlowError('SCHEMA_MISMATCH', '已標記升級的資料庫缺少必要資料表', missing=sorted(missing))
         extra = {row[1] for row in db.execute('PRAGMA table_info(run_executions)')}
@@ -95,7 +95,7 @@ def migrate(db: sqlite3.Connection, path: Path, *, existed: bool):
             if migration.VERSION > version:
                 migration.apply(db)
                 db.execute('INSERT INTO schema_migrations(version, applied_at, checksum) VALUES(?,?,?)',
-                           (migration.VERSION, datetime.now(timezone.utc).isoformat(), migration.CHECKSUM))
+                           (migration.VERSION, datetime.now(UTC).isoformat(), migration.CHECKSUM))
                 db.execute(f'PRAGMA user_version={migration.VERSION}')
         missing = v001.NEW_TABLES - _tables(db)
         if missing:

@@ -7,8 +7,7 @@ import pytest
 
 pytest.importorskip('mcp')
 from mcp import Client, StdioServerParameters
-
-from test_workspace import workspace, cli
+from test_workspace import cli
 
 
 def test_stdio_query_matches_cli_queue_status_and_result(workspace):

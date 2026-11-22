@@ -6,7 +6,11 @@ from compiler_helpers import build_ir
 from test_verifier import verification_case
 from workflow_studio.contracts import StudioError
 from workflow_studio.governance.evidence import EvidenceRecords
-from workflow_studio.storage.migrations import APPLICATION_ID, MIGRATIONS, SCHEMA_VERSION
+from workflow_studio.storage.migrations import (
+    APPLICATION_ID,
+    MIGRATIONS,
+    SCHEMA_VERSION,
+)
 from workflow_studio.storage.sqlite import SQLiteRepository
 from workflow_studio.verifier.static import verify_static
 
@@ -47,7 +51,7 @@ def test_human_confirmation_survives_compile_replay_edit_and_reopen(tmp_path):
     "change", ["claim", "locator", "source_version", "evidence_id", "machine_verified"]
 )
 def test_confirmation_cannot_be_reused_for_changed_rule(tmp_path, change):
-    studio, p, original, policy = build_ir(tmp_path)
+    studio, p, _original, policy = build_ir(tmp_path)
     revision = confirm(studio, p, policy)
     payload = copy.deepcopy(revision.ir)
     payload["revision"] += 1
@@ -71,7 +75,7 @@ def test_confirmation_cannot_be_reused_for_changed_rule(tmp_path, change):
 
 
 def test_cross_project_forgery_and_source_instructions_cannot_confirm(tmp_path):
-    studio, p, original, policy = build_ir(tmp_path)
+    studio, p, _original, policy = build_ir(tmp_path)
     confirmed = confirm(studio, p, policy)
     other = studio.projects.create("另一專案", p.goal)
     item = confirmed.ir["evidence"][0]
@@ -137,7 +141,7 @@ def test_rule_edit_binding_and_removal_keep_history_and_atomic_failure(tmp_path)
 
 
 def test_confirmation_failure_rolls_back_decision_and_revision(tmp_path, monkeypatch):
-    studio, p, original, policy = build_ir(tmp_path)
+    studio, p, _original, policy = build_ir(tmp_path)
     before = studio.projects.get(p.project_id)
 
     def fail(*args, **kwargs):
@@ -180,7 +184,7 @@ def test_migrate_v009_and_restore_verified_backup(tmp_path):
 
 
 def test_decisions_are_immutable_and_stale_confirmation_does_not_overwrite(tmp_path):
-    studio, p, original, policy = build_ir(tmp_path)
+    studio, p, _original, policy = build_ir(tmp_path)
     confirm(studio, p, policy)
     for statement in (
         "UPDATE studio_evidence_decisions SET actor='changed'",
@@ -294,7 +298,7 @@ def test_case_assets_use_immutable_image_version_without_desktop(tmp_path):
 
 
 def test_withdrawal_invalidates_all_earlier_confirmations_for_same_content_after_vacuum(tmp_path):
-    studio, p, original, policy = build_ir(tmp_path)
+    studio, p, _original, policy = build_ir(tmp_path)
     first = confirm(studio, p, policy)
     item = copy.deepcopy(first.ir["evidence"][0])
     item.update(confidence_label="inferred", verified_by=None)

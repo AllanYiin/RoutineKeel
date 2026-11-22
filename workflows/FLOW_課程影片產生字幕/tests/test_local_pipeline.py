@@ -1,19 +1,12 @@
 import json
 import sys
 import types
-import wave
-from pathlib import Path
 
 import pytest
-
-from ai_flow01 import portable_core as core, worker
-from ai_flow01.contracts import Options, LocalReviewPolicy, subtitle_workflow
-
-
-def make_wav(path, seconds=12):
-    with wave.open(str(path), 'wb') as out:
-        out.setnchannels(1); out.setsampwidth(2); out.setframerate(16000)
-        out.writeframes(b'\0\0' * 16000 * seconds)
+from ai_flow01 import portable_core as core
+from ai_flow01 import worker
+from ai_flow01.contracts import LocalReviewPolicy, Options, subtitle_workflow
+from review_fixtures import make_wav
 
 
 def test_region_resume_preserves_offsets_and_skips_finished_regions(tmp_path, monkeypatch):
@@ -53,15 +46,6 @@ def test_region_resume_preserves_offsets_and_skips_finished_regions(tmp_path, mo
     assert all(not c['vad_filter'] and not c['condition_on_previous_text'] for c in calls)
 
 
-@pytest.fixture
-def review_fixture(tmp_path,monkeypatch):
-    monkeypatch.setattr(core,'traditional',lambda text:text)
-    config={'max_line_width':30,'max_lines':2,'max_cps':15,'min_cue_seconds':0.5,'max_cue_seconds':12,
-            'low_logprob_threshold':-0.8,'spot_check_count':10,'llm':LocalReviewPolicy().model_dump()}
-    core.write_json(tmp_path/'manifest.json',{'source':'','duration':12})
-    core.write_json(tmp_path/'transcript.json',[{'id':0,'start':1,'end':3,'text':'測試字幕內容','avg_logprob':-0.1,'words':[]}])
-    make_wav(tmp_path/'audio.wav')
-    return tmp_path,config
 
 
 def test_no_warnings_still_requires_human_review(review_fixture):

@@ -6,7 +6,7 @@ import re
 import time
 import uuid
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from ..runtime import FlowError
 
@@ -15,7 +15,7 @@ TERMINAL = frozenset({'succeeded', 'failed', 'interrupted', 'cancelled'})
 
 
 def utc_now():
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 class QueueStore:
@@ -92,40 +92,36 @@ class QueueStore:
             return dict(row)
 
     def heartbeat(self, execution_id, token):
-        with closing(self.runtime.connect()) as db:
-            with db:
-                db.execute("UPDATE execution_queue SET lease_expires_at=? WHERE execution_id=? "
-                           "AND worker_token=? AND status IN ('dispatching','running','cancel_requested')",
-                           (time.time() + 30, execution_id, token))
+        with closing(self.runtime.connect()) as db, db:
+            db.execute("UPDATE execution_queue SET lease_expires_at=? WHERE execution_id=? "
+                       "AND worker_token=? AND status IN ('dispatching','running','cancel_requested')",
+                       (time.time() + 30, execution_id, token))
 
     def mark_running(self, execution_id, token, run_id):
-        with closing(self.runtime.connect()) as db:
-            with db:
-                updated = db.execute("UPDATE execution_queue SET run_id=?,"
-                                     "status=CASE WHEN status='cancel_requested' THEN status ELSE 'running' END,"
-                                     "started_at=COALESCE(started_at,?),lease_expires_at=? "
-                                     "WHERE execution_id=? AND worker_token=? "
-                                     "AND status IN ('dispatching','cancel_requested')",
-                                     (run_id, utc_now(), time.time() + 30, execution_id, token))
-                if updated.rowcount != 1:
-                    raise FlowError('STATE_CONFLICT', '佇列工作在啟動時已變更')
+        with closing(self.runtime.connect()) as db, db:
+            updated = db.execute("UPDATE execution_queue SET run_id=?,"
+                                 "status=CASE WHEN status='cancel_requested' THEN status ELSE 'running' END,"
+                                 "started_at=COALESCE(started_at,?),lease_expires_at=? "
+                                 "WHERE execution_id=? AND worker_token=? "
+                                 "AND status IN ('dispatching','cancel_requested')",
+                                 (run_id, utc_now(), time.time() + 30, execution_id, token))
+            if updated.rowcount != 1:
+                raise FlowError('STATE_CONFLICT', '佇列工作在啟動時已變更')
 
     def mark_terminal(self, execution_id, status, *, error_code=None):
         if status not in TERMINAL:
             raise FlowError('STATE_CONFLICT', '佇列終態不合法')
-        with closing(self.runtime.connect()) as db:
-            with db:
-                db.execute("UPDATE execution_queue SET status=?,finished_at=?,lease_expires_at=NULL,"
-                           "error_code=? WHERE execution_id=? AND status NOT IN "
-                           "('succeeded','failed','interrupted','cancelled')",
-                           (status, utc_now(), error_code, execution_id))
+        with closing(self.runtime.connect()) as db, db:
+            db.execute("UPDATE execution_queue SET status=?,finished_at=?,lease_expires_at=NULL,"
+                       "error_code=? WHERE execution_id=? AND status NOT IN "
+                       "('succeeded','failed','interrupted','cancelled')",
+                       (status, utc_now(), error_code, execution_id))
 
     def requeue(self, execution_id, token):
-        with closing(self.runtime.connect()) as db:
-            with db:
-                db.execute("UPDATE execution_queue SET status='queued',worker_token=NULL,"
-                           "lease_expires_at=NULL WHERE execution_id=? AND worker_token=? "
-                           "AND status='dispatching' AND run_id IS NULL", (execution_id, token))
+        with closing(self.runtime.connect()) as db, db:
+            db.execute("UPDATE execution_queue SET status='queued',worker_token=NULL,"
+                       "lease_expires_at=NULL WHERE execution_id=? AND worker_token=? "
+                       "AND status='dispatching' AND run_id IS NULL", (execution_id, token))
 
     def cancel(self, execution_id):
         self.get(execution_id)

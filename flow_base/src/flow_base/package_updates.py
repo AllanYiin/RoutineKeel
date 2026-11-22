@@ -10,7 +10,7 @@ import sys
 import uuid
 import zipfile
 from contextlib import closing, contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import wraps
 from pathlib import Path
 
@@ -339,6 +339,11 @@ def apply_update(workspace, path, plan_hash, task_id=None):
             raise FlowError('WORKFLOW_UPDATE_CONFLICT', '附件或已安裝內容已變更；請重新預覽更新')
         if plan['status'] == 'already_current':
             return plan
+        installed_ir = safe_path(workspace,workspace.workflows_root / plan['folder'] / 'workflow.ir.json')
+        module = Manifest.model_validate_json(files['flow.json']).python_module
+        if module.startswith('rk_bp_') or 'workflow.ir.json' in files or installed_ir.is_file():
+            from .evolution import check_promotion
+            check_promotion(workspace, plan, files)
         update_id = 'update_' + uuid.uuid4().hex
         folder = safe_path(workspace, update_root(workspace) / update_id)
         target = safe_path(workspace, workspace.workflows_root / plan['folder'])
@@ -351,7 +356,7 @@ def apply_update(workspace, path, plan_hash, task_id=None):
                 _write_file(folder / 'before' / name, (target / name).read_bytes(), states[name]['mode'])
             _write_file(folder / 'after' / name, body, modes[name])
         record = {**plan, 'schema_version': 1, 'update_id': update_id, 'status': 'prepared',
-                  'created_at': datetime.now(timezone.utc).isoformat(), 'files': entries}
+                  'created_at': datetime.now(UTC).isoformat(), 'files': entries}
         atomic_json(folder / 'record.json', record)
         _receipt(workspace, update_id)
         # Detect non-cooperating local edits while backups were being written.

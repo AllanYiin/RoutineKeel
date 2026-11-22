@@ -40,7 +40,7 @@ def preview_file(path: Path | str) -> Preview:
         raise FlowError('INPUT_NOT_FOUND', '找不到輸入檔案')
     extension = target.suffix.lower()
     size = target.stat().st_size
-    fields = dict(path=str(target), name=target.name, size_bytes=size, extension=extension)
+    fields = {'path': str(target), 'name': target.name, 'size_bytes': size, 'extension': extension}
     if extension in IMAGE_EXTENSIONS:
         return Preview(**fields, kind='image')
     if extension in TEXT_EXTENSIONS:

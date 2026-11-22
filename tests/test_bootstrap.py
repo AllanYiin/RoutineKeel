@@ -4,7 +4,6 @@ import os
 import platform
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -29,7 +28,7 @@ def launch(tmp_path):
     fake.write_text('#!/bin/sh\nif [ "$1" = venv ]; then\n  for target do :; done\n  mkdir -p "$target/bin"\n  echo "version = 3.10.10" > "$target/pyvenv.cfg"\n  printf "#!/bin/sh\\nexit 1\\n" > "$target/bin/python"\n  chmod +x "$target/bin/python"\nelse\n  echo INSTALL_CALLED >> "$FLOW_BASE_HOME/unexpected-install"\nfi\n')
     fake.chmod(0o755)
     env = {**os.environ, 'PATH': str(commands) + os.pathsep + os.environ['PATH']}
-    return tmp_path, lambda: subprocess.run(['sh', str(folder/'start.sh'), 'list'], env=env, capture_output=True, text=True, timeout=20)
+    return tmp_path, lambda: subprocess.run(['sh', str(folder/'start.sh'), 'list'], env=env, capture_output=True, text=True, timeout=20, check=False)
 
 
 def test_incompatible_python_blocks_before_install(launch):
@@ -63,7 +62,7 @@ def test_matching_marker_cannot_bypass_interpreter_check(launch):
     python.chmod(0o755)
     (root/'share_states').mkdir()
     digest = hashlib.sha256((root/'flow_base/fixture.whl').read_bytes()).hexdigest()
-    marker = f'{digest}|{root}|{platform.system()}|{platform.machine()}'
+    marker = f'{digest}|@CONTRACTS_SHA256@|{root}|{platform.system()}|{platform.machine()}'
     (root/'share_states/base-environment').write_text(marker+'\n')
     result = run()
     assert result.returncode != 0 and 'Previous environment files preserved' in result.stderr

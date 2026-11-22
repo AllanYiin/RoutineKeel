@@ -1,13 +1,13 @@
 """Run-scoped state; ContextVar prevents cross-thread Runtime contamination."""
 from __future__ import annotations
 
+import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Event
 from typing import Any
-import uuid
 
 
 @dataclass

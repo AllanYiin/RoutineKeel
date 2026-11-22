@@ -3,6 +3,7 @@
 import re
 import tempfile
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 
 from ..outputs import reject_links
@@ -20,9 +21,7 @@ class Assets:
         self.root.mkdir(exist_ok=True, parents=True)
 
     def store(self, path):
-        require(
-            path.is_file() and path.stat().st_size <= 512 * 1024**2, "素材不存在或過大"
-        )
+        require(path.is_file() and path.stat().st_size <= 512 * 1024**2, "素材不存在或過大")
         token = "asset:" + sha256(path) + path.suffix.lower()
         dest = self.path(token)
         if not dest.exists():
@@ -47,9 +46,7 @@ class Assets:
             if set(data) == {"$file"}:
                 name = Path(data["$file"])
                 require(
-                    not name.is_absolute()
-                    and not name.drive
-                    and ".." not in name.parts,
+                    not name.is_absolute() and not name.drive and ".." not in name.parts,
                     "素材必須是相對路徑",
                 )
                 path = directory / name
@@ -62,10 +59,7 @@ class Assets:
                     "素材超出輸入範圍",
                 )
                 return self.store(path)
-            return {
-                k: self.ingest(v, directory, workspace, allowed)
-                for k, v in data.items()
-            }
+            return {k: self.ingest(v, directory, workspace, allowed) for k, v in data.items()}
         if isinstance(data, list):
             return [self.ingest(v, directory, workspace, allowed) for v in data]
         if isinstance(data, str) and data.startswith("asset:"):
@@ -113,8 +107,7 @@ def asset_fields(value, fields):
 class Session:
     def __init__(self, runtime, session_id):
         require(
-            isinstance(session_id, str)
-            and re.fullmatch(r"job_[a-f0-9]{32}", session_id),
+            isinstance(session_id, str) and re.fullmatch(r"job_[a-f0-9]{32}", session_id),
             "工作編號無效",
         )
         self.runtime = runtime
@@ -129,9 +122,7 @@ class Session:
         session = cls(runtime, "job_" + (key or uuid.uuid4().hex))
         with runtime.lock("blueprint:" + session.id):
             if not session.path.exists():
-                data = session.assets.ingest(
-                    request["inputs"], directory, runtime.workspace_root
-                )
+                data = session.assets.ingest(request["inputs"], directory, runtime.workspace_root)
                 config = session.assets.ingest(
                     request.get("config", {}), directory, runtime.workspace_root
                 )
@@ -149,13 +140,10 @@ class Session:
                 if profile_id is not None:
                     first = plan["steps"][0]
                     require(
-                        first["reuse_approved"]
-                        and re.fullmatch("[a-f0-9]{64}", profile_id),
+                        first["reuse_approved"] and re.fullmatch("[a-f0-9]{64}", profile_id),
                         "角色設定編號無效",
                     )
-                    profile = (
-                        runtime.home / "blueprint_profiles" / (profile_id + ".json")
-                    )
+                    profile = runtime.home / "blueprint_profiles" / (profile_id + ".json")
                     reject_links(profile)
                     require(profile.is_file(), "角色設定已撤回或不在此工作區")
                     saved = read_json(profile)
@@ -187,11 +175,7 @@ class Session:
         return digest([s["plan"], self.scope(s, node), config, s["bindings"]])
 
     def profile_path(self, s, node):
-        path = (
-            self.runtime.home
-            / "blueprint_profiles"
-            / (self.profile_key(s, node) + ".json")
-        )
+        path = self.runtime.home / "blueprint_profiles" / (self.profile_key(s, node) + ".json")
         reject_links(path)
         return path
 
@@ -206,13 +190,57 @@ class Session:
             "skills": node["skills"],
             **extra,
         }
+        self.bind_review_scope(s, node)
         atomic_json(self.path, s)
         return self.view(s)
+
+    def bind_review_scope(self, s, node):
+        from ..graph.external import scope_for
+
+        p = s["pending"]
+        target = node
+        binding = p.get("binding") or {"tool": "human_review", "version": "1"}
+        arguments = p.get("arguments", p.get("candidate", {}).get("outputs", p["inputs"]))
+        if p["kind"] == "review":
+            index = len(s["history"]) + 1
+            if index < len(s["plan"]["steps"]) and s["plan"]["steps"][index]["mode"] == "external":
+                target = s["plan"]["steps"][index]
+                binding = s["bindings"][target["capability"]]
+                values = self.scope({**s, "history": [*s["history"], p["candidate"]]}, target)
+                data = {**values, "inputs": values, "config": s["config"]}
+                arguments = {
+                    dest: select_value(data, src) for src, dest in binding["mapping"].items()
+                }
+        if binding.get("kind") == "host_probe":
+            from ..graph.capabilities import live_tool
+
+            observed = live_tool(self.runtime.workspace_root, binding["tool"], binding["version"])
+            binding = {
+                **binding,
+                "permissions": observed.get("permissions", []),
+                "resources": observed.get("resources"),
+                "authority_hash":digest(observed),
+                "destination":observed.get("destination",binding["tool"]),
+            }
+        scope, stamp = scope_for(self.id, target["id"], 1, binding, arguments, s["config"])
+        p.update(scope=scope, scope_hash=stamp, payload_hash=digest(arguments))
+        if p["kind"] == "external":
+            p["idempotency_key"] = digest([self.id, node["id"], stamp, p["id"]])
+            p["authorization_required"] = not any(
+                r.get("approval", {}).get("scope_hash") == stamp
+                and r["approval"].get("session_id") == self.id
+                for r in s["history"]
+            )
 
     def approval(self, s, evidence, inputs, outputs):
         return {
             **evidence,
             "config_hash": digest(s["config"]),
+            "session_id": self.id,
+            "task_id": s["pending"]["id"],
+            "scope_hash": s["pending"]["scope_hash"],
+            "payload_hash": s["pending"]["payload_hash"],
+            "timestamp_utc": datetime.now(UTC).isoformat(),
             "covered": {k: digest(v) for k, v in {**inputs, **outputs}.items()},
         }
 
@@ -232,29 +260,25 @@ class Session:
                     continue
             if node["mode"] in {"host", "external", "human"}:
                 binding = s["bindings"].get(node["capability"])
+                if binding and binding.get("kind") == "host_probe":
+                    from ..graph.capabilities import validate_bindings
+
+                    validate_bindings(self.runtime.workspace_root, {node["capability"]: binding})
                 arguments = {}
                 if binding:
                     scope = {**values, "inputs": values, "config": s["config"]}
                     arguments = {
-                        dest: select_value(scope, src)
-                        for src, dest in binding["mapping"].items()
+                        dest: select_value(scope, src) for src, dest in binding["mapping"].items()
                     }
                     check_boundary(binding, "input", arguments)
                 if node["mode"] == "external":
                     approved = next(
-                        (
-                            r["approval"]
-                            for r in reversed(s["history"])
-                            if r.get("approval")
-                        ),
+                        (r["approval"] for r in reversed(s["history"]) if r.get("approval")),
                         {},
                     )
                     require(
                         approved.get("config_hash") == digest(s["config"])
-                        and all(
-                            approved["covered"].get(k) == digest(v)
-                            for k, v in values.items()
-                        ),
+                        and all(approved["covered"].get(k) == digest(v) for k, v in values.items()),
                         "對外操作的所有輸入與設定均須經最近一次人審確認",
                     )
                 return self.wait(
@@ -302,13 +326,9 @@ class Session:
                 require(token in allowed, "元件不可讀取未宣告素材")
                 return self.assets.resolve(token)
 
-            param = (
-                transform(node["arguments"], context) if node["arguments"] else values
-            )
+            param = transform(node["arguments"], context) if node["arguments"] else values
             with tempfile.TemporaryDirectory(dir=self.folder) as tmp:
-                context["result"] = ep.load()(
-                    param, Path(tmp), resolve, self.assets.store
-                )
+                context["result"] = ep.load()(param, Path(tmp), resolve, self.assets.store)
             allowed.update(refs(context["result"]))
         outputs = transform(node["result"], context)
         require(
@@ -369,14 +389,11 @@ class Session:
             )
             result["skill_documents"] = node.get("skill_text", {})
             result["blueprint_step"] = node["blueprint_step"]
-            result["output_contracts"] = {
-                k: s["plan"]["contracts"][k] for k in node["outputs"]
-            }
+            result["output_contracts"] = {k: s["plan"]["contracts"][k] for k in node["outputs"]}
             if s["pending"]["kind"] in {"review", "human"}:
                 result["prior_evidence"] = [r["evidence"] for r in s["history"]]
             result["assets"] = {
-                t: str(self.assets.resolve(t))
-                for t in set(refs([s["pending"], s["config"]]))
+                t: str(self.assets.resolve(t)) for t in set(refs([s["pending"], s["config"]]))
             }
         if done:
             values = {k: v for row in s["history"] for k, v in row["outputs"].items()}
@@ -387,9 +404,9 @@ class Session:
         with self.runtime.lock("blueprint:" + self.id):
             require(self.path.is_file(), "找不到藍圖工作")
             s = read_json(self.path)
-            require(
-                workflow is None or workflow == s["plan"]["workflow"], "工作流識別不符"
-            )
+            require(workflow is None or workflow == s["plan"]["workflow"], "工作流識別不符")
+            if operation == "status":
+                return self.view(s)
             if operation == "next":
                 return self.advance(s)
             p = s["pending"]
@@ -425,31 +442,97 @@ class Session:
                 return self.advance(s)
             require(p and payload.get("task_id") == p["id"], "待辦已變更")
             node = steps[len(s["history"])]
+            if "scope_hash" not in p:
+                self.bind_review_scope(s, node)
+                atomic_json(self.path, s)
+                return self.view(s)
+            if operation in {"authorize", "decline"}:
+                require(
+                    p.get("authorization_required")
+                    or operation == "decline"
+                    and p["kind"] in {"review", "human"},
+                    "此待辦不需額外核准",
+                )
+                require(
+                    payload.get("scope_hash") == p["scope_hash"]
+                    and payload.get("payload_hash") == p["payload_hash"]
+                    and isinstance(payload.get("user_text"), str)
+                    and payload["user_text"].strip(),
+                    "請回覆顯示的具體操作範圍",
+                )
+                s["audit"].append(
+                    {
+                        "event": operation,
+                        "scope_hash": p["scope_hash"],
+                        "revision": payload["revision"],
+                        "user_text": payload["user_text"],
+                        "task_id": p["id"],
+                        "timestamp_utc": datetime.now(UTC).isoformat(),
+                    }
+                )
+                p["authorization_required"] = operation != "authorize"
+                p["declined"] = operation == "decline"
+                atomic_json(self.path, s)
+                return self.view(s)
+            if (
+                p.get("binding")
+                and p["binding"].get("kind") == "host_probe"
+                and operation == "claim"
+            ):
+                from ..graph.capabilities import validate_bindings
+
+                validate_bindings(self.runtime.workspace_root, {"pending": p["binding"]})
             if operation == "claim":
                 require(
-                    p.get("claim_required") and not p.get("claimed"),
+                    p.get("claim_required")
+                    and not p.get("claimed")
+                    and not p.get("authorization_required")
+                    and not p.get("declined"),
                     "已領取或不需領取，請依既有回執核對",
                 )
                 p["claimed"] = True
                 atomic_json(self.path, s)
                 return self.view(s)
-            require(operation == "complete", "未知的宿主操作")
+            require(
+                operation in {"complete", "reconcile"} and not p.get("declined"),
+                "未知或已拒絕的宿主操作",
+            )
             evidence = payload.get("evidence", {})
             if p["kind"] in {"review", "human"}:
                 require(
-                    evidence.get("actor") and evidence.get("decision") == "approved",
-                    "需要具名人員確認；退回請用 revise",
+                    isinstance(evidence.get("user_text"), str)
+                    and evidence["user_text"].strip()
+                    and evidence.get("decision") == "approved"
+                    and payload.get("scope_hash") == p["scope_hash"]
+                    and payload.get("payload_hash") == p["payload_hash"],
+                    "需要對應這次範圍與版本的對話回覆；退回請用 revise",
                 )
+                evidence = {
+                    **evidence,
+                    "origin": "desktop_conversation",
+                    "revision": payload["revision"],
+                }
             if p.get("claim_required"):
-                require(
-                    p.get("claimed") and evidence.get("receipt"),
-                    "需要原請求回執；結果不明請先查核",
-                )
+                require(p.get("claimed"), "尚未領取這次操作")
+                if p.get("idempotency_key"):
+                    from ..graph.external import read_observation
+
+                    observed = read_observation(
+                        self.runtime.workspace_root, p["idempotency_key"], p["scope_hash"]
+                    )
+                    if observed is None:
+                        return {**self.view(s), "code": "RECONCILE_REQUIRED"}
+                    require(observed["outcome"] == "succeeded", "工具未回報成功，請核對結果")
+                    payload = {**payload, "outputs": observed["outputs"]}
+                    evidence = {
+                        "receipt": observed["provider_receipt"],
+                        "scope_hash": p["scope_hash"],
+                    }
+                else:
+                    require(evidence.get("receipt"), "需要原請求回執；結果不明請先查核")
             if p["kind"] == "review":
                 record = p["candidate"]
-                record["approval"] = self.approval(
-                    s, evidence, p["inputs"], record["outputs"]
-                )
+                record["approval"] = self.approval(s, evidence, p["inputs"], record["outputs"])
                 if node["reuse_approved"]:
                     atomic_json(
                         self.profile_path(s, node),

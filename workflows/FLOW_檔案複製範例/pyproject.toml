@@ -3,7 +3,7 @@ requires = ["hatchling==1.27.0"]
 build-backend = "hatchling.build"
 [project]
 name = "ai_flow02"
-version = "0.2.3"
+version = "0.2.4"
 requires-python = ">=3.11,<3.14"
 description = "Independently packaged workflow for flow_base"
 license = "MIT"

@@ -94,6 +94,10 @@ class ProjectService:
                     project_id,
                 ),
             )
+            if goal is not None and project.goal_json != canonical_json(goal):
+                from ..conversation.interviews import project_goal_changed
+
+                project_goal_changed(db, project_id, project.goal, goal, expected_version + 1)
         return self.get(project_id)
 
     def set_status(self, project_id: str, expected_version: int, status: ProjectStatus) -> Project:

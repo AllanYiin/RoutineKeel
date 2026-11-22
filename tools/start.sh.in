@@ -73,7 +73,7 @@ valid_python() {
 valid_runtime() {
   valid_python && "$python" -I -c "$runtime_check" '@VERSION@' >/dev/null 2>&1
 }
-expected="$actual|$FLOW_BASE_WORKSPACE|$(uname -s)|$(uname -m)"
+expected="$actual|@CONTRACTS_SHA256@|$FLOW_BASE_WORKSPACE|$(uname -s)|$(uname -m)"
 if [ ! -f "$marker" ] || [ "$(cat "$marker")" != "$expected" ] || ! valid_runtime; then
   lock="$FLOW_BASE_HOME/bootstrap.lock"
   mkdir "$lock" 2>/dev/null || { echo "Another bootstrap is active. If it was interrupted, remove share_states/bootstrap.lock and retry." >&2; exit 2; }
@@ -90,7 +90,9 @@ if [ ! -f "$marker" ] || [ "$(cat "$marker")" != "$expected" ] || ! valid_runtim
   : > "$FLOW_BASE_HOME/base-creating"
   "$UV" venv --no-config --no-project --python 3.12 "$venv"
   valid_python || { echo "Expected local .venv with Python 3.12; refusing to install into another interpreter." >&2; exit 2; }
-  "$UV" pip install --no-config --python "$python" --no-build "$wheel"
+  contracts_wheel="$HERE/@CONTRACTS_WHEEL@"
+  "$python" -I -c 'import hashlib,pathlib,sys; sys.exit(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest() != sys.argv[2])' "$contracts_wheel" '@CONTRACTS_SHA256@' || { echo "Contract package integrity check failed." >&2; exit 2; }
+  "$UV" pip install --no-config --python "$python" --no-build "$wheel" "$contracts_wheel"
   valid_runtime || { echo "Installed runtime did not pass its Python/version/import check." >&2; exit 2; }
   printf '%s\n' "$expected" > "$marker.tmp"
   mv "$marker.tmp" "$marker"

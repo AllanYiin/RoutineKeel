@@ -2,31 +2,27 @@ import json
 import os
 import shutil
 import subprocess
-from contextlib import closing
 import sys
+import time
 import zipfile
+from contextlib import closing
 from pathlib import Path
 
 import pytest
-
-from flow_base.intent import Intent, local_intent, model_intent
+from flow_base.intent import local_intent, model_intent
 from flow_base.runtime import FlowError, atomic_json, sha256
 from flow_base.workspace import Workspace
+from package_paths import RELEASE, WHEELS
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.fixture
-def workspace(tmp_path):
-    for task, folder in {'ai_flow01': '課程影片產生字幕', 'ai_flow02': '檔案複製範例'}.items():
-        shutil.copytree(ROOT / 'dist/workspace/workflows' / ('FLOW_' + folder), tmp_path / task)
-    return tmp_path
 
 
 def cli(workspace, *args, ok=True):
     env = dict(os.environ, PYTHONPATH=str(ROOT / 'flow_base/src'), PYTHONDONTWRITEBYTECODE='1')
     r = subprocess.run([sys.executable, '-m', 'flow_base', '--workspace', str(workspace), *map(str, args)],
-                       env=env, capture_output=True, text=True, timeout=40)
+                       env=env, capture_output=True, text=True, timeout=40, check=False)
     if ok:
         assert r.returncode == 0, r.stdout + r.stderr
     else:
@@ -181,8 +177,8 @@ def test_plugin_cache_tamper_is_repaired(workspace):
 
 
 def test_router_cache_and_budget(workspace):
-    config = dict(enabled=True, model='test', pricing_verified=True, pricing_note='test only',
-                  input_usd_per_million=1, output_usd_per_million=2, budget_usd=0.25)
+    config = {'enabled': True, 'model': 'test', 'pricing_verified': True, 'pricing_note': 'test only',
+                  'input_usd_per_million': 1, 'output_usd_per_million': 2, 'budget_usd': 0.25}
     atomic_json(workspace/'share_states/settings/router.json', config)
     calls = []
     def transport(*_):
@@ -207,7 +203,7 @@ def test_distributions_never_bundle_environment_or_models():
         folder = {'ai_flow01': '課程影片產生字幕', 'ai_flow02': '檔案複製範例'}.get(name, name)
         project = ROOT / folder if name == 'flow_base' else ROOT / 'workflows' / ('FLOW_' + folder)
         version = tomllib.loads((project/'pyproject.toml').read_text())['project']['version']
-        with zipfile.ZipFile(ROOT/'dist/release'/f'{archive_name}-{version}.zip') as z:
+        with zipfile.ZipFile(RELEASE/f'{archive_name}-{version}.zip') as z:
             folder = 'flow_base' if name == 'flow_base' else 'workflows/FLOW_' + folder
             assert all(n.startswith(folder + '/') or n in {'workflows/', 'blueprints/'} for n in z.namelist())
             assert not any('.venv' in n.split('/') or n.endswith('model.bin') for n in z.namelist())
@@ -231,7 +227,7 @@ def test_distributions_never_bundle_environment_or_models():
                 if name == 'flow_base':
                     assert any(n.endswith('specs/mcp-queue-v1.md') for n in source.namelist())
     version = tomllib.loads((ROOT/'flow_base/pyproject.toml').read_text())['project']['version']
-    with zipfile.ZipFile(ROOT/'dist/wheels'/f'flow_base-{version}-py3-none-any.whl') as z:
+    with zipfile.ZipFile(WHEELS/f'flow_base-{version}-py3-none-any.whl') as z:
         assert {'flow_base/core/queue.py', 'flow_base/execution/queue_worker.py',
                 'flow_base/storage/migrations/v004.py'} <= set(z.namelist())
         assert not any(n.startswith(('ai_flow01/', 'ai_flow02/')) or 'subtitles' in n or
@@ -260,6 +256,7 @@ def test_update_preserves_flow_id(workspace):
 
 def test_concurrent_registration_only_creates_one_id(tmp_path):
     import concurrent.futures
+
     from flow_base.runtime import Runtime
     runtime = Runtime(tmp_path/'share_states')
     runtime.initialize()
@@ -275,3 +272,20 @@ def test_flow_id_is_an_executable_entry(workspace):
     flow_id = next(t['flow_id'] for t in cli(workspace, 'list')['result'] if t['id'] == 'ai_flow02')
     result = cli(workspace, 'run', '--flow-id', flow_id, '--input', 'input.txt', '--output', 'out')['result']
     assert result['flow_id'] == flow_id and result['run_id'].startswith('run_')
+
+
+def completed_run(service, run_id):
+    # The supervisor is a fresh interpreter. Verify startup and the active work
+    # separately so a cold import does not consume the execution deadline.
+    deadline = time.monotonic() + 60
+    status = service.get_run_status(run_id)
+    while status["execution_status"] in {"created", "queued", "preparing"}:
+        assert time.monotonic() < deadline, f"Supervisor did not start: {status}"
+        time.sleep(0.1)
+        status = service.get_run_status(run_id)
+    deadline = time.monotonic() + 10
+    while status["execution_status"] not in {"succeeded", "failed", "interrupted", "cancelled"}:
+        assert time.monotonic() < deadline, f"Active run did not complete: {status}"
+        time.sleep(0.1)
+        status = service.get_run_status(run_id)
+    return status

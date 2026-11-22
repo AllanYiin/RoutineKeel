@@ -1,16 +1,12 @@
 import csv
-import io
-import json
-import re
 import subprocess
 import sys
 import zipfile
-from pathlib import Path
 
 import pytest
-from ai_flow01 import portable_core as core, worker, human_review
+from ai_flow01 import human_review, worker
+from ai_flow01 import portable_core as core
 from ai_flow01.contracts import Options
-from test_local_pipeline import review_fixture
 
 
 def build_fixture(review_fixture):
@@ -36,7 +32,7 @@ def answers(out,delivery,text='確認後文字'):
 
 
 def test_readable_bundle_audio_csv_transcript_and_zip(review_fixture):
-    out,config,d=build_fixture(review_fixture)
+    out,_config,d=build_fixture(review_fixture)
     page=(out/'review.html').read_text()
     assert 'data:audio/wav;base64,' in page
     assert '辨識原文' in page and '辨識信心偏低' in page
@@ -101,7 +97,7 @@ def test_page_rejects_metadata_not_matching_current_source_row(review_fixture):
 
 
 def test_csv_roundtrip_rebuild_and_no_automatic_approval(review_fixture,monkeypatch):
-    out,config,d=build_fixture(review_fixture)
+    out,_config,d=build_fixture(review_fixture)
     target,_=answers(out,d)
     core.write_json(out/'edits.json',{'0':'先前人工文字'})
     core.write_json(out/'approval.json',{'reviewer':'test fixture, not a real reviewer'})
@@ -168,7 +164,7 @@ def test_explicit_prompt_and_disabled_are_preserved():
 
 
 def test_large_audio_uses_relative_clips_in_share_zip(review_fixture, monkeypatch):
-    out,config,d=build_fixture(review_fixture)
+    out,_config,d=build_fixture(review_fixture)
     monkeypatch.setattr(human_review,'EMBED_AUDIO_LIMIT',0)
     rows=core.read_json(out/'transcript.json')
     issues=[{'id':0,'reason':'low_asr_confidence','start':1,'end':3,'text':rows[0]['text']}]
@@ -189,7 +185,7 @@ def test_worker_script_loads_review_modules_in_isolated_python(review_fixture):
     core.write_json(request,{'action':'review_operation','operation':'build','output_dir':str(out),
         'source_audio':str(out/'audio.wav'),'response_path':str(response)})
     result=subprocess.run([sys.executable,'-X','utf8','-I',worker.__file__,str(request)],
-                          capture_output=True,text=True,encoding='utf-8')
+                          capture_output=True,text=True,encoding='utf-8', check=False)
     assert result.returncode==0,result.stderr
     assert core.read_json(response)['review']=='review.html'
     assert (out/d['archive']).is_file()
@@ -199,8 +195,9 @@ def test_worker_script_loads_review_modules_in_isolated_python(review_fixture):
 def test_import_failure_preserves_untouched_approval_status(tmp_path,monkeypatch,changed):
     from contextlib import nullcontext
     from types import SimpleNamespace
+
     from ai_flow01 import adapter
-    from flow_base.runtime import FlowError,sha256
+    from flow_base.runtime import FlowError, sha256
     home=tmp_path/'share_states';home.mkdir();audio=home/'audio.wav';audio.write_bytes(b'fixture audio')
     out=tmp_path/'job';artifacts=out/'artifacts';artifacts.mkdir(parents=True)
     core.write_json(artifacts/'flow_context.json',{'profile':'asr-cpu','model':'whisper-large-v3',

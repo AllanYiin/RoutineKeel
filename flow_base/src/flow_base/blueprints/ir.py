@@ -1,25 +1,51 @@
 """Emit Studio WorkflowIR 1.0 and tool signatures for the host-assisted lowering."""
 
+import hashlib
+import json
+import zipfile
+
 from ..runtime import digest
-from importlib.util import find_spec
+
+POLICY_VERSION = "blueprint-ir-record/1"
 
 
 def check_with_studio(ir, registry, package):
-    """Use the design-time validators too when Studio is present in the install environment."""
-    spec = find_spec("workflow_studio")
-    # A src-layout repository directory can be a namespace on cwd's sys.path;
-    # it is not an installed Studio distribution with validators.
-    if spec is None or spec.origin is None:
-        return "not_installed"
-    from workflow_studio.compiler.package import verify_package
-    from workflow_studio.ir.models import ToolSignature
-    from workflow_studio.ir.validator import validate_ir
-
-    validate_ir(
-        ir, {k: ToolSignature.model_validate(v) for k, v in registry["tools"].items()}
-    )
-    verify_package(package)
-    return "passed"
+    """Report mandatory checks for both trial and promotion without importing the Studio UI."""
+    try:
+        from routinekeel_contracts.errors import StudioError
+        from routinekeel_contracts.graph_validator import validate_blueprint
+        from routinekeel_contracts.models import ToolSignature
+        from routinekeel_contracts.package import verify_package
+        from routinekeel_contracts.validator import validate_ir
+    except ImportError:
+        return {"policy_version": POLICY_VERSION, "status": "NOT_RUN", "reason": "缺少必要的契約驗證器"}
+    try:
+        if ir.get("blueprint_schema_version") == 2:
+            graph,_ = validate_blueprint(ir)
+            def tasks(body,prefix=""):
+                for n in body.nodes:
+                    if n.kind=="task": yield prefix+n.id
+                    elif n.kind in {"foreach","repeat_until"}: yield from tasks(n.body,prefix+n.id+"/")
+            if set(registry["bindings"]) != set(tasks(graph)):
+                raise StudioError("CONTRACT_MISMATCH","Graph 與能力綁定不符")
+        else:
+            validate_ir(ir, {k: ToolSignature.model_validate(v) for k, v in registry["tools"].items()})
+        manifest = verify_package(package)
+        if ir.get("blueprint_schema_version")==2:
+            from .adapter import ADAPTER_SOURCE
+            prefix = manifest["module"] + "/"
+            with zipfile.ZipFile(package / manifest["package"]) as archive:
+                plan = json.loads(archive.read(prefix+"plan.json"))
+                if (plan.get("format")!=2 or plan.get("graph")!=ir or plan.get("graph_hash")!=digest(ir)
+                        or plan.get("bindings_hash")!=digest(registry["bindings"])
+                        or plan.get("source_hash")!=hashlib.sha256(archive.read(prefix+"source.blueprint")).hexdigest()
+                        or archive.read(prefix+"adapter.py")!=ADAPTER_SOURCE):
+                    raise StudioError("CONTRACT_MISMATCH","安裝包與已驗證藍圖、綁定或受控執行器不同")
+    except StudioError as exc:
+        return {"policy_version": POLICY_VERSION, "status": "FAIL", "reason": exc.code}
+    except Exception as exc:  # noqa: BLE001 -- any unexpected verifier failure blocks installation
+        return {"policy_version": POLICY_VERSION, "status": "FAIL", "reason": type(exc).__name__}
+    return {"policy_version": POLICY_VERSION, "status": "PASS"}
 
 
 def studio_ir(source, plan):

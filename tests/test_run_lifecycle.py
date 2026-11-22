@@ -1,19 +1,19 @@
 """Run ownership and legal transitions are enforced by SQLite CAS."""
-from concurrent.futures import ThreadPoolExecutor
-import time
+import os
 import shutil
 import subprocess
 import sys
-import os
 import threading
+import time
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
-
 from flow_base.core.lifecycle import RunStore
+from flow_base.engine import run_workflow
 from flow_base.runtime import FlowError, Runtime
 from flow_base.workspace import Workspace
-from flow_base.engine import run_workflow
+from package_paths import WORKSPACE
 
 
 def _store(tmp_path):
@@ -151,6 +151,27 @@ def test_unclaimed_run_eventually_releases_busy_workspace(tmp_path):
     assert store.create(job_id='new-job', revision_id='rev', spec_hash='new-spec') != run_id
 
 
+def test_slow_live_supervisor_is_retained_until_claim_and_dead_startup_releases(tmp_path):
+    from flow_base.execution.supervisor import identity_matches, process_started_at
+
+    store = _store(tmp_path)
+    run_id = store.create(job_id='slow', revision_id='rev', spec_hash='spec')
+    pid = os.getpid()
+    birth = process_started_at(pid)
+    assert birth is not None
+    store.record_spawn(run_id,pid,birth)
+    assert store.reconcile(identity_matches,now=time.time()+21)==[]
+    assert store.get(run_id)['execution_status']=='created'
+    store.transition(run_id,'created','queued')
+    store.claim(run_id,token='claimed',pid=pid,started_at=birth)
+    store.record_spawn(run_id,pid,birth)
+    assert store.get(run_id)['supervisor_token']=='claimed'
+    store.finish_failure(run_id)
+    orphan = store.create(job_id='orphan',revision_id='rev',spec_hash='orphan')
+    store.record_spawn(orphan,pid,birth-120)
+    assert store.reconcile(identity_matches,now=time.time()+21)==[orphan]
+
+
 @pytest.fixture
 def isolated_copy_module():
     names = [name for name in sys.modules if name == 'ai_flow02' or name.startswith('ai_flow02.')]
@@ -165,8 +186,7 @@ def isolated_copy_module():
 
 
 def test_copy_workflow_reaches_delivered_terminal_state(tmp_path, isolated_copy_module):
-    root = Path(__file__).resolve().parents[1]
-    shutil.copytree(root / 'dist/workspace/workflows/FLOW_檔案複製範例', tmp_path / 'copy_flow')
+    shutil.copytree(WORKSPACE / 'workflows/FLOW_檔案複製範例', tmp_path / 'copy_flow')
     workspace = Workspace(tmp_path)
     task = workspace.task('ai_flow02')
     workflow = task.configuration(workspace.runtime)
@@ -187,33 +207,38 @@ def test_copy_workflow_reaches_delivered_terminal_state(tmp_path, isolated_copy_
 
 
 def test_cancel_from_other_runtime_waits_for_handler_stop(tmp_path, monkeypatch, isolated_copy_module):
-    root = Path(__file__).resolve().parents[1]
-    shutil.copytree(root / 'dist/workspace/workflows/FLOW_檔案複製範例', tmp_path / 'copy_flow')
+    shutil.copytree(WORKSPACE / 'workflows/FLOW_檔案複製範例', tmp_path / 'copy_flow')
     workspace = Workspace(tmp_path)
     task = workspace.task('ai_flow02')
     workflow = task.configuration(workspace.runtime)
     source = tmp_path / 'input.txt'
     source.write_text('copy me', encoding='utf-8')
-    started = threading.Event()
+    started = Future()
+    allow_handler_exit = threading.Event()
     adapter = task.load(workspace.runtime)
     from flow_base.core.run_context import current
-    import flow_base.engine as engine
+
+    from flow_base import engine
     real_supervisor = engine.Supervisor
     monkeypatch.setattr(engine, 'Supervisor', lambda runtime, run_id, context: real_supervisor(runtime, run_id, context, interval=0.02))
 
     def waiting_handler(ctx, step, deps, target):
-        started.set()
-        assert current(ctx.runtime).cancel_requested.wait(timeout=3)
+        context = current(ctx.runtime)
+        started.set_result(context.run_id)
+        assert context.cancel_requested.wait(timeout=3)
+        assert allow_handler_exit.wait(timeout=5)
         raise FlowError('RUN_CANCEL_REQUESTED', '已停止')
 
     monkeypatch.setitem(adapter.handlers, 'file.copy', waiting_handler)
     with ThreadPoolExecutor(max_workers=1) as pool:
         future = pool.submit(run_workflow, workspace.runtime, task, workflow, source, tmp_path / 'result')
-        assert started.wait(timeout=3)
-        run_id = workspace.runtime.history()[0]['run_id']
+        run_id = started.result(timeout=60)
         other = RunStore(Runtime(workspace.runtime.home))
-        other.request_cancel(run_id)
-        assert other.get(run_id)['execution_status'] == 'cancelling'
+        try:
+            other.request_cancel(run_id)
+            assert other.get(run_id)['execution_status'] == 'cancelling'
+        finally:
+            allow_handler_exit.set()
         with pytest.raises(FlowError) as error:
             future.result(timeout=5)
         assert error.value.code == 'RUN_CANCEL_REQUESTED'

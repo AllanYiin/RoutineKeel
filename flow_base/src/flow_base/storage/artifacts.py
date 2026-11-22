@@ -1,9 +1,9 @@
 """Content-verified multi-file step artifacts; old single-file caches stay valid."""
 from __future__ import annotations
 
-from pathlib import Path, PurePosixPath
 import shutil
 from contextlib import closing
+from pathlib import Path, PurePosixPath
 
 from ..runtime import FlowError, atomic_json, read_json, sha256
 

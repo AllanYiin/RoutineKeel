@@ -3,8 +3,8 @@ import wave
 
 import numpy as np
 import pytest
-
-from ai_flow01 import audio_preparation as prep, worker
+from ai_flow01 import audio_preparation as prep
+from ai_flow01 import worker
 from ai_flow01.contracts import Options
 
 

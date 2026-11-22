@@ -102,6 +102,7 @@ print('FIXTURE_RESULT='+json.dumps(answer))
         text=True,
         encoding="utf-8",
         timeout=60,
+        check=False,
     )
     assert child.returncode == 0, child.stdout + child.stderr
     result = json.loads(

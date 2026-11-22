@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 from __future__ import annotations
 
@@ -11,10 +10,10 @@ import re
 import shutil
 import subprocess
 import sys
-from datetime import datetime, timezone
+from collections.abc import Iterator
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Dict, Iterable, Iterator, List, Optional, Sequence, Set, Tuple
 
 # ============================================================
 # 全自動設定
@@ -134,10 +133,10 @@ def is_windows() -> bool:
 def norm_rel(root: Path, p: Path) -> str:
     try:
         return str(p.relative_to(root))
-    except Exception:
+    except ValueError:
         return str(p)
 
-def run_cmd(cmd: List[str], cwd: Optional[Path] = None) -> Tuple[int, str]:
+def run_cmd(cmd: list[str], cwd: Path | None = None) -> tuple[int, str]:
     try:
         p = subprocess.run(
             cmd,
@@ -151,7 +150,7 @@ def run_cmd(cmd: List[str], cwd: Optional[Path] = None) -> Tuple[int, str]:
         return p.returncode, p.stdout
     except FileNotFoundError as e:
         return 127, f"Command not found: {cmd[0]} ({e})"
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError, ValueError) as e:
         return 1, f"Command failed: {' '.join(cmd)} ({e})"
 
 def read_text(p: Path) -> str:
@@ -163,7 +162,7 @@ def read_text_quick(p: Path, max_bytes: int = 256 * 1024) -> str:
         if len(data) > max_bytes:
             data = data[:max_bytes]
         return data.decode("utf-8", errors="ignore")
-    except Exception:
+    except OSError:
         return read_text(p)
 
 def write_text_ascii(p: Path, text: str) -> None:
@@ -177,7 +176,7 @@ def write_text_utf8_lf(p: Path, text: str) -> None:
     # For .sh/.command. Use LF newlines; most tooling handles it well on Unix-like systems.
     p.write_text(text, encoding="utf-8", errors="strict", newline="\n")
 
-def write_json_utf8(path: Path, payload: Dict[str, object]) -> None:
+def write_json_utf8(path: Path, payload: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     write_text_utf8(path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
 
@@ -185,26 +184,26 @@ def touch_file(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.touch(exist_ok=True)
 
-def safe_int(s: str) -> Optional[int]:
+def safe_int(s: str) -> int | None:
     try:
         v = int(s)
         return v if 1 <= v <= 65535 else None
-    except Exception:
+    except (ValueError, TypeError):
         return None
 
 def script_relpath_from_root(root: Path) -> str:
     try:
         rel = Path(__file__).resolve().relative_to(root.resolve())
         return str(rel)
-    except Exception:
+    except (OSError, ValueError, RuntimeError):
         return Path(__file__).name
 
 # ============================================================
 # Optional config: .launcher.env (no extra CLI options)
 # ============================================================
 
-def parse_env_file(env_path: Path) -> Dict[str, str]:
-    out: Dict[str, str] = {}
+def parse_env_file(env_path: Path) -> dict[str, str]:
+    out: dict[str, str] = {}
     if not env_path.exists():
         return out
     for line in env_path.read_text(encoding="utf-8", errors="ignore").splitlines():
@@ -215,7 +214,7 @@ def parse_env_file(env_path: Path) -> Dict[str, str]:
         out[k.strip()] = v.strip()
     return out
 
-def get_launcher_config(root: Path) -> Dict[str, str]:
+def get_launcher_config(root: Path) -> dict[str, str]:
     # precedence: OS env > .launcher.env
     file_cfg = parse_env_file(root / ".launcher.env")
     cfg = dict(file_cfg)
@@ -229,20 +228,20 @@ def get_launcher_config(root: Path) -> Dict[str, str]:
     return cfg
 
 
-def load_project_config(root: Path) -> Dict[str, str]:
+def load_project_config(root: Path) -> dict[str, str]:
     config_path = root / "project.config.json"
     if not config_path.exists():
         return {}
     try:
         raw = json.loads(config_path.read_text(encoding="utf-8-sig"))
-    except Exception:
+    except (OSError, ValueError):
         return {}
     if not isinstance(raw, dict):
         return {}
     return {str(key): str(value).strip() for key, value in raw.items()}
 
 
-def infer_apsm_archetype(project_cfg: Dict[str, str]) -> str:
+def infer_apsm_archetype(project_cfg: dict[str, str]) -> str:
     architecture = project_cfg.get("architecture", "")
     frontend = project_cfg.get("frontend", "")
     backend = project_cfg.get("backend", "")
@@ -260,7 +259,7 @@ def infer_apsm_archetype(project_cfg: Dict[str, str]) -> str:
     return ""
 
 
-def seed_apsm_runtime(root: Path, det: "DetectionResult", launcher_cfg: Dict[str, str]) -> List[str]:
+def seed_apsm_runtime(root: Path, det: DetectionResult, launcher_cfg: dict[str, str]) -> list[str]:
     runtime_dir = root / ".runtime"
     logs_dir = root / "logs"
     runtime_dir.mkdir(parents=True, exist_ok=True)
@@ -282,17 +281,17 @@ def seed_apsm_runtime(root: Path, det: "DetectionResult", launcher_cfg: Dict[str
     if frontend_expected and not isinstance(frontend_port, int):
         frontend_port = safe_int(launcher_cfg.get("FRONTEND_PORT", "")) or 5173
 
-    ports_payload: Dict[str, object] = {}
+    ports_payload: dict[str, object] = {}
     if isinstance(backend_port, int) and backend_port > 0:
         ports_payload["backend_port"] = backend_port
     if isinstance(frontend_port, int) and frontend_port > 0:
         ports_payload["frontend_port"] = frontend_port
 
     apsm_archetype = project_cfg.get("archetype") or infer_apsm_archetype(project_cfg)
-    state_payload: Dict[str, object] = {
+    state_payload: dict[str, object] = {
         "status": "launcher_generated",
         "last_event": "launcher_scripts_generated",
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
         "generated_by": "scripts/project_launcher.py",
         "project_type": det.project_type,
         "backend_mode": det.backend.get("mode", "none"),
@@ -339,17 +338,17 @@ REQ_LINE_RE = re.compile(
 
 @dataclass
 class RequirementsInfo:
-    path: Optional[Path] = None
-    lines: List[str] = field(default_factory=list)
-    names: Set[str] = field(default_factory=set)
+    path: Path | None = None
+    lines: list[str] = field(default_factory=list)
+    names: set[str] = field(default_factory=set)
     had_file: bool = False
-    packages: Set[str] = field(default_factory=set)
-    directive_lines: List[str] = field(default_factory=list)
+    packages: set[str] = field(default_factory=set)
+    directive_lines: list[str] = field(default_factory=list)
 
-def write_requirements(req_path: Path, lines: List[str]) -> None:
+def write_requirements(req_path: Path, lines: list[str]) -> None:
     req_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8", errors="ignore")
 
-def _req_base_name(line: str) -> Optional[str]:
+def _req_base_name(line: str) -> str | None:
     s = line.strip()
     if not s or s.startswith("#"):
         return None
@@ -374,7 +373,7 @@ def parse_requirements(req_path: Path) -> RequirementsInfo:
         s = line.strip()
         if not s or s.startswith("#"):
             continue
-        if s.startswith(("-", "--")) or "://" in s or s.startswith("git+"):
+        if s.startswith(("-", "--", "git+")) or "://" in s:
             info.directive_lines.append(line)
             continue
         m = REQ_LINE_RE.match(s)
@@ -386,12 +385,12 @@ def parse_requirements(req_path: Path) -> RequirementsInfo:
         info.names.add(name)
     return info
 
-def stdlib_names() -> Set[str]:
+def stdlib_names() -> set[str]:
     names = getattr(sys, "stdlib_module_names", None)
     return set(names) if names else set()
 
-def detect_local_toplevel(root: Path) -> Set[str]:
-    local: Set[str] = set()
+def detect_local_toplevel(root: Path) -> set[str]:
+    local: set[str] = set()
     for child in root.iterdir():
         if child.name.startswith("."):
             continue
@@ -415,10 +414,10 @@ def detect_local_toplevel(root: Path) -> Set[str]:
 def normalize_to_pip_name(mod: str) -> str:
     return IMPORT_TO_PIP_MAP.get(mod, mod).lower().replace("_", "-")
 
-def filter_third_party_candidates(root: Path, imported_modules: Set[str]) -> List[str]:
+def filter_third_party_candidates(root: Path, imported_modules: set[str]) -> list[str]:
     stdlib = stdlib_names()
     local = detect_local_toplevel(root)
-    out: Set[str] = set()
+    out: set[str] = set()
     for m in imported_modules:
         ml = m.lower()
         if ml in stdlib or ml in local or ml in LOCAL_NAME_BLOCKLIST or ml in {"__future__", "builtins"}:
@@ -431,7 +430,7 @@ def filter_third_party_candidates(root: Path, imported_modules: Set[str]) -> Lis
         out.add(pip_name)
     return sorted(out)
 
-def generate_or_fix_requirements(root: Path, pkgs: List[str]) -> None:
+def generate_or_fix_requirements(root: Path, pkgs: list[str]) -> None:
     req_path = root / "requirements.txt"
     header = [
         "# Auto-generated requirements.txt",
@@ -442,8 +441,8 @@ def generate_or_fix_requirements(root: Path, pkgs: List[str]) -> None:
     req_path.write_text("\n".join(header + sorted(set(pkgs))) + "\n", encoding="utf-8")
     print("[FIX] requirements.txt 已自動建立/修正（已排除 stdlib/本地模組/常見黑名單）。")
 
-def ensure_requirements_minimal(root: Path, req_path: Path, imported_modules: Set[str]) -> Tuple[RequirementsInfo, List[str]]:
-    actions: List[str] = []
+def ensure_requirements_minimal(root: Path, req_path: Path, imported_modules: set[str]) -> tuple[RequirementsInfo, list[str]]:
+    actions: list[str] = []
     info = parse_requirements(req_path)
     pkgs = filter_third_party_candidates(root, imported_modules)
 
@@ -483,13 +482,13 @@ class ImportUsage:
 
 @dataclass
 class ScanResult:
-    imports: List[ImportUsage] = field(default_factory=list)
-    syntax_errors: List[Tuple[Path, str]] = field(default_factory=list)
+    imports: list[ImportUsage] = field(default_factory=list)
+    syntax_errors: list[tuple[Path, str]] = field(default_factory=list)
 
 class ImportScanner(ast.NodeVisitor):
     def __init__(self, file_path: Path):
         self.file_path = file_path
-        self.imports: List[ImportUsage] = []
+        self.imports: list[ImportUsage] = []
 
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
@@ -518,11 +517,11 @@ def scan_imports(root: Path) -> ScanResult:
             res.imports.extend(sc.imports)
         except SyntaxError as e:
             res.syntax_errors.append((p, f"{e.msg} (line {e.lineno})"))
-        except Exception as e:
+        except (OSError, ValueError, RecursionError) as e:
             res.syntax_errors.append((p, f"Parse error: {e}"))
     return res
 
-def iter_files(root: Path, suffixes: Tuple[str, ...], max_files: int = 20000) -> Iterator[Path]:
+def iter_files(root: Path, suffixes: tuple[str, ...], max_files: int = 20000) -> Iterator[Path]:
     count = 0
     suffixes_l = tuple(s.lower() for s in suffixes)
     for dir_path, dir_names, file_names in os.walk(root):
@@ -538,9 +537,9 @@ def iter_files(root: Path, suffixes: Tuple[str, ...], max_files: int = 20000) ->
             if count >= max_files:
                 return
 
-def iter_relative_import_fix_candidates(root: Path) -> List[Path]:
-    out: List[Path] = []
-    seen: Set[Path] = set()
+def iter_relative_import_fix_candidates(root: Path) -> list[Path]:
+    out: list[Path] = []
+    seen: set[Path] = set()
     for rel in RELATIVE_IMPORT_FIX_CANDIDATES:
         p = root / rel
         if p.is_file() and p not in seen:
@@ -548,10 +547,10 @@ def iter_relative_import_fix_candidates(root: Path) -> List[Path]:
             out.append(p)
     return out
 
-def module_parts_from_file(root: Path, path: Path) -> Optional[List[str]]:
+def module_parts_from_file(root: Path, path: Path) -> list[str] | None:
     try:
         rel = path.relative_to(root)
-    except Exception:
+    except ValueError:
         return None
     if rel.suffix.lower() != ".py":
         return None
@@ -562,8 +561,8 @@ def module_parts_from_file(root: Path, path: Path) -> Optional[List[str]]:
         return parts[:-1]
     return parts
 
-def format_import_aliases(names: List[ast.alias]) -> str:
-    parts: List[str] = []
+def format_import_aliases(names: list[ast.alias]) -> str:
+    parts: list[str] = []
     for alias in names:
         if alias.asname:
             parts.append(f"{alias.name} as {alias.asname}")
@@ -571,7 +570,7 @@ def format_import_aliases(names: List[ast.alias]) -> str:
             parts.append(alias.name)
     return ", ".join(parts)
 
-def resolve_absolute_import(module_parts: List[str], node: ast.ImportFrom) -> Optional[str]:
+def resolve_absolute_import(module_parts: list[str], node: ast.ImportFrom) -> str | None:
     package_parts = module_parts[:-1]
     steps_up = max(node.level - 1, 0)
     if steps_up > len(package_parts):
@@ -584,8 +583,8 @@ def resolve_absolute_import(module_parts: List[str], node: ast.ImportFrom) -> Op
         return None
     return ".".join(package_parts)
 
-def apply_relative_import_fixes(root: Path) -> List[str]:
-    actions: List[str] = []
+def apply_relative_import_fixes(root: Path) -> list[str]:
+    actions: list[str] = []
 
     for path in iter_relative_import_fix_candidates(root):
         module_parts = module_parts_from_file(root, path)
@@ -599,7 +598,7 @@ def apply_relative_import_fixes(root: Path) -> List[str]:
             continue
 
         lines = original.splitlines()
-        replacements: List[Tuple[int, int, str]] = []
+        replacements: list[tuple[int, int, str]] = []
         for node in ast.walk(tree):
             if not isinstance(node, ast.ImportFrom) or getattr(node, "level", 0) <= 0:
                 continue
@@ -659,14 +658,14 @@ def pip_install_requirements(root: Path, venv_dir: str) -> None:
     if not req.exists():
         raise RuntimeError("找不到 requirements.txt，無法安裝套件。")
 
-    rc, out = run_cmd([str(vp), "-m", "pip", "install", "--upgrade", "pip"], cwd=root)
+    _rc, out = run_cmd([str(vp), "-m", "pip", "install", "--upgrade", "pip"], cwd=root)
     print(out.rstrip())
     rc2, out2 = run_cmd([str(vp), "-m", "pip", "install", "-r", str(req)], cwd=root)
     print(out2.rstrip())
     if rc2 != 0:
         raise RuntimeError("pip install -r requirements.txt 失敗。可能是套件名錯誤、網路/代理、或版本衝突。")
 
-def try_autofix_no_match(req_path: Path, pip_output: str, local_names: Set[str]) -> bool:
+def try_autofix_no_match(req_path: Path, pip_output: str, local_names: set[str]) -> bool:
     match = NO_MATCH_RE.search(pip_output or "")
     if not match:
         return False
@@ -676,7 +675,7 @@ def try_autofix_no_match(req_path: Path, pip_output: str, local_names: Set[str])
 
     lines = req_path.read_text(encoding="utf-8", errors="ignore").splitlines()
     changed = False
-    rewritten: List[str] = []
+    rewritten: list[str] = []
     for line in lines:
         base = _req_base_name(line)
         if base and base == bad_name:
@@ -691,7 +690,7 @@ def try_autofix_no_match(req_path: Path, pip_output: str, local_names: Set[str])
     backup = req_path.with_suffix(".txt.bak")
     try:
         shutil.copyfile(req_path, backup)
-    except Exception:
+    except OSError:
         pass
     write_requirements(req_path, rewritten)
     return True
@@ -703,12 +702,12 @@ def pip_check(root: Path, venv_dir: str) -> None:
     if rc != 0:
         raise RuntimeError("pip check 發現依賴問題（缺依賴或衝突）。")
 
-def import_test_third_party(root: Path, venv_dir: str, imported_modules: Set[str]) -> None:
+def import_test_third_party(root: Path, venv_dir: str, imported_modules: set[str]) -> None:
     vp = venv_python(root, venv_dir)
     stdlib = stdlib_names()
     local = detect_local_toplevel(root)
 
-    failed: List[str] = []
+    failed: list[str] = []
     for mod in sorted(imported_modules):
         ml = mod.lower()
         if ml in stdlib or ml in local or ml in LOCAL_NAME_BLOCKLIST or ml in {"__future__", "builtins"}:
@@ -730,7 +729,7 @@ STREAMLIT_PAT = re.compile(r"(?m)^\s*(import\s+streamlit\s+as\s+st|from\s+stream
 def file_contains(path: Path, pattern: re.Pattern) -> bool:
     try:
         return pattern.search(read_text(path)) is not None
-    except Exception:
+    except OSError:
         return False
 
 # uvicorn xxx:yyy [--host ...] [--port ...]
@@ -742,7 +741,7 @@ UVI_CMD_RE = re.compile(
     """
 )
 
-def parse_host_port_from_args(text: str) -> Tuple[Optional[str], Optional[int]]:
+def parse_host_port_from_args(text: str) -> tuple[str | None, int | None]:
     host = None
     port = None
 
@@ -761,7 +760,7 @@ def parse_host_port_from_args(text: str) -> Tuple[Optional[str], Optional[int]]:
 
     return host, port
 
-def detect_uvicorn_from_text(text: str) -> Tuple[Optional[str], Optional[str], Optional[int]]:
+def detect_uvicorn_from_text(text: str) -> tuple[str | None, str | None, int | None]:
     m = UVI_CMD_RE.search(text)
     if m:
         target = m.group("target")
@@ -788,17 +787,17 @@ def detect_node_package_manager(pkg_dir: Path) -> str:
         return "yarn"
     return "npm"
 
-def load_package_scripts(pkg_path: Path) -> Dict[str, str]:
+def load_package_scripts(pkg_path: Path) -> dict[str, str]:
     try:
         data = json.loads(read_text_quick(pkg_path)) or {}
-    except Exception:
+    except (OSError, ValueError):
         return {}
     scripts = data.get("scripts", {}) or {}
     if not isinstance(scripts, dict):
         return {}
     return {str(k): str(v) for k, v in scripts.items()}
 
-def choose_node_backend_script(scripts: Dict[str, str]) -> Tuple[Optional[str], Optional[str]]:
+def choose_node_backend_script(scripts: dict[str, str]) -> tuple[str | None, str | None]:
     for name in ("dev", "start:dev", "start", "serve"):
         cmd = scripts.get(name)
         if cmd:
@@ -810,16 +809,16 @@ def choose_node_backend_script(scripts: Dict[str, str]) -> Tuple[Optional[str], 
             return name, cmd
     return None, None
 
-def build_node_run_command(pm: str, script_name: str) -> Tuple[str, str]:
+def build_node_run_command(pm: str, script_name: str) -> tuple[str, str]:
     if pm == "pnpm":
         return "pnpm install", f"pnpm {script_name}"
     if pm == "yarn":
         return "yarn install", f"yarn {script_name}"
     return "npm install", f"npm run {script_name}"
 
-def iter_backend_package_jsons(root: Path) -> List[Path]:
-    found: List[Path] = []
-    seen: Set[Path] = set()
+def iter_backend_package_jsons(root: Path) -> list[Path]:
+    found: list[Path] = []
+    seen: set[Path] = set()
 
     def add_candidate(path: Path) -> None:
         if not path.is_file():
@@ -851,7 +850,7 @@ def iter_backend_package_jsons(root: Path) -> List[Path]:
 
     return found
 
-def detect_node_backend_mode(root: Path, cfg: Dict[str, str]) -> Optional[dict]:
+def detect_node_backend_mode(root: Path, cfg: dict[str, str]) -> dict | None:
     for pkg in iter_backend_package_jsons(root):
         scripts = load_package_scripts(pkg)
         if not scripts:
@@ -903,7 +902,7 @@ def detect_node_backend_mode(root: Path, cfg: Dict[str, str]) -> Optional[dict]:
 
     return None
 
-def find_backend_start_script(root: Path) -> Optional[str]:
+def find_backend_start_script(root: Path) -> str | None:
     for rel in START_BACKEND_SCRIPT_CANDIDATES:
         p = root / rel
         if p.is_file():
@@ -920,22 +919,20 @@ def should_skip_backend_text_scan(root: Path, path: Path) -> bool:
     except ValueError:
         rel = path
     rel_parts = [part.lower() for part in rel.parts]
-    if name.startswith("project_launcher") and "scripts" in rel_parts:
-        return True
-    return False
+    return bool(name.startswith("project_launcher") and "scripts" in rel_parts)
 
-def infer_uvicorn_target_from_code(root: Path) -> Optional[str]:
+def infer_uvicorn_target_from_code(root: Path) -> str | None:
     # 保守推：FastAPI/ASGI app assignment
     FASTAPI_HINT_RE = re.compile(r"(?m)^\s*(from\s+fastapi\s+import\s+FastAPI|import\s+fastapi)\b|\bFastAPI\s*\(")
     ASGI_ASSIGN_RE = re.compile(r"(?m)^\s*(app|application)\s*=\s*")
 
-    candidates: List[Tuple[str, Path]] = []
+    candidates: list[tuple[str, Path]] = []
     for py in root.rglob("*.py"):
         if any(part in EXCLUDE_DIRS for part in py.parts):
             continue
         try:
             t = read_text(py)
-        except Exception:
+        except OSError:
             continue
         if not (FASTAPI_HINT_RE.search(t) and ASGI_ASSIGN_RE.search(t)):
             continue
@@ -953,11 +950,11 @@ def infer_uvicorn_target_from_code(root: Path) -> Optional[str]:
     if not candidates:
         return None
 
-    uniq: Dict[str, Path] = {t: f for t, f in candidates}
+    uniq: dict[str, Path] = {t: f for t, f in candidates}
     items = list(uniq.items())
 
-    def score(item: Tuple[str, Path]) -> Tuple[int, int]:
-        target, f = item
+    def score(item: tuple[str, Path]) -> tuple[int, int]:
+        _target, f = item
         s1 = len(f.parts)
         s2 = 0
         name = f.stem.lower()
@@ -972,7 +969,7 @@ def infer_uvicorn_target_from_code(root: Path) -> Optional[str]:
     items.sort(key=score)
     return items[0][0]
 
-def detect_backend_mode(root: Path, cfg: Dict[str, str]) -> dict:
+def detect_backend_mode(root: Path, cfg: dict[str, str]) -> dict:
     """
     返回 dict:
       uvicorn: {mode, target, host, port, notes}
@@ -980,7 +977,7 @@ def detect_backend_mode(root: Path, cfg: Dict[str, str]) -> dict:
       node   : {mode, dir, pm, script, install_cmd, run_cmd, host, port, notes}
       streamlit fallback
     """
-    notes: List[str] = []
+    notes: list[str] = []
 
     # 0) user-specified override (env/.launcher.env)
     if cfg.get("UVICORN_TARGET"):
@@ -1010,7 +1007,7 @@ def detect_backend_mode(root: Path, cfg: Dict[str, str]) -> dict:
                 continue
             try:
                 t = read_text(p)
-            except Exception:
+            except OSError:
                 continue
 
             target, host, port = detect_uvicorn_from_text(t)
@@ -1071,28 +1068,28 @@ class FrontendInfo:
     script: str = ""
     install_cmd: str = ""
     run_cmd: str = ""
-    host: Optional[str] = None
-    port: Optional[int] = None
-    direct_cmd_for_bat: Optional[str] = None
+    host: str | None = None
+    port: int | None = None
+    direct_cmd_for_bat: str | None = None
     port_source: str = "unknown"
 
 @dataclass
 class LocalPyEntry:
     exists: bool = False
-    entry: Optional[Path] = None
-    module_target: Optional[str] = None
-    import_root: Optional[Path] = None
+    entry: Path | None = None
+    module_target: str | None = None
+    import_root: Path | None = None
     is_gui_like: bool = False
 
 @dataclass
 class DetectionResult:
     root: Path
-    cfg: Dict[str, str]
+    cfg: dict[str, str]
     project_type: str
     frontend: FrontendInfo
     backend: dict
     local_py: LocalPyEntry
-    static_site: "StaticSiteInfo"
+    static_site: StaticSiteInfo
 
 def _infer_import_root(root: Path, file_path: Path) -> Path:
     parts = [part.lower() for part in file_path.parts]
@@ -1104,14 +1101,14 @@ def _infer_import_root(root: Path, file_path: Path) -> Path:
                 _ = candidate.relative_to(root)
                 if candidate.is_dir():
                     return candidate
-            except Exception:
+            except (ValueError, OSError):
                 continue
     return root
 
-def _file_to_module(import_root: Path, file_path: Path) -> Optional[str]:
+def _file_to_module(import_root: Path, file_path: Path) -> str | None:
     try:
         rel = file_path.relative_to(import_root)
-    except Exception:
+    except ValueError:
         return None
     if rel.suffix.lower() != ".py":
         return None
@@ -1122,7 +1119,7 @@ def _file_to_module(import_root: Path, file_path: Path) -> Optional[str]:
     return ".".join(parts)
 
 def detect_local_python_entry(root: Path) -> LocalPyEntry:
-    candidates: List[Tuple[int, Path]] = []
+    candidates: list[tuple[int, Path]] = []
     for base in [root / "src", root]:
         if not base.is_dir():
             continue
@@ -1131,7 +1128,7 @@ def detect_local_python_entry(root: Path) -> LocalPyEntry:
                 continue
             try:
                 rel = py.relative_to(base)
-            except Exception:
+            except ValueError:
                 continue
             parts = [part.lower() for part in rel.parts]
             if any(part in BACKEND_HINT_DIRS for part in parts):
@@ -1167,7 +1164,7 @@ def detect_local_python_entry(root: Path) -> LocalPyEntry:
         is_gui_like=is_gui_like,
     )
 
-def detect_project(root: Path, cfg: Dict[str, str]) -> DetectionResult:
+def detect_project(root: Path, cfg: dict[str, str]) -> DetectionResult:
     frontend = detect_frontend(root, cfg)
     backend = detect_backend_mode(root, cfg)
     local_py = detect_local_python_entry(root)
@@ -1200,7 +1197,7 @@ def detect_project(root: Path, cfg: Dict[str, str]) -> DetectionResult:
         static_site=static_site,
     )
 
-def parse_frontend_host_port_from_script(script: str) -> Tuple[Optional[str], Optional[int]]:
+def parse_frontend_host_port_from_script(script: str) -> tuple[str | None, int | None]:
     host = None
     port = None
     m = re.search(r"""(?ix)\s--host(?:\s+|=)(?P<host>[A-Za-z0-9\.\-_:]+)""", script)
@@ -1228,7 +1225,7 @@ def parse_frontend_host_port_from_script(script: str) -> Tuple[Optional[str], Op
             host = m.group("host").strip()
     return host, port
 
-def parse_env_port(env_text: str) -> Tuple[Optional[str], Optional[int]]:
+def parse_env_port(env_text: str) -> tuple[str | None, int | None]:
     host = None
     port = None
     m = re.search(r"""(?m)^\s*PORT\s*=\s*(\d{2,5})\s*$""", env_text)
@@ -1243,7 +1240,7 @@ def parse_env_port(env_text: str) -> Tuple[Optional[str], Optional[int]]:
         host = m.group(1).strip()
     return host, port
 
-def parse_env_host_port(env_text: str, allow_generic_port: bool = True) -> Tuple[Optional[str], Optional[int]]:
+def parse_env_host_port(env_text: str, allow_generic_port: bool = True) -> tuple[str | None, int | None]:
     host = None
     port = None
     for line in (env_text or "").splitlines():
@@ -1257,16 +1254,11 @@ def parse_env_host_port(env_text: str, allow_generic_port: bool = True) -> Tuple
             continue
         if host is None and key in {"FRONTEND_HOST", "VITE_HOST", "HOST"}:
             host = value
-        if port is None:
-            if key in {"FRONTEND_PORT", "VITE_PORT"}:
-                port = safe_int(value)
-            elif ("PORT" in key) and (("VITE" in key) or ("FRONTEND" in key) or ("DEV" in key)):
-                port = safe_int(value)
-            elif allow_generic_port and key == "PORT":
-                port = safe_int(value)
+        if (port is None) and (key in {"FRONTEND_PORT", "VITE_PORT"} or ("PORT" in key) and (("VITE" in key) or ("FRONTEND" in key) or ("DEV" in key)) or allow_generic_port and key == "PORT"):
+            port = safe_int(value)
     return host, port
 
-def detect_vite_host_port(fe_dir: Path) -> Tuple[Optional[str], Optional[int]]:
+def detect_vite_host_port(fe_dir: Path) -> tuple[str | None, int | None]:
     for name in ("vite.config.ts", "vite.config.js", "vite.config.mjs", "vite.config.cjs"):
         path = fe_dir / name
         if not path.is_file():
@@ -1280,7 +1272,7 @@ def detect_vite_host_port(fe_dir: Path) -> Tuple[Optional[str], Optional[int]]:
         )
     return None, None
 
-def parse_npx_serve_for_bat(script: str) -> Tuple[Optional[int], Optional[str]]:
+def parse_npx_serve_for_bat(script: str) -> tuple[int | None, str | None]:
     if not script:
         return None, None
 
@@ -1305,7 +1297,7 @@ def parse_npx_serve_for_bat(script: str) -> Tuple[Optional[int], Optional[str]]:
 
     return default_port, direct_cmd.replace(arg, str(default_port), 1)
 
-def detect_frontend(root: Path, cfg: Dict[str, str]) -> FrontendInfo:
+def detect_frontend(root: Path, cfg: dict[str, str]) -> FrontendInfo:
     pkg = next((root / rel for rel in FRONTEND_PKG_CANDIDATES if (root / rel).is_file()), None)
     if not pkg:
         return FrontendInfo(exists=False)
@@ -1318,12 +1310,12 @@ def detect_frontend(root: Path, cfg: Dict[str, str]) -> FrontendInfo:
     else:
         pm = "npm"
 
-    scripts: Dict[str, str] = {}
+    scripts: dict[str, str] = {}
     try:
         scripts_data = (json.loads(read_text_quick(pkg)) or {}).get("scripts", {}) or {}
         if isinstance(scripts_data, dict):
             scripts = {str(k): str(v) for k, v in scripts_data.items()}
-    except Exception:
+    except (OSError, ValueError, AttributeError):
         scripts = {}
 
     script_name = "dev" if "dev" in scripts else ("start" if "start" in scripts else ("serve" if "serve" in scripts else "dev"))
@@ -1416,7 +1408,7 @@ class StaticSiteInfo:
     host: str = "127.0.0.1"
     port: int = 0
 
-def detect_static_site(root: Path, cfg: Dict[str, str]) -> StaticSiteInfo:
+def detect_static_site(root: Path, cfg: dict[str, str]) -> StaticSiteInfo:
     # If frontend exists (package.json), we don't treat it as static by default.
     # Static only when no package.json.
     host = cfg.get("STATIC_HOST", "").strip() or "127.0.0.1"
@@ -1430,7 +1422,7 @@ def detect_static_site(root: Path, cfg: Dict[str, str]) -> StaticSiteInfo:
                 # If port not specified, pick a safe default different from backend default 8000:
                 # Still "default" but deterministic. We'll choose 5173 for dist, 3000 for build.
                 if port == 0:
-                    base = Path(rel).name.lower()
+                    Path(rel).name.lower()
                     port = 5173 if "dist" in rel.lower() else 3000
                 return StaticSiteInfo(exists=True, dir=str(d.relative_to(root)).replace("/", "\\"), host=host, port=port)
 
@@ -1438,12 +1430,12 @@ def detect_static_site(root: Path, cfg: Dict[str, str]) -> StaticSiteInfo:
 
 def compose_detection_result(
     root: Path,
-    cfg: Dict[str, str],
+    cfg: dict[str, str],
     backend: dict,
     frontend: FrontendInfo,
     static_site: StaticSiteInfo,
-    local_py: Optional[LocalPyEntry] = None,
-    project_type: Optional[str] = None,
+    local_py: LocalPyEntry | None = None,
+    project_type: str | None = None,
 ) -> DetectionResult:
     local_py = local_py or LocalPyEntry(exists=False)
     if project_type is None:
@@ -1463,13 +1455,13 @@ def compose_detection_result(
             project_type = "unknown"
     return DetectionResult(root, cfg, project_type, frontend, backend, local_py, static_site)
 
-def bat_pythonpath_prefix(root: Path, import_root: Optional[Path]) -> str:
+def bat_pythonpath_prefix(root: Path, import_root: Path | None) -> str:
     if not import_root or import_root == root:
         return ""
     rel = norm_rel(root, import_root).replace("/", "\\")
     return f'set "PYTHONPATH=%CD%\\{rel};%CD%;%PYTHONPATH%"\n'
 
-def shell_pythonpath_prefix(root: Path, import_root: Optional[Path]) -> str:
+def shell_pythonpath_prefix(root: Path, import_root: Path | None) -> str:
     if not import_root or import_root == root:
         return ""
     rel = norm_rel(root, import_root).replace("\\", "/")
@@ -1482,9 +1474,9 @@ def shell_pythonpath_prefix(root: Path, import_root: Optional[Path]) -> str:
 def write_run_app_bat(root: Path, script_name: str, backend: dict,
                       frontend: FrontendInfo,
                       static_site: StaticSiteInfo,
-                      cfg: Dict[str, str],
+                      cfg: dict[str, str],
                       venv_dir: str,
-                      det: Optional[DetectionResult] = None) -> Path:
+                      det: DetectionResult | None = None) -> Path:
     det = det or compose_detection_result(root, cfg, backend, frontend, static_site)
     mode = det.backend.get("mode", "none")
     local_py = det.local_py
@@ -1496,8 +1488,8 @@ def write_run_app_bat(root: Path, script_name: str, backend: dict,
 
     backend_start = ""
     gui_start = ""
-    backend_url: Optional[str] = None
-    frontend_url: Optional[str] = None
+    backend_url: str | None = None
+    frontend_url: str | None = None
 
     if project_type == "embedded_gui_plus_backend" and mode != "none":
         backend_url = "http://%APP_BACKEND_HOST%:%APP_BACKEND_PORT%"
@@ -1723,10 +1715,10 @@ endlocal
 def write_run_app_sh(root: Path, script_relpath: str, backend: dict,
                      frontend: FrontendInfo,
                      static_site: StaticSiteInfo,
-                     cfg: Dict[str, str],
+                     cfg: dict[str, str],
                      venv_dir: str,
                      filename: str = "run_app.sh",
-                     det: Optional[DetectionResult] = None) -> Path:
+                     det: DetectionResult | None = None) -> Path:
     det = det or compose_detection_result(root, cfg, backend, frontend, static_site)
     mode = det.backend.get("mode", "none")
     local_py = det.local_py
@@ -2047,9 +2039,9 @@ read -r _
 def write_run_app_command(root: Path, script_relpath: str, backend: dict,
                           frontend: FrontendInfo,
                           static_site: StaticSiteInfo,
-                          cfg: Dict[str, str],
+                          cfg: dict[str, str],
                           venv_dir: str,
-                          det: Optional[DetectionResult] = None) -> Path:
+                          det: DetectionResult | None = None) -> Path:
     # macOS Finder can double-click a .command file (still may require chmod +x after unzip).
     return write_run_app_sh(
         root=root,
@@ -2067,7 +2059,7 @@ def write_run_app_command(root: Path, script_relpath: str, backend: dict,
 def ensure_posix_launcher_executable(path: Path) -> None:
     try:
         path.chmod(path.stat().st_mode | 0o755)
-    except Exception:
+    except OSError:
         pass
 
 PACKAGE_EXCLUDE_DIRS = {".venv", "venv", "__pycache__", ".git", ".idea", ".vscode", "node_modules"}
@@ -2090,9 +2082,7 @@ def should_exclude_from_package(rel_path: Path) -> bool:
         return True
     if rel_path.parts and rel_path.parts[0].lower() == "logs":
         return True
-    if rel_path.suffix.lower() == ".zip" and rel_path.parts and rel_path.parts[0].lower() == "release":
-        return True
-    return False
+    return bool(rel_path.suffix.lower() == ".zip" and rel_path.parts and rel_path.parts[0].lower() == "release")
 
 def package_project_zip(root: Path, out_zip: Path) -> Path:
     import zipfile
@@ -2122,32 +2112,32 @@ def package_project_zip(root: Path, out_zip: Path) -> Path:
 # Full auto pipeline
 # ============================================================
 
-def full_auto(root: Path, venv_dir: str, ensure_only: bool = False) -> Tuple[int, str]:
-    messages: List[str] = []
+def full_auto(root: Path, venv_dir: str, ensure_only: bool = False) -> tuple[int, str]:
+    messages: list[str] = []
     hard_fail = False
 
     try:
         cfg = get_launcher_config(root)
-    except Exception as exc:
+    except (OSError, ValueError) as exc:
         cfg = {}
         messages.append(f"[WARN] load_launcher_config failed: {exc!r}")
 
-    relative_import_actions: List[str] = []
+    relative_import_actions: list[str] = []
     try:
         relative_import_actions = apply_relative_import_fixes(root)
         for action in relative_import_actions:
             messages.append(f"[FIX] {action}")
-    except Exception as exc:
+    except (OSError, ValueError, SyntaxError, RuntimeError) as exc:
         messages.append(f"[WARN] relative import auto-fix failed: {exc!r}")
 
-    imported_modules: Set[str] = set()
+    imported_modules: set[str] = set()
     try:
         scan = scan_imports(root)
         if scan.syntax_errors:
             warn_lines = "\n".join(f"- {norm_rel(root, path)}: {msg}" for path, msg in scan.syntax_errors[:20])
             messages.append("[WARN] Some files could not be parsed while scanning imports:\n" + warn_lines)
         imported_modules = {item.module for item in scan.imports if item.module}
-    except Exception as exc:
+    except (OSError, ValueError, SyntaxError, RuntimeError) as exc:
         messages.append(f"[WARN] import scan failed: {exc!r}")
 
     req_path = root / "requirements.txt"
@@ -2157,19 +2147,19 @@ def full_auto(root: Path, venv_dir: str, ensure_only: bool = False) -> Tuple[int
             messages.extend(f"[INFO] {action}" for action in req_actions)
         else:
             messages.append("[INFO] requirements.txt did not need changes.")
-    except Exception as exc:
+    except (OSError, ValueError, RuntimeError) as exc:
         messages.append(f"[WARN] requirements repair failed: {exc!r}")
 
     venv_ready = False
     try:
         ensure_venv(root, venv_dir)
         venv_ready = True
-    except Exception as exc:
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
         messages.append(f"[WARN] venv creation failed: {exc!r}")
 
     pip_output = ""
     pip_check_output = ""
-    import_failures: List[str] = []
+    import_failures: list[str] = []
     local_names = detect_local_toplevel(root)
 
     if venv_ready and req_path.is_file():
@@ -2197,7 +2187,7 @@ def full_auto(root: Path, venv_dir: str, ensure_only: bool = False) -> Tuple[int
 
         try:
             import_test_third_party(root, venv_dir, imported_modules)
-        except Exception as exc:
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
             import_failures = [line for line in str(exc).splitlines() if line.strip()]
             messages.append("[WARN] import smoke test reported issues.")
             messages.extend(import_failures[:50])
@@ -2206,7 +2196,7 @@ def full_auto(root: Path, venv_dir: str, ensure_only: bool = False) -> Tuple[int
 
     try:
         det = detect_project(root, cfg)
-    except Exception as exc:
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError) as exc:
         messages.append(f"[WARN] detect_project failed: {exc!r}")
         det = compose_detection_result(root, cfg, {"mode": "none"}, FrontendInfo(exists=False), StaticSiteInfo(exists=False))
 
@@ -2214,7 +2204,7 @@ def full_auto(root: Path, venv_dir: str, ensure_only: bool = False) -> Tuple[int
         seeded_runtime = seed_apsm_runtime(root, det, cfg)
         if seeded_runtime:
             messages.append(f"- apsm runtime seeded: {', '.join(seeded_runtime)}")
-    except Exception as exc:
+    except (OSError, ValueError, RuntimeError) as exc:
         messages.append(f"[WARN] APSM runtime seed failed: {exc!r}")
 
     out_bat = root / "run_app.bat"
@@ -2230,7 +2220,7 @@ def full_auto(root: Path, venv_dir: str, ensure_only: bool = False) -> Tuple[int
             out_cmd = write_run_app_command(root, script_rel_posix, det.backend, det.frontend, det.static_site, cfg, venv_dir, det=det)
             ensure_posix_launcher_executable(out_sh)
             ensure_posix_launcher_executable(out_cmd)
-        except Exception as exc:
+        except (OSError, ValueError, RuntimeError) as exc:
             hard_fail = True
             messages.append(f"[ERROR] launcher generation failed: {exc!r}")
     else:
@@ -2269,7 +2259,7 @@ def full_auto(root: Path, venv_dir: str, ensure_only: bool = False) -> Tuple[int
         messages.append(f"- output files: {out_bat}, {out_sh}, {out_cmd}")
 
     if ensure_only:
-        failures: List[str] = []
+        failures: list[str] = []
         if not venv_ready:
             failures.append("venv creation failed")
         if req_path.is_file() and pip_output and "failed" in "\n".join(messages).lower():
@@ -2280,7 +2270,7 @@ def full_auto(root: Path, venv_dir: str, ensure_only: bool = False) -> Tuple[int
 
     return (1 if hard_fail else 0), "\n".join(messages)
 
-def generate_launch_scripts(root: Path, venv_dir: str) -> Tuple[Path, Path, Path]:
+def generate_launch_scripts(root: Path, venv_dir: str) -> tuple[Path, Path, Path]:
     cfg = get_launcher_config(root)
     det = detect_project(root, cfg)
     seed_apsm_runtime(root, det, cfg)
@@ -2326,7 +2316,7 @@ def main() -> int:
     if args.package:
         try:
             out_bat, out_sh, out_cmd = generate_launch_scripts(root, args.venv)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- convert a top-level generator failure to a nonzero CLI result
             print(f"[ERROR] 生成啟動腳本失敗：{e}")
             return 1
 
@@ -2340,7 +2330,7 @@ def main() -> int:
 
         try:
             out_zip = package_project_zip(root, out_zip)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- convert a top-level generator failure to a nonzero CLI result
             print(f"[ERROR] 打包 ZIP 失敗：{e}")
             return 1
 

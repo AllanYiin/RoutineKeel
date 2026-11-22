@@ -2,7 +2,6 @@
 import json
 
 import pytest
-
 from flow_base.core.service import WorkflowService
 from flow_base.diagnostics import record_exception
 from flow_base.runtime import FlowError

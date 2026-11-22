@@ -63,7 +63,7 @@ def setup(tmp_path, provider=None):
 
 
 def test_scoped_model_repair_streams_then_compiles_and_replays(tmp_path):
-    studio, p, build, cases, repair, prepared = setup(tmp_path)
+    studio, p, build, _cases, repair, prepared = setup(tmp_path)
     events = list(repair.run(prepared, authorized_hash=prepared.request_hash))
     assert events[0]["event"] == "repair.started"
     assert sum(e["event"] == "repair.delta" for e in events) == 2
@@ -341,7 +341,7 @@ def test_two_model_repairs_fix_csv_algorithm_and_parameter_with_frozen_cases(tmp
     parameters["arguments"]["minimum"] = 110
     payload = program_ir(parameters, "csv")
     payload["goal"]["description"] = "篩選未結帳且金額至少 100 的訂單"
-    studio, p, revision, policy = build_ir(tmp_path, payload)
+    studio, p, _revision, _policy = build_ir(tmp_path, payload)
     studio.close()
     model = StudioSession(tmp_path / "studio", runtime_python=runtime_python())
     model.select_project(p.project_id)

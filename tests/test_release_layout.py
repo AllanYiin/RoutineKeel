@@ -7,9 +7,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
-
-ROOT = Path(__file__).resolve().parents[1]
-RELEASE = ROOT / 'dist/release'
+from package_paths import RELEASE
 
 
 def full_archive():
@@ -28,7 +26,7 @@ def cli(workspace, *arguments, ok=True):
     wheel = next((workspace / 'flow_base').glob('flow_base-*.whl'))
     code = 'import sys;sys.path.insert(0,sys.argv.pop(1));from flow_base.cli import main;raise SystemExit(main())'
     command = [sys.executable, '-X', 'utf8', '-I', '-c', code, str(wheel), '--workspace', str(workspace), *map(str, arguments)]
-    result = subprocess.run(command, cwd=workspace / 'workflow_studio', capture_output=True, text=True, encoding='utf-8', timeout=45)
+    result = subprocess.run(command, cwd=workspace / 'workflow_studio', capture_output=True, text=True, encoding='utf-8', timeout=45, check=False)
     assert (result.returncode == 0) == ok, result.stdout + result.stderr
     return json.loads(result.stdout)
 
@@ -87,7 +85,7 @@ from workflow_studio.__main__ import main
 raise SystemExit(main())
 '''
     result = subprocess.run([sys.executable, '-X', 'utf8', '-I', '-c', code, str(wheel)],
-                            cwd=extracted, capture_output=True, text=True, encoding='utf-8', timeout=15)
+                            cwd=extracted, capture_output=True, text=True, encoding='utf-8', timeout=15, check=False)
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)['result']['mode'] == 'host_conversation'
 
@@ -111,6 +109,24 @@ def test_clean_extracted_wheel_catalog_plan_execution_and_cache(extracted):
     assert (extracted / 'flow_base/share_logs' / first['flow_id'] / first['run_id'] / 'report.json').is_file()
     assert not (extracted / 'share_states').exists()
     assert not (extracted / 'share_logs').exists()
+
+
+@pytest.mark.parametrize('component', ['flow_base', 'workflow_studio/runtime'])
+def test_packaged_runtime_has_the_mandatory_validator(extracted, component):
+    folder = extracted / component
+    base_wheel, = folder.glob('flow_base-*.whl')
+    contracts_wheel, = folder.glob('routinekeel_contracts-*.whl')
+    code = """
+import sys
+sys.path[:0] = sys.argv[1:3]
+from flow_base.blueprints.ir import check_with_studio
+from routinekeel_contracts import validator
+assert validator.__file__.startswith(sys.argv[2])
+assert check_with_studio({}, {"tools": {}}, None)["status"] == "FAIL"
+assert not any(name.startswith("workflow_studio") for name in sys.modules)
+"""
+    subprocess.run([sys.executable, '-I', '-c', code, str(base_wheel), str(contracts_wheel)],
+                   cwd=extracted, check=True, timeout=20)
 
 
 @pytest.mark.parametrize('relative', [

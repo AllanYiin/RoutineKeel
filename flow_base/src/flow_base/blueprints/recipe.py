@@ -1,12 +1,13 @@
 """Admission of the host's resolution of an interview blueprint."""
 
-from importlib.metadata import entry_points
 import json
-from pydantic import BaseModel, ConfigDict, Field
+from importlib.metadata import entry_points
 from typing import Literal
 
-from .source import require, validate_value
+from pydantic import BaseModel, ConfigDict, Field
+
 from .program import run_program, validate_program
+from .source import require, review_roles, validate_value
 
 
 class Model(BaseModel):
@@ -143,8 +144,7 @@ def compile_plan(source, resolution):
         check_schema(contract["schema"])
         contracts[key] = contract
     points = source["definition"]["review"]["points"]
-    after = {p["after_step"]: p for p in points if not p.get("is_step")}
-    human = {p["is_step"] for p in points if p.get("is_step")}
+    after, human = review_roles(points)
     available = set(source["inputs"])
     steps = []
     operations = local_operations()

@@ -3,14 +3,17 @@ import json
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
-
 from flow_base.contracts import Step, Workflow
-from flow_base.runtime import FlowError, Runtime
-from flow_base.storage.artifacts import build_artifact_set, validate_artifact_set, gc_preview, gc_apply
 from flow_base.engine import Adapter, run_workflow
+from flow_base.runtime import FlowError, Runtime
+from flow_base.storage.artifacts import (
+    build_artifact_set,
+    gc_apply,
+    gc_preview,
+    validate_artifact_set,
+)
 from flow_base.workspace import Manifest, Workspace
-from test_workspace import workspace
+from pydantic import ValidationError
 
 
 def test_legacy_step_and_workflow_defaults_stay_compatible():

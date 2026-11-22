@@ -1,9 +1,7 @@
 """Explicit CLI/workspace extension to the supplied project launcher/validator."""
-from pathlib import Path
 import json
-import subprocess
-import sys
 import tomllib
+from pathlib import Path
 
 BAT = r'''@echo off
 setlocal DisableDelayedExpansion
@@ -128,7 +126,12 @@ def generate(root):
         path.chmod(0o755)
     project = root/'pyproject.toml'
     if project.exists():
-        deps = tomllib.loads(project.read_text(encoding='utf-8'))['project']['dependencies']
+        metadata = tomllib.loads(project.read_text(encoding='utf-8'))
+        sources = metadata.get('tool', {}).get('uv', {}).get('sources', {})
+        deps = []
+        for requirement in metadata['project']['dependencies']:
+            local = sources.get(requirement.partition('==')[0], {}).get('path')
+            deps.append('./' + local if local else requirement)
         (root/'requirements.txt').write_text('\n'.join(deps)+'\n', encoding='utf-8')
     return 0
 

@@ -1,12 +1,14 @@
 """Human lifecycle banners and machine-readable progress, independent of workflows."""
 from __future__ import annotations
-from contextvars import ContextVar
+
 import json
 import math
 import os
-from pathlib import Path
 import sys
 import time
+from contextvars import ContextVar
+from pathlib import Path
+
 from filelock import FileLock
 
 ACTIVE = ContextVar('flow_base_reporter', default=None)
@@ -59,8 +61,8 @@ class Reporter:
         self.index, self.label, self.step_id = 0, '環境準備與後端驗證', None
         self.measure = None
         self.finished = False
-        from .usage import UsageMeter
         from .codex_tokens import SessionMonitor
+        from .usage import UsageMeter
         self.usage = UsageMeter(host=SessionMonitor())
         self.completed_steps = 0
         from .observability.events import EventRecorder
@@ -190,8 +192,8 @@ class Reporter:
     def fail(self, code, message, interrupted=False, diagnostic=None):
         self.finished = True
         label = '工作流已中斷' if interrupted else '工作流執行失敗'
-        from .observability.errors import explain_error
         from .observability.diagnostics import safe_export
+        from .observability.errors import explain_error
         explanation = explain_error(code, cause_status=(diagnostic or {}).get('cause_status', 'unknown'))
         confidence = {'confirmed': '已確認', 'suspected': '可能', 'unknown': '尚未確認'}[explanation['cause_status']]
         error_id = (diagnostic or {}).get('error_id', '未取得')

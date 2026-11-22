@@ -10,6 +10,8 @@ from flow_base.core.service import WorkflowService
 from flow_base.runtime import FlowError
 from test_blueprint_install import apply, blueprint, candidate, case, finish, resolution
 
+pytestmark = pytest.mark.usefixtures("desktop_test_catalog")
+
 
 @pytest.mark.parametrize("point", ["before_switch", "after_switch"])
 def test_interruption_has_no_partial_workflow_and_retry_is_idempotent(
@@ -73,6 +75,9 @@ def test_approved_profile_reuse_requires_original_inputs_and_version(tmp_path):
     assert second["pending"]["kind"] == "external" and second["pending"]["inputs"] == {
         "draft": "ONE"
     }
+    assert second["pending"]["authorization_required"]
+    with pytest.raises(FlowError):
+        finish(service,second,"claim")
     with pytest.raises(FlowError):
         start(
             "three",
@@ -111,7 +116,7 @@ def test_studio_validator_and_runtime_language_compatibility(tmp_path, monkeypat
 
 def test_official_mcp_first_install_and_reconnect(tmp_path):
     pytest.importorskip("mcp")
-    from test_mcp_stdio import client_for, call
+    from test_mcp_stdio import call, client_for
 
     source = blueprint(tmp_path / "fixture.zip")
 

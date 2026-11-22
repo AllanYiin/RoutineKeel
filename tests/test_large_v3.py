@@ -5,11 +5,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
-from flow_base.runtime import FlowError, Runtime, run_process
 from ai_flow01 import adapter, worker
 from ai_flow01.contracts import subtitle_workflow
 from ai_flow01.resources import catalogue
+from flow_base.runtime import FlowError, Runtime, run_process
 
 ROOT = Path(__file__).resolve().parents[1]
 

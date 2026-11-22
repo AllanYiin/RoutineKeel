@@ -7,14 +7,16 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from flow_base.observability.recovery import SecondaryOperation
+
 from . import __version__
-from .intent import Intent, local_intent, model_intent
-from .runtime import FlowError, inspect_environment, read_json, atomic_json
-from .workspace import Workspace, catalog
-from .diagnostics import cli_error
-from .observability.diagnostics import guard_secondary
 from .core.service import WorkflowService
 from .core.types import PlanRequest, StartRequest, SubmitRequest
+from .diagnostics import cli_error
+from .intent import Intent, local_intent, model_intent
+from .observability.diagnostics import guard_secondary
+from .runtime import FlowError, atomic_json, inspect_environment, read_json
+from .workspace import Workspace
 
 
 def parser():
@@ -25,6 +27,9 @@ def parser():
     commands.add_parser('list', help='列出同層含 flow.json 的流程，不載入任務程式')
     commands.add_parser('ui', help='開啟本機圖形工作台；無圖形環境時仍可用 CLI')
     commands.add_parser('mcp-stdio', help='啟動可選的本機 MCP stdio 工具入口')
+    c = commands.add_parser('studio', help='桌面對話訪談、實際答覆與續編')
+    c.add_argument('operation')
+    c.add_argument('--payload', default='{}', help='操作參數 JSON')
     c = commands.add_parser('queue-worker', help='另外啟動本機任務佇列 Worker；不由 MCP 派生')
     c.add_argument('--once', action='store_true', help='處理一件工作後退出；沒有工作時立即退出')
     c.add_argument('--poll-interval', type=float, default=0.5)
@@ -80,6 +85,20 @@ def parser():
     c.add_argument('--intent', type=Path, required=True)
     c.add_argument('--execute', action='store_true')
     c.add_argument('--offline', action='store_true')
+    c = commands.add_parser('agent-workflow', help='探索已安裝工作流或接續工作')
+    for field in ('execution-id','session-id','proposal-id'):
+        c.add_argument('--'+field)
+    c = commands.add_parser('workflow-evolution', help='提出、比較與核准工作流修訂')
+    c.add_argument('session_id')
+    c.add_argument('operation', choices=['propose','get','prepare','export','compare','activate','reject','rollback'])
+    c.add_argument('--payload', type=Path, required=True)
+    c = commands.add_parser('workflow-quality', help='預覽品質判定、保存回饋及版本化設定')
+    c.add_argument('session_id')
+    c.add_argument('operation', choices=['preview','feedback','history','save_profile','profiles'], nargs='?', default='preview')
+    c.add_argument('--payload',type=Path)
+    c = commands.add_parser('resolve-blueprint', help='核對藍圖需要的工具與目前可用能力')
+    c.add_argument('--draft-id', required=True)
+    c.add_argument('--offline', action='store_true')
     c = commands.add_parser('install-workflow', help='匯入訪談藍圖、試做或首次安裝')
     selector = c.add_mutually_exclusive_group(required=True)
     selector.add_argument('--archive', type=Path)
@@ -92,7 +111,7 @@ def parser():
     c.add_argument('--install-hash')
     c = commands.add_parser('blueprint-task', help='取得待辦、回傳結果或退回重做')
     c.add_argument('session_id')
-    c.add_argument('operation', choices=['next','claim','complete','revise'], nargs='?', default='next')
+    c.add_argument('operation', choices=['next','status','authorize','decline','claim','stream_delta','complete','reconcile','revise','retry','cancel'], nargs='?', default='next')
     c.add_argument('--payload', type=Path)
     c = commands.add_parser('update-workflow', help='預覽或套用新版流程 ZIP，保留設定、成果及歷史')
     c.add_argument('--archive', type=Path, required=True)
@@ -259,13 +278,13 @@ def emit(value):
 
 def emit_error(runtime, exc, code=None, *, human=False):
     """A broken diagnostic or output channel cannot replace the original error."""
-    try:
+    with SecondaryOperation('cli_error', catch=BaseException) as diagnostic_write:
         result = cli_error(runtime, exc, code)
-    except BaseException:
+    if diagnostic_write.error is not None:
         original_code = exc.code if isinstance(exc, FlowError) else type(exc).__name__
         result = {'ok': False, 'error': {'code': code or original_code,
                   'message': '錯誤診斷暫時無法保存', 'details': {}, 'diagnostic': {'error_id': 'unavailable'}}}
-    try:
+    with SecondaryOperation('display CLI error', catch=BaseException) as error_display:
         if human:
             error = result['error']
             explanation = error.get('user_explanation', {})
@@ -284,17 +303,21 @@ def emit_error(runtime, exc, code=None, *, human=False):
             print('錯誤編號：' + error.get('diagnostic', {}).get('error_id', 'unavailable'))
         else:
             emit(result)
-    except BaseException:
-        try:
+    if error_display.error is not None:
+        with SecondaryOperation('print', catch=BaseException):
             print(f"{result['error']['code']}: {result['error']['diagnostic']['error_id']}", file=sys.stderr)
-        except BaseException:
-            pass
     return result
 
 
 def diagnostic_command(workspace, args):
-    from .observability.commands import (doctor, diagnose, logs, explain_error_id,
-                                          export_preview, human_text)
+    from .observability.commands import (
+        diagnose,
+        doctor,
+        explain_error_id,
+        export_preview,
+        human_text,
+        logs,
+    )
     runtime = workspace.runtime
     try:
         if args.command == 'doctor':
@@ -318,11 +341,11 @@ def diagnostic_command(workspace, args):
         if args.format == 'json':
             emit_error(runtime, exc)
         else:
-            try:
+            with SecondaryOperation('cli_error', catch=BaseException) as diagnostic_write:
                 error = cli_error(runtime, exc)
                 explanation = error['error'].get('user_explanation') or {}
                 error_id = error['error']['diagnostic']['error_id']
-            except BaseException:
+            if diagnostic_write.error is not None:
                 from .observability.errors import explain_exception
                 explanation = explain_exception(exc)
                 error_id = 'unavailable'
@@ -332,14 +355,14 @@ def diagnostic_command(workspace, args):
                 print('下一步：' + explanation['suggested_actions'][0], file=sys.stderr)
             print('錯誤編號：' + error_id, file=sys.stderr)
         return 2
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- the command boundary emits a diagnostic and a failure exit code
         if args.format == 'json':
             emit_error(runtime, exc, 'UNEXPECTED_ERROR')
         else:
-            try:
+            with SecondaryOperation('cli_error', catch=BaseException) as diagnostic_write:
                 result = cli_error(runtime, exc, 'UNEXPECTED_ERROR')
                 error_id = result['error']['diagnostic']['error_id']
-            except BaseException:
+            if diagnostic_write.error is not None:
                 error_id = 'unavailable'
             print('診斷功能發生未預期錯誤；請記下錯誤編號交給維護者。', file=sys.stderr)
             print('錯誤編號：' + error_id, file=sys.stderr)
@@ -354,6 +377,16 @@ def main(argv=None):
         getattr(args, 'input', None), getattr(args, 'output', None), getattr(args, 'archive', None)])
     try:
         command = args.command or ('chat' if sys.stdin.isatty() else 'list')
+        if command == 'studio':
+            from .studio import studio_request, studio_terminal
+            params = json.loads(args.payload)
+            if not isinstance(params,dict):
+                raise ValueError('訪談請求須為 JSON 物件')
+            if args.operation == 'stream':
+                return studio_terminal(workspace.root, params, operation=args.operation)
+            send = studio_request(workspace.root, args.operation, params)
+            print(json.dumps({'ok':True, 'result':send},ensure_ascii=False))
+            return 0
         if command == 'ui':
             try:
                 from .ui.app import run_ui
@@ -382,6 +415,14 @@ def main(argv=None):
                       'execution': 'dispatch --intent intent.json --execute', 'policy': 'Select installed IDs and declared parameter_paths only; no generated code.'}
         elif command in {'doctor', 'diagnose', 'logs', 'explain-error', 'export-diagnostics'}:
             return diagnostic_command(workspace, args)
+        elif command == 'agent-workflow':
+            result=service.agent_workflow(execution_id=args.execution_id,session_id=args.session_id,proposal_id=args.proposal_id)
+        elif command == 'workflow-evolution':
+            result = service.workflow_evolution(args.session_id,args.operation,read_json(args.payload))
+        elif command == 'workflow-quality':
+            result=service.workflow_quality(args.session_id,args.operation,read_json(args.payload) if args.payload else {})
+        elif command == 'resolve-blueprint':
+            result = service.resolve_blueprint_capabilities(args.draft_id,offline=args.offline)
         elif command == 'install-workflow':
             result = service.install_workflow(archive=args.archive, draft_id=args.draft_id,
                 resolution=read_json(args.resolution) if args.resolution else None,
@@ -485,6 +526,6 @@ def main(argv=None):
     except KeyboardInterrupt as exc:
         emit_error(runtime, exc, 'INTERRUPTED')
         return 130
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- the command boundary emits a diagnostic and a failure exit code
         emit_error(runtime, exc, 'UNEXPECTED_ERROR')
         return 1

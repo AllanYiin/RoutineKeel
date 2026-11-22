@@ -8,13 +8,20 @@ import subprocess
 import sys
 import tempfile
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
-from ..runtime import FlowError, atomic_json, read_json
-from ..workspace import Workspace, catalog
 from ..package_updates import package_operation
-from .types import PlanRequest, PlanResult, StartRequest, StartResult, SubmitRequest, SubmitResult
+from ..runtime import FlowError, atomic_json, digest, read_json
+from ..workspace import Workspace
+from .types import (
+    PlanRequest,
+    PlanResult,
+    StartRequest,
+    StartResult,
+    SubmitRequest,
+    SubmitResult,
+)
 
 RUN_ID = re.compile(r'^run_[a-f0-9]{32}$')
 
@@ -39,7 +46,14 @@ class WorkflowService:
                 'exists': self.workspace.root.is_dir(), 'workflow_count': len(tasks)}
 
     def list_workflows(self):
-        return catalog(self.workspace)
+        from .agent import describe
+        tasks=self.workspace.discover()
+        return [{**t.manifest.model_dump(exclude={'sha256','package','defaults','rules'}),'flow_id':t.flow_id,
+                 'folder':t.folder.name,'invocation':describe(t)} for t in tasks.values()]
+
+    def agent_workflow(self, **identifiers):
+        from .agent import conversation
+        return conversation(self,**identifiers)
 
     def install_workflow(self, *, archive=None, draft_id=None, resolution=None, cases=None,
                          build_id=None, install_hash=None, member=None, offset=0):
@@ -64,21 +78,106 @@ class WorkflowService:
         return {'source': read_json(folder / 'blueprint.json'),
                 'builds': [read_json(p) for p in sorted(folder.glob('builds/*/verification.json'))]}
 
+    def resolve_blueprint_capabilities(self, draft_id, *, offline=False):
+        from ..blueprints.installer import draft_dir, read_archive
+        from ..blueprints.source import inspect_blueprint, require
+        from ..graph.capabilities import resolve_graph
+        src,_ = inspect_blueprint(read_archive(draft_dir(self.workspace,draft_id)/"source.zip"))
+        require(src["source_hash"] == draft_id, "草稿指紋不符")
+        if "graph" not in src:
+            from ..graph.source import convert_linear
+            src["graph"],_ = convert_linear(src)
+        if src.get("blueprint_schema_version") == 2:
+            from ..graph.builder import preflight_graph
+
+            return preflight_graph(src["graph"], self.workspace.root, offline=offline)
+        return resolve_graph(src["graph"],self.workspace.root,offline=offline)
+
+    def workflow_evolution(self, session_id, operation, payload=None):
+        from .. import evolution
+        from ..blueprints.source import require
+        require(payload is None or isinstance(payload,dict),"修訂參數須為物件")
+        params = dict(payload or {})
+        if operation == "propose":
+            return evolution.proposed(self, session_id, **params)
+        identity = params.pop("proposal_id", None)
+        state = evolution.current(evolution.root(self.workspace.runtime, identity))
+        require(state["session_id"] == session_id, "提案與工作識別碼不符")
+        if operation == "get":
+            return state
+        return evolution.change(self, identity, params.pop("expected_revision", None), operation, params)
+
+    def workflow_quality(self,session_id,operation="preview",payload=None):
+        from ..blueprints.source import require
+        from ..graph.session import GraphSession
+        from ..quality import feedback, preview, save_profile
+        runtime=self.workspace.runtime
+        session=GraphSession(runtime,session_id)
+        require(session.path.is_file(),"找不到工作")
+        state=read_json(session.path)
+        require(not state.get("owner_session") and state["plan"].get("format")==2,"請使用 Graph 主工作")
+        params=payload or {}
+        if operation=="save_profile":
+            return save_profile(runtime,state["plan"]["graph"],**params)
+        if operation=="profiles":
+            with closing(runtime.connect()) as db:
+                return [json.loads(row[0]) for row in db.execute(
+                    "SELECT body FROM graph_profiles WHERE workflow=? ORDER BY profile_id,revision",
+                    (state["plan"]["workflow"],))]
+        identity=state.get("assessment_id")
+        require(identity,"尚未形成可評估成果")
+        if operation=="preview":
+            return preview(runtime,identity)
+        if operation=="feedback":
+            with runtime.lock("blueprint:"+session_id):
+                require(read_json(session.path).get("assessment_id")==identity,"工作成果已有新版，請重新預覽")
+                return feedback(runtime,identity,**params)
+        if operation=="history":
+            with closing(runtime.connect()) as db:
+                return [json.loads(r[0]) for r in db.execute("SELECT body FROM graph_feedback WHERE assessment_id=? ORDER BY revision",(identity,))]
+        require(False,"不支援的品質操作")
+
     def blueprint_task(self, session_id, operation='next', payload=None):
         from ..blueprints.sessions import Session
         from ..blueprints.source import require
         from ..package_updates import ensure_no_pending, package_lock
         session = Session(self.workspace.runtime, session_id)
+        snapshot = read_json(session.path) if session.path.is_file() else {}
+        if snapshot.get("plan",{}).get("format")==2:
+            from ..graph.session import GraphSession
+            require(not snapshot.get("owner_session"),"請透過父工作處理迭代待辦")
+            session=GraphSession(self.workspace.runtime,session_id)
+            if operation in {"status","cancel"}:
+                return session.interact(operation,payload or {})
         with package_lock(self.workspace):
             ensure_no_pending(self.workspace)
             result = session.interact(operation, payload or {})
-            if result['status'] == 'complete':
+            if result['status'] == 'complete' and operation != 'status':
                 task = self.workspace.task(result['workflow_id'], read_only=True)
-                output = task.folder / 'outputs' / session.id / result['revision']
+                if result.get("delivery_status")=="published":
+                    with closing(self.workspace.runtime.connect()) as db:
+                        prior=db.execute("""SELECT p.run_id,r.output FROM graph_published p JOIN runs r USING(run_id)
+                            JOIN deliveries d USING(run_id) WHERE p.assessment_id=? AND p.revision=? AND d.status='published'
+                            ORDER BY d.published_at DESC LIMIT 1""",(result["assessment_id"],result["quality_revision"])).fetchone()
+                    if prior:
+                        self.list_run_artifacts(prior["run_id"])
+                        return {**result,"output":prior["output"],"run_id":prior["run_id"]}
+                token = digest([result['revision'],result['quality_revision']]) if 'quality_revision' in result else result['revision']
+                output = task.folder / 'outputs' / session.id / token
                 from ..outputs import reject_links
                 reject_links(output / 'report.json')
-                if (output / 'report.json').is_file():
-                    report = read_json(output / 'report.json')
+                saved_report=output / 'report.json'
+                if 'quality_revision' in result and not saved_report.is_file():
+                    with closing(self.workspace.runtime.connect()) as db:
+                        paths=db.execute("SELECT path FROM graph_previews WHERE assessment_id=?",(result["assessment_id"],)).fetchall()
+                    from .lifecycle import resolve_manifest_reference
+                    for row in paths:
+                        candidate=resolve_manifest_reference(self.workspace.runtime,row[0]).parent/"report.json"
+                        if candidate.is_file() and read_json(candidate)["blueprint"].get("quality_revision")==result["quality_revision"]:
+                            saved_report=candidate
+                            break
+                if saved_report.is_file():
+                    report = read_json(saved_report)
                     require(report['blueprint']['revision'] == result['revision'], '成果版本已變更')
                     self.list_run_artifacts(report['run_id'])
                 else:
@@ -86,7 +185,8 @@ class WorkflowService:
                     atomic_json(ticket, {'session_id': session.id})
                     report = self._run_workflow_sync(StartRequest(task=task.manifest.id, source=ticket, output=output))
                 require(report['blueprint']['status'] == 'complete', '正式成果未交付')
-                result.update(output=str(output), run_id=report['run_id'])
+                result.update(output=str(report["output"]), run_id=report['run_id'])
+                if report.get("delivery_status"): result["delivery_status"]=report["delivery_status"]
         return result
 
     def preview_workflow_update(self, archive, *, task=None):
@@ -106,8 +206,9 @@ class WorkflowService:
         return recover_update(self.workspace)
 
     def describe_workflow(self, workflow_id):
+        from .agent import describe
         task = self.workspace.task(workflow_id)
-        return {'contract_version': self.contract_version, 'flow_id': task.flow_id,
+        return {'contract_version': self.contract_version, 'flow_id': task.flow_id,'invocation':describe(task),
                 'id': task.manifest.id, 'title': task.manifest.title,
                 'version': task.manifest.version, 'description': task.manifest.description,
                 'actions': list(task.manifest.actions), 'outputs': dict(task.manifest.outputs),
@@ -210,9 +311,12 @@ class WorkflowService:
             atomic_json(input_path, payload)
             env = worker_environment()
             env['FLOW_BASE_PLAN_READ_ONLY'] = '1'
+            if os.environ.get("ROUTINEKEEL_HOST_CATALOG"):
+                from ..graph.capabilities import plan_probe_catalog
+                env.update(plan_probe_catalog(self.workspace,request.task,folder/"public-tool-descriptors.json"))
             process = subprocess.run([sys.executable, '-m', 'flow_base.core.plan_probe',
                                       '--request', str(input_path), '--response', str(output_path)],
-                                     cwd=folder, env=env, capture_output=True, timeout=40)
+                                     cwd=folder, env=env, capture_output=True, timeout=40, check=False)
             if not output_path.is_file():
                 raise FlowError('PLAN_PROBE_FAILED', '隔離計畫程序未回報結果', exit_code=process.returncode)
             response = read_json(output_path)
@@ -244,7 +348,7 @@ class WorkflowService:
                                   idempotency_key=request.idempotency_key,
                                   spec_hash=planned.execution_spec_hash)
         return StartResult(run_id=launched['run_id'], status=launched['status'],
-                           submitted_at=datetime.now(timezone.utc).isoformat(),
+                           submitted_at=datetime.now(UTC).isoformat(),
                            execution_spec_hash=planned.execution_spec_hash)
 
     def submit_workflow(self, request):
@@ -285,7 +389,7 @@ class WorkflowService:
                             poll_after_ms=None if row['status'] in {'succeeded','failed','interrupted','cancelled'} else 1000)
 
     def get_workflow_status(self, execution_id):
-        from .queue import QueueStore, TERMINAL
+        from .queue import TERMINAL, QueueStore
 
         row = QueueStore(self.workspace.runtime).get(execution_id)
         status = row['status']
@@ -310,6 +414,7 @@ class WorkflowService:
         return {'contract_version': self.contract_version, 'execution_id': execution_id,
                 'status': status, 'run_id': row['run_id'], 'current_step': current_step,
                 'progress': progress, 'result_status': run['result_status'] if run else None,
+                'delivery_status':run['delivery_status'] if run else None,
                 'error_id': run['error_id'] if run else None,
                 'error_code': row['error_code'], 'submitted_at': row['submitted_at'],
                 'started_at': row['started_at'], 'finished_at': row['finished_at'],
@@ -325,9 +430,11 @@ class WorkflowService:
         result = {'execution_id': execution_id, 'status': 'succeeded',
                 'run_id': status['run_id'], 'result_available': True,
                 'result_status': status['result_status'],
+                'delivery_status':status['delivery_status'],
                 'artifacts': self.list_run_artifacts(status['run_id'])}
-        session_id = 'job_' + status['run_id'].removeprefix('run_')
-        if (self.workspace.runtime.home / 'blueprint_jobs' / session_id / 'state.json').is_file():
+        from .agent import from_run
+        session_id = from_run(self.workspace.runtime,status['run_id'])
+        if session_id:
             result['blueprint_session_id'] = session_id
         return result
 
@@ -418,15 +525,20 @@ class WorkflowService:
         return diagnose(self.workspace.runtime, run_id)
 
     def list_run_artifacts(self, run_id):
-        from .lifecycle import resolve_manifest_reference
-        from ..storage.delivery import verify_version
         from ..runtime import sha256
+        from ..storage.delivery import verify_version
+        from .lifecycle import resolve_manifest_reference
         self._known_run(run_id)
         with closing(self.workspace.runtime.connect()) as db:
             row = db.execute("SELECT d.delivery_id,d.status,a.manifest_json,r.output FROM deliveries d JOIN artifact_sets a ON a.artifact_set_id=d.artifact_set_id JOIN runs r ON r.run_id=d.run_id WHERE d.run_id=? AND d.status IN ('published','superseded') ORDER BY d.published_at DESC LIMIT 1", (run_id,)).fetchone()
+            if row is None and db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='graph_previews'").fetchone():
+                row=db.execute("""SELECT 'preview_'||p.run_id AS delivery_id,'preview' AS status,p.path AS manifest_json,r.output,p.manifest_sha256
+                    FROM graph_previews p JOIN runs r USING(run_id) WHERE p.run_id=?""",(run_id,)).fetchone()
         if row is None:
             return []
         manifest_path = resolve_manifest_reference(self.workspace.runtime, row['manifest_json'])
+        if row['status']=='preview' and (not manifest_path.is_file() or sha256(manifest_path)!=row["manifest_sha256"]):
+            raise FlowError('DELIVERY_INVALID','預覽指紋與原始版本不符')
         if not manifest_path.is_relative_to(self.workspace.root):
             from ..storage.delivery import delivery_root
             output = Path(row['output']).resolve()
@@ -513,7 +625,7 @@ class WorkflowService:
                 raise FlowError('IDEMPOTENCY_CONFLICT', '既有重試 Run 的規格與原 Run 不符')
             return StartResult(run_id=prior['run_id'],
                                status=self.get_run_status(prior['run_id'])['execution_status'],
-                               submitted_at=datetime.now(timezone.utc).isoformat(),
+                               submitted_at=datetime.now(UTC).isoformat(),
                                execution_spec_hash=prior['execution_spec_hash'])
         for offline in (False, True):
             planned = self.plan_workflow(PlanRequest(task=row['task_id'], source=source, output=output,

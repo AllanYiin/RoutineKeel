@@ -121,6 +121,25 @@ def create_server(workspace: Path | str):
         """Cancel queued work or request cooperative stop for an active Run."""
         return result(lambda: service.cancel_workflow(execution_id))
 
+    from .studio_tools import register
+    @server.tool()
+    def agent_workflow(execution_id:str|None=None,session_id:str|None=None,proposal_id:str|None=None)->dict:
+        """Discover installed workflows or reconnect to a persisted execution, job or version proposal."""
+        return result(lambda:service.agent_workflow(execution_id=execution_id,session_id=session_id,proposal_id=proposal_id))
+
+    @server.tool()
+    def workflow_evolution(session_id: str, operation: str, payload: dict) -> dict:
+        """Propose a workflow revision from feedback, compare candidates or record a desktop decision."""
+        return result(lambda: service.workflow_evolution(session_id, operation, payload))
+
+    @server.tool()
+    def workflow_quality(session_id:str,operation:str="preview",payload:dict | None=None) -> dict:
+        """Preview a graph result and record version-bound feedback from this desktop conversation."""
+        return result(lambda:service.workflow_quality(session_id,operation,payload))
+    @server.tool()
+    def resolve_blueprint_capabilities(draft_id: str, offline: bool=False) -> dict:
+        return result(lambda: service.resolve_blueprint_capabilities(draft_id,offline=offline))
+    register(server, service.workspace.root, result)
     return server
 
 

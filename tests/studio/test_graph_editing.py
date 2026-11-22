@@ -59,7 +59,7 @@ def test_manual_add_connect_and_deliver_replays_on_runtime_without_llm(tmp_path)
 
 
 def test_atomic_rewire_and_delete_has_no_dangling_intermediate_version(tmp_path):
-    studio, p, original, policy = build_ir(tmp_path)
+    studio, p, _original, policy = build_ir(tmp_path)
     editor = studio.editor(policy)
     added = report_node(studio, p.project_id, policy)
     second = editor.apply(

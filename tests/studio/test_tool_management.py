@@ -12,7 +12,11 @@ from workflow_studio.governance.release import Releases
 from workflow_studio.llm.usage import Budget
 from workflow_studio.registry.builtin import builtin_tools
 from workflow_studio.registry.policy import ToolPolicy
-from workflow_studio.storage.migrations import APPLICATION_ID, MIGRATIONS, SCHEMA_VERSION
+from workflow_studio.storage.migrations import (
+    APPLICATION_ID,
+    MIGRATIONS,
+    SCHEMA_VERSION,
+)
 from workflow_studio.storage.sqlite import SQLiteRepository
 
 
@@ -23,7 +27,7 @@ def custom_copy():
 
 
 def test_registered_approved_disabled_and_revoked_tool_lifecycle_runs_real_package(tmp_path):
-    studio, p, _, cases, verifier, policy = verification_case(tmp_path)
+    studio, p, _, _cases, _verifier, policy = verification_case(tmp_path)
     studio.close()
     model = StudioSession(tmp_path / "studio", runtime_python=runtime_python())
     model.select_project(p.project_id)
@@ -47,9 +51,8 @@ def test_registered_approved_disabled_and_revoked_tool_lifecycle_runs_real_packa
     disabled = model.decide_tool(approved, "disabled", "reviewer", "temporarily stop use")
     with pytest.raises(StudioError):
         model.compile()
-    with model.service() as studio:
-        with pytest.raises(StudioError):
-            Releases(studio).publish(p.project_id, approval_id, tmp_path / "installed", policy)
+    with model.service() as studio, pytest.raises(StudioError):
+        Releases(studio).publish(p.project_id, approval_id, tmp_path / "installed", policy)
     assert manifest.read_bytes() == original
     active = model.decide_tool(disabled, "active", "reviewer", "resume same contract")
     assert model.verify()["status"] == "passed"

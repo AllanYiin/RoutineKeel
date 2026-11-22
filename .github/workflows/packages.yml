@@ -43,6 +43,7 @@ jobs:
       - name: Test packages and source
         shell: bash
         run: |
+          uv sync --locked --project workflow_studio --group dev
           export FLOW_BASE_TEST_PWSH="$(command -v pwsh)"
           uv export --frozen --project "workflows/FLOW_課程影片產生字幕/src/ai_flow01/profiles/asr-cpu" --no-dev --no-emit-project --output-file dist/subtitle-test-requirements.txt --quiet
           uv run --locked --project flow_base --extra mcp --group dev --with-requirements dist/subtitle-test-requirements.txt python -m pytest tests workflows --ignore=tests/studio -q
@@ -84,6 +85,7 @@ jobs:
         run: python tools/release.py
       - name: Test packages and source with optional MCP
         run: |
+          uv sync --locked --project workflow_studio --group dev
           uv export --frozen --project "workflows/FLOW_課程影片產生字幕/src/ai_flow01/profiles/asr-cpu" --no-dev --no-emit-project --output-file dist/subtitle-test-requirements.txt --quiet
           uv run --locked --python 3.12 --project flow_base --extra mcp --group dev --with-requirements dist/subtitle-test-requirements.txt python -m pytest tests workflows --ignore=tests/studio -q
 

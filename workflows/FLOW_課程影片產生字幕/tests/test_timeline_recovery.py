@@ -1,13 +1,16 @@
 import copy
-from pathlib import Path
 import wave
+from pathlib import Path
+
 import pytest
-from flow_base.runtime import Runtime, FlowError, atomic_json, read_json, sha256
+from ai_flow01 import adapter as domain
+from ai_flow01 import portable_core as core
+from ai_flow01 import worker
 from ai_flow01.contracts import subtitle_workflow
-from ai_flow01.timeline import normalize_word_timelines
-from ai_flow01.recovery import verify_raw, recover
-from ai_flow01 import worker, portable_core as core, adapter as domain
+from ai_flow01.recovery import recover
 from ai_flow01.resources import catalogue
+from ai_flow01.timeline import normalize_word_timelines
+from flow_base.runtime import FlowError, Runtime, atomic_json, read_json, sha256
 
 
 @pytest.mark.parametrize('words', [
@@ -103,7 +106,7 @@ def failed_work(tmp_path,monkeypatch,request):
 
 
 def test_recovery_exports_reviewable_subtitles_without_recognition(failed_work):
-    runtime,adapter,out,raw_path,vad,flow,calls=failed_work
+    runtime,adapter,out,raw_path,_vad,_flow,calls=failed_work
     original=raw_path.read_bytes()
     report=recover(runtime,adapter)
     assert report['status']=='REVIEW_REQUIRED' and report['recovery']['asr_calls']==0
@@ -121,7 +124,7 @@ def test_recovery_exports_reviewable_subtitles_without_recognition(failed_work):
 
 @pytest.mark.parametrize('change',['checkpoint','raw','model','input','missing_audio','human_edits'])
 def test_recovery_refuses_untrusted_or_changed_inputs(failed_work,change):
-    runtime,adapter,out,raw_path,vad,flow,calls=failed_work
+    runtime,adapter,out,raw_path,_vad,_flow,calls=failed_work
     if change=='checkpoint':
         p=raw_path.parent/'region_checkpoints/region_00000.json';v=read_json(p);v['sha256']='bad';atomic_json(p,v)
     elif change=='raw':
@@ -138,7 +141,7 @@ def test_recovery_refuses_untrusted_or_changed_inputs(failed_work,change):
 def test_normal_transcribe_handler_keeps_raw_and_uses_fallback(failed_work,monkeypatch):
     from ai_flow01.subtitles import transcribe
     from flow_base.engine import Context
-    runtime,adapter,out,raw_path,vad,flow,calls=failed_work
+    runtime,_adapter,out,raw_path,_vad,flow,_calls=failed_work
     raw=read_json(raw_path)
     def worker_reply(profile,request,**kwargs):atomic_json(Path(request['output']),raw)
     monkeypatch.setattr(runtime,'worker',worker_reply)

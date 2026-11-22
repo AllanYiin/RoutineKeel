@@ -3,7 +3,7 @@ import io
 import pytest
 
 pytest.importorskip("PIL", reason="Run source preview tests in the declared Studio environment")
-from PIL import Image  # noqa: E402
+from PIL import Image
 from workflow_studio.contracts import StudioError
 from workflow_studio.ingestion.mermaid import parse_mermaid
 from workflow_studio.ingestion.models import ImportLimits

@@ -1,18 +1,15 @@
+from routinekeel_contracts.builder import layers
+
 from ..ir.references import parse_reference
 from ..ir.versioning import ir_fingerprint
 
 
 def lower(ir, tools):
-    pending = {node.id: node for node in ir.nodes}
-    ordered, seen = [], set()
-    while pending:
-        ready = sorted(
-            (n for n in pending.values() if set(n.depends_on) <= seen), key=lambda n: n.id
-        )
-        for node in ready:
-            ordered.append(node)
-            seen.add(node.id)
-            del pending[node.id]
+    by_id = {node.id: node for node in ir.nodes}
+    ordered = [
+        by_id[key] for ready in layers({n.id: n.depends_on for n in ir.nodes}) for key in ready
+    ]
+    seen = set(by_id)
     input_id = next(f"studio_input_{i}" for i in range(201) if f"studio_input_{i}" not in seen)
     steps = [
         {

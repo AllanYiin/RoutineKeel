@@ -1,5 +1,9 @@
 # Workflow Compiler & Studio 階段清單
 
+RK-NEXT Stage 1 已將 IR、參照、埠合約與 wheel 驗證抽到共用套件。原 Studio 匯入名稱保留，底座與 Studio 的安裝環境隔離。驗收見根目錄 `docs/specs/rk-next-baseline.md`。
+
+RK-NEXT Stage 2 的 Graph v2 格式與具名交付已完成靜態驗證。Stage 3 以 Studio schema 15 保存同一專案的訪談快照、來源、確認與失效事件。跨程序重開、並發衝突及 v14 備份還原均有測試。對話宿主介接由 Stage 4 負責。
+
 目前交付以 `docs/host-conversation.md` 為準：對話內引導、`guide`／`projects`／`status` 及無原生視窗的共用核心。Tk Windows 版已退役並移出原始碼與 Release；下方原 Stage 的視窗驗收保留為歷史，不宣稱新對話入口已達成所有舊 Gate。
 
 來源為 `specs/requirements.txt`；此清單只追蹤 Studio，與舊底座 Stage 0–13 分開。

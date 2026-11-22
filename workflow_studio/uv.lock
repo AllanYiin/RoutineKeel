@@ -54,7 +54,7 @@ wheels = [
 
 [[package]]
 name = "flow-base"
-version = "0.2.15"
+version = "0.3.0"
 source = { editable = "../flow_base" }
 dependencies = [
     { name = "annotated-types" },
@@ -64,6 +64,7 @@ dependencies = [
     { name = "pydantic-core" },
     { name = "rfc3339-validator" },
     { name = "rfc3986-validator" },
+    { name = "routinekeel-contracts" },
     { name = "typing-extensions" },
     { name = "typing-inspection" },
 ]
@@ -78,6 +79,7 @@ requires-dist = [
     { name = "pydantic-core", specifier = "==2.50.4" },
     { name = "rfc3339-validator", specifier = "==0.1.4" },
     { name = "rfc3986-validator", specifier = "==0.1.1" },
+    { name = "routinekeel-contracts", editable = "../flow_base/components/workflow_contracts" },
     { name = "typing-extensions", specifier = "==4.16.0" },
     { name = "typing-inspection", specifier = "==0.4.5" },
 ]
@@ -351,6 +353,17 @@ wheels = [
 ]
 
 [[package]]
+name = "routinekeel-contracts"
+version = "1.0.0"
+source = { editable = "../flow_base/components/workflow_contracts" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = "==2.14.3" }]
+
+[[package]]
 name = "rpds-py"
 version = "2026.9.1"
 source = { registry = "https://pypi.org/simple" }
@@ -484,12 +497,13 @@ wheels = [
 
 [[package]]
 name = "workflow-studio"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "filelock" },
     { name = "pillow" },
     { name = "pydantic" },
+    { name = "routinekeel-contracts" },
 ]
 
 [package.dev-dependencies]
@@ -505,6 +519,7 @@ requires-dist = [
     { name = "filelock", specifier = "==3.32.7" },
     { name = "pillow", specifier = ">=13.0.0" },
     { name = "pydantic", specifier = "==2.14.3" },
+    { name = "routinekeel-contracts", editable = "../flow_base/components/workflow_contracts" },
 ]
 
 [package.metadata.requires-dev]

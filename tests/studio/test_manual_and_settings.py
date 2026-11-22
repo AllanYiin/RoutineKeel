@@ -123,7 +123,7 @@ def test_branch_settings_execute_both_paths_with_common_typed_output(
 
 
 def test_incompatible_branch_and_missing_completion_contract_are_rejected(tmp_path):
-    studio, p, original, policy = build_ir(tmp_path, branch_ir())
+    studio, p, original, _policy = build_ir(tmp_path, branch_ir())
     studio.close()
     model = StudioSession(tmp_path / "studio")
     model.select_project(p.project_id)
@@ -146,7 +146,7 @@ def test_llm_settings_invalidate_authorization_and_enforce_aggregate_budget(tmp_
         True,
         100_000,
     )
-    studio, p, build, cases, verifier, policy = verification_case(
+    studio, p, build, _cases, _verifier, policy = verification_case(
         tmp_path, payload=llm_ir(), policy=policy
     )
     studio.close()
@@ -200,7 +200,7 @@ def test_money_form_rounds_up_to_micro_unit():
 def test_new_branch_and_model_templates_use_current_policy_and_symbolic_secret(tmp_path):
     from workflow_studio.conversation.graph import GraphDraft
 
-    studio, p, original, _ = build_ir(tmp_path)
+    studio, p, _original, _ = build_ir(tmp_path)
     studio.close()
     model = StudioSession(tmp_path / "studio")
     model.select_project(p.project_id)

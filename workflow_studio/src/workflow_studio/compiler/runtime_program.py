@@ -445,9 +445,10 @@ class Interpreter:
                 and left.bit_length() + right.bit_length() > 1024
             ):
                 raise ProgramError("Integer size limit exceeded")
-        if isinstance(op, ast.Add) and type(left) in {str, list, tuple}:
-            if self.measure(left) + self.measure(right) > self.limits.max_bytes:
-                raise ProgramError("Concatenation limit exceeded")
+        if (isinstance(op, ast.Add) and type(left) in {str, list, tuple}) and (
+            self.measure(left) + self.measure(right) > self.limits.max_bytes
+        ):
+            raise ProgramError("Concatenation limit exceeded")
         if isinstance(op, ast.Mod) and isinstance(left, str):
             raise ProgramError("String format expressions are not supported")
         return self.bound(BINARY[type(op)](left, right))

@@ -4,12 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "workflow-studio"
-version = "0.2.0"
+version = "0.3.0"
 description = "Local design-time workflow compiler for RoutineKeel"
 requires-python = ">=3.11,<3.14"
 readme = "README.md"
 license = "MIT"
 dependencies = [
+    "routinekeel-contracts==1.0.0",
     "filelock==3.32.7",
     "pillow>=13.0.0",
     "pydantic==2.14.3",
@@ -41,4 +42,5 @@ line-length = 100
 select = ["E4", "E7", "E9", "F", "I"]
 
 [tool.uv.sources]
+routinekeel-contracts = { path = "../flow_base/components/workflow_contracts", editable = true }
 flow-base = { path = "../flow_base", editable = true }

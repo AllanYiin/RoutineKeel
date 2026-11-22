@@ -1,12 +1,14 @@
 """Same-filesystem staging for immutable delivery versions."""
 from __future__ import annotations
 
-import shutil
-import os
 import json
-import hashlib
-from pathlib import Path, PurePosixPath
+import os
+import shutil
+import time
 from contextlib import closing
+from pathlib import Path, PurePosixPath
+
+from flow_base.observability.recovery import SecondaryOperation
 
 from ..outputs import reject_links, validate_tree
 from ..runtime import FlowError, atomic_copy, atomic_json, read_json, sha256
@@ -104,6 +106,46 @@ def verify_version(version):
         return True
     except (OSError, ValueError, KeyError, TypeError, FlowError):
         return False
+
+
+def commit_graph_preview(runtime, folder, run_id):
+    from ..core.lifecycle import manifest_reference, utc_now
+    manifest=folder/VERSION_MANIFEST
+    if not verify_version(folder):
+        raise FlowError("DELIVERY_INVALID","預覽產物未通過指紋檢查")
+    report=read_json(folder/"report.json")
+    if report["run_id"]!=run_id or report.get("graph_delivery_status")!="withheld":
+        raise FlowError("DELIVERY_INVALID","預覽資料與執行版本不符")
+    with closing(runtime.connect()) as db, db:
+        db.execute("BEGIN IMMEDIATE")
+        existing=db.execute("SELECT manifest_sha256 FROM graph_previews WHERE run_id=?",(run_id,)).fetchone()
+        checksum=sha256(manifest)
+        if existing:
+            if existing[0]!=checksum: raise FlowError("DELIVERY_INVALID","既有預覽已變更")
+            return
+        updated=db.execute("""UPDATE run_executions SET execution_status='succeeded',state_version=state_version+1,
+             result_status=?,delivery_status='withheld',ended_at=? WHERE run_id=? AND execution_status='publishing'""",
+             (report["graph_result_status"],utc_now(),run_id))
+        if updated.rowcount!=1: raise FlowError("STATE_CONFLICT","工作狀態已變更，未登錄預覽")
+        db.execute("INSERT INTO graph_previews VALUES (?,?,?,?)",(run_id,report["blueprint"].get("assessment_id"),
+             json.dumps(manifest_reference(runtime,manifest)),checksum))
+        db.execute("UPDATE runs SET status='complete',finished=? WHERE run_id=?",
+                   (time.time(),run_id))
+
+
+def recover_graph_previews(runtime):
+    with closing(runtime.connect()) as db:
+        runs=db.execute("""SELECT r.run_id,r.output FROM runs r JOIN run_executions x USING(run_id)
+                         WHERE x.execution_status='publishing' AND r.output IS NOT NULL""").fetchall()
+    for row in runs:
+        try:
+            folder=delivery_root(row["output"])/"previews"/row["run_id"]
+            if (folder/VERSION_MANIFEST).is_file():
+                commit_graph_preview(runtime,folder,row["run_id"])
+        except (FlowError,OSError) as exc:
+            # Preserve a failed recovery point without preventing unrelated jobs from opening.
+            atomic_json(runtime.home/"preview_recovery"/(row["run_id"]+".json"),
+                        {"run_id":row["run_id"],"status":"needs_attention","code":getattr(exc,"code",type(exc).__name__)})
 
 
 def _snapshot_legacy(output, versions, run_id):
@@ -242,15 +284,11 @@ def promote_staging(output, stage, run_id, store, *, checkpoint=None):
         checkpoint('transaction_recorded')
     except BaseException:
         if not existing_transaction:
-            try:
+            with SecondaryOperation('store.abort_delivery', catch=BaseException):
                 store.abort_delivery(delivery_id)
-            except BaseException:
-                pass
         if created_transaction and transaction.exists():
-            try:
+            with SecondaryOperation('_safe_remove_generated', catch=BaseException):
                 _safe_remove_generated(transaction, root)
-            except BaseException:
-                pass
         raise
     try:
         output.mkdir(parents=True, exist_ok=True)
@@ -276,32 +314,33 @@ def promote_staging(output, stage, run_id, store, *, checkpoint=None):
                             '發布前收到取消或狀態已變更', run_id=run_id)
         atomic_json(pointer, current)
         checkpoint('after_pointer')
-        report_status = str(read_json(version / 'report.json').get('status', 'unknown')).lower()
-        store.publish_delivery(delivery_id, complete_run=True, result_status=report_status)
+        report = read_json(version / 'report.json')
+        report_status = str(report.get('graph_result_status',report.get('status', 'unknown'))).lower()
+        if report.get("graph_delivery_status")=="eligible":
+            store.publish_delivery(delivery_id, complete_run=True, result_status=report_status, quality=report["blueprint"])
+        else:
+            store.publish_delivery(delivery_id, complete_run=True, result_status=report_status)
     except BaseException as original:
         restored = False
-        try:
+        with SecondaryOperation('_rollback_mirror', catch=BaseException) as rollback_mirror_outcome:
             _rollback_mirror(output, transaction, marker)
             store.abort_delivery(delivery_id)
             restored = True
-        except BaseException as secondary:
-            try:
+        if rollback_mirror_outcome.error is not None:
+            secondary = rollback_mirror_outcome.error
+            with SecondaryOperation('record mirror rollback failure', catch=BaseException):
                 from ..diagnostics import record_exception
                 primary = record_exception(original, transaction / 'primary-error', runtime=store.runtime, run_id=run_id)
                 record_exception(secondary, transaction / 'secondary-error', runtime=store.runtime,
                                  parent_error_id=primary['error_id'], run_id=run_id)
-            except BaseException:
-                pass
         if restored:
             try:
                 _safe_remove_generated(transaction, root)
             except OSError:
                 pass
         raise
-    try:
+    with SecondaryOperation('_safe_remove_generated', catch=BaseException):
         _safe_remove_generated(transaction, root)
-    except BaseException:
-        pass
     return {'delivery_id': delivery_id, 'version': str(version), 'pointer': str(pointer)}
 
 
@@ -374,9 +413,9 @@ def rollback_delivery(runtime, output, target_delivery_id, *, confirm=False):
         raise FlowError('ROLLBACK_CONFIRM_REQUIRED', '回復舊版成果前須明確確認')
     from ..core.lifecycle import RunStore, resolve_manifest_reference
     from ..execution.supervisor import Supervisor
+    from ..observability.events import EventRecorder
     from ..outputs import write_delivery_index
     from ..runtime import digest
-    from ..observability.events import EventRecorder
 
     output = Path(output).resolve()
     root = delivery_root(output)
@@ -424,14 +463,15 @@ def rollback_delivery(runtime, output, target_delivery_id, *, confirm=False):
                 delivered = promote_staging(output, stage, run_id, store)
                 result = {'run_id': run_id, 'delivery_id': delivered['delivery_id'],
                           'rollback_of': target_delivery_id, 'output': str(output)}
-                try:
+                with SecondaryOperation('record published delivery') as publication_update:
                     if store.get(run_id)['execution_status'] != 'succeeded':
                         raise FlowError('DELIVERY_INCOMPLETE', '回復版本尚未正式發布', run_id=run_id)
                     runtime.update_run(run_id, report.get('status', 'complete'),
                                        job_id=target['job_id'], finished=True)
                     recorder.record('delivery.published', attributes={'reason': 'rollback'})
                     recorder.record('run.finished', attributes={'result_status': str(report.get('status', 'unknown')).lower()})
-                except Exception as post_error:
+                if publication_update.error is not None:
+                    post_error = publication_update.error
                     from ..diagnostics import record_exception
                     result['post_delivery_diagnostic'] = record_exception(
                         post_error, runtime.logs / target['flow_id'] / run_id / 'post_delivery',
@@ -440,10 +480,8 @@ def rollback_delivery(runtime, output, target_delivery_id, *, confirm=False):
         except BaseException as exc:
             from ..diagnostics import record_exception
             from ..observability.diagnostics import guard_secondary
-            try:
+            with SecondaryOperation('recorder.record'):
                 recorder.record('run.failed', severity='ERROR', attributes={'code': type(exc).__name__})
-            except Exception:
-                pass
             record = record_exception(exc, runtime.logs / target['flow_id'] / run_id,
                                       runtime=runtime, run_id=run_id)
             guard_secondary(exc, record, 'rollback_run_failure',

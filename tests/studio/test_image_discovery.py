@@ -243,7 +243,7 @@ def test_repair_keeps_same_image_scope_and_streams_again(tmp_path):
         if call == 1:
             result["ir"]["nodes"][0]["depends_on"] = ["missing"]
 
-    studio, p, _, _, planner, prepared, _ = setup_image(tmp_path, VisionFixture(first_invalid))
+    studio, _p, _, _, planner, prepared, _ = setup_image(tmp_path, VisionFixture(first_invalid))
     events = list(planner.run(prepared, authorized_hash=prepared.request_hash))
     assert planner.provider.calls == 2
     assert planner.provider.requests[0][1] == planner.provider.requests[1][1]
@@ -313,7 +313,7 @@ def test_animation_and_experimental_video_are_not_silently_treated_as_one_image(
 
 
 def test_oversized_request_is_rejected_without_call_or_partial_revision(tmp_path, monkeypatch):
-    import workflow_studio.discovery.images as images
+    from workflow_studio.discovery import images
 
     studio, p, source, _, planner, _, _ = setup_image(tmp_path)
     monkeypatch.setattr(images, "REQUEST_LIMIT", 100)

@@ -38,6 +38,7 @@ jobs:
         run: uv run --locked --project workflow_studio --group dev python workflow_studio/scripts/ci_environment.py
       - name: Lint and formatting
         run: |
+          uv run --locked --project workflow_studio --group dev ruff check .
           uv run --locked --project workflow_studio --group dev ruff check --config workflow_studio/pyproject.toml workflow_studio/src workflow_studio/scripts tests/studio
           uv run --locked --project workflow_studio --group dev ruff format --check --config workflow_studio/pyproject.toml workflow_studio/src workflow_studio/scripts tests/studio
       - name: Run complete non-desktop Studio acceptance

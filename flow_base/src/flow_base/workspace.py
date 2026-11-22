@@ -2,20 +2,21 @@
 from __future__ import annotations
 
 import importlib
+import keyword
 import os
 import re
 import shutil
+import sqlite3
 import sys
 import tempfile
 import zipfile
-import uuid
-import keyword
-import sqlite3
 from contextlib import closing, nullcontext
 from pathlib import Path, PurePosixPath
 from typing import Literal
 
-from pydantic import Field, model_validator, field_validator
+from pydantic import Field, field_validator, model_validator
+
+from flow_base.observability.recovery import SecondaryOperation
 
 from .contracts import Contract
 from .runtime import FlowError, Runtime, atomic_json, read_json, sha256
@@ -185,46 +186,45 @@ class Task:
             Path(cache_root).mkdir(parents=True, exist_ok=True)
         root = (Path(cache_root) if cache_root is not None else runtime.home / 'plugins') / m.sha256
         lock = nullcontext() if cache_root is not None else runtime.lock('plugin:' + m.sha256, timeout=60)
-        with lock:
-            # Validate the extracted copy as well; a wheel hash alone does not protect cache edits.
-            with zipfile.ZipFile(wheel) as z:
-                members = z.infolist()
-                if len(members) > 3000 or sum(i.file_size for i in members) > 32 * 1024**2:
-                    raise FlowError('TASK_ARCHIVE', 'Task package is oversized; large resources belong in the resource catalogue')
-                names = [i.filename for i in members]
-                if len(set(names)) != len(names):
-                    raise FlowError('TASK_ARCHIVE', 'Duplicate entries')
-                import hashlib
-                files = {}
-                for info in members:
-                    p = PurePosixPath(info.filename)
-                    if p.is_absolute() or '..' in p.parts or '\\' in info.filename or ':' in info.filename or not p.parts:
-                        raise FlowError('TASK_ARCHIVE', 'Unsafe task package path')
-                    if p.parts[0] != m.python_module and not (p.parts[0].startswith(m.python_module + '-') and p.parts[0].endswith('.dist-info')):
-                        raise FlowError('TASK_ARCHIVE', 'Task wheel must contain only its own Python namespace')
-                    if (info.external_attr >> 16) & 0o170000 == 0o120000:
-                        raise FlowError('TASK_ARCHIVE', 'Symlinks are not supported')
-                    if not info.is_dir():
-                        files[info.filename] = z.read(info)
-                valid = root.is_dir() and all((root / n).is_file() and not (root / n).is_symlink()
-                         and sha256(root / n) == hashlib.sha256(b).hexdigest() for n, b in files.items())
-                if valid:
-                    actual = {p.relative_to(root).as_posix() for p in root.rglob('*') if p.is_file() and '__pycache__' not in p.parts}
-                    valid = actual == set(files)
-                if not valid:
-                    if root.exists():
-                        shutil.rmtree(root)
-                    staging = Path(tempfile.mkdtemp(prefix='task-', dir=root.parent if root.parent.exists() else runtime.home))
-                    try:
-                        for name, body in files.items():
-                            target = staging / name
-                            target.parent.mkdir(parents=True, exist_ok=True)
-                            target.write_bytes(body)
-                        root.parent.mkdir(parents=True, exist_ok=True)
-                        staging.rename(root)
-                    finally:
-                        if staging.exists():
-                            shutil.rmtree(staging)
+        # Validate the extracted copy as well; a wheel hash alone does not protect cache edits.
+        with lock, zipfile.ZipFile(wheel) as z:
+            members = z.infolist()
+            if len(members) > 3000 or sum(i.file_size for i in members) > 32 * 1024**2:
+                raise FlowError('TASK_ARCHIVE', 'Task package is oversized; large resources belong in the resource catalogue')
+            names = [i.filename for i in members]
+            if len(set(names)) != len(names):
+                raise FlowError('TASK_ARCHIVE', 'Duplicate entries')
+            import hashlib
+            files = {}
+            for info in members:
+                p = PurePosixPath(info.filename)
+                if p.is_absolute() or '..' in p.parts or '\\' in info.filename or ':' in info.filename or not p.parts:
+                    raise FlowError('TASK_ARCHIVE', 'Unsafe task package path')
+                if p.parts[0] != m.python_module and not (p.parts[0].startswith(m.python_module + '-') and p.parts[0].endswith('.dist-info')):
+                    raise FlowError('TASK_ARCHIVE', 'Task wheel must contain only its own Python namespace')
+                if (info.external_attr >> 16) & 0o170000 == 0o120000:
+                    raise FlowError('TASK_ARCHIVE', 'Symlinks are not supported')
+                if not info.is_dir():
+                    files[info.filename] = z.read(info)
+            valid = root.is_dir() and all((root / n).is_file() and not (root / n).is_symlink()
+                     and sha256(root / n) == hashlib.sha256(b).hexdigest() for n, b in files.items())
+            if valid:
+                actual = {p.relative_to(root).as_posix() for p in root.rglob('*') if p.is_file() and '__pycache__' not in p.parts}
+                valid = actual == set(files)
+            if not valid:
+                if root.exists():
+                    shutil.rmtree(root)
+                staging = Path(tempfile.mkdtemp(prefix='task-', dir=root.parent if root.parent.exists() else runtime.home))
+                try:
+                    for name, body in files.items():
+                        target = staging / name
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_bytes(body)
+                    root.parent.mkdir(parents=True, exist_ok=True)
+                    staging.rename(root)
+                finally:
+                    if staging.exists():
+                        shutil.rmtree(staging)
         if m.id and m.python_module == 'rk_bp_' + m.id:
             from .blueprints.adapter import ADAPTER_SOURCE, BlueprintAdapter
             if files.get(m.python_module + '/adapter.py') == ADAPTER_SOURCE and files.get(m.python_module + '/__init__.py') == b'':
@@ -274,9 +274,10 @@ class Task:
         run_id = runtime.start_run(self.flow_id, 'action:' + name, self.folder)
         log = runtime.logs / self.flow_id / run_id
         atomic_json(log / 'run.json', {'flow_id': self.flow_id, 'run_id': run_id, 'action': name, 'status': 'running'})
-        from .presentation import ACTIVE, Reporter
-        from .core.run_context import RunContext, ACTIVE_RUN
         from types import SimpleNamespace
+
+        from .core.run_context import ACTIVE_RUN, RunContext
+        from .presentation import ACTIVE, Reporter
         reporter = Reporter(self.manifest.title + '｜' + name, self.flow_id, run_id, log, 1, runtime)
         from .core.lifecycle import RunStore
         from .execution.supervisor import Supervisor
@@ -320,45 +321,42 @@ class Task:
             store.transition(run_id, 'publishing', 'succeeded', result_status=str(status).lower(), delivery_status='published')
             reporter.event_recorder.record('delivery.published', attributes={'result_status': str(status).lower()})
             reporter.event_recorder.record('run.finished', attributes={'result_status': str(status).lower()})
-            try:
+            with SecondaryOperation('reporter.complete') as complete_outcome:
                 reporter.complete('executed')
                 reporter.end(report)
                 runtime.update_run(run_id, status, finished=True)
                 atomic_json(log / 'run.json', {'flow_id': self.flow_id, 'run_id': run_id, 'action': name, 'status': status})
-            except Exception as post_error:
+            if complete_outcome.error is not None:
+                post_error = complete_outcome.error
                 from .diagnostics import record_exception
-                try:
+                with SecondaryOperation('record_exception') as record_exception_outcome:
                     report['post_delivery_diagnostic'] = record_exception(post_error, log / 'post_delivery', run_id=run_id)['diagnostic_json']
-                except Exception:
+                if record_exception_outcome.error is not None:
                     report['post_delivery_diagnostic'] = 'unavailable'
             return report
         except BaseException as exc:
-            from .diagnostics import record_exception, launcher_id
+            from .diagnostics import launcher_id, record_exception
             from .observability.diagnostics import guard_secondary
             code = exc.code if isinstance(exc, FlowError) else type(exc).__name__
             cancelled = isinstance(exc, FlowError) and exc.code in {'PROCESS_CANCELLED', 'RUN_CANCEL_REQUESTED'}
             status = 'cancelled' if cancelled else ('interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed')
             if attempt_id and not attempt_finished:
-                try:
+                with SecondaryOperation('reporter.event_recorder.record'):
                     reporter.event_recorder.record('step.failed', severity='ERROR',
                                                    attributes={'step_id': name, 'code': code})
-                except Exception:
-                    pass
-            try:
+            with SecondaryOperation('reporter.event_recorder.record'):
                 reporter.event_recorder.record('run.interrupted' if isinstance(exc, KeyboardInterrupt) else ('run.cancelled' if cancelled else 'run.failed'),
                                                severity='ERROR', attributes={'code': code})
-            except Exception:
-                pass
             diagnostic = record_exception(exc, log, flow_id=self.flow_id, run_id=run_id,
                                           action=name, launch_id=launcher_id(runtime))
-            guard_secondary(exc, diagnostic, 'finish_attempt', lambda: store.finish_attempt_failure(
+            guard_secondary(exc, diagnostic, 'finish_attempt', lambda exc=exc: store.finish_attempt_failure(
                 attempt_id, interrupted=isinstance(exc, KeyboardInterrupt), cancelled=cancelled,
                 error_id=diagnostic['error_id']), runtime=runtime)
-            guard_secondary(exc, diagnostic, 'finish_failure', lambda: store.finish_failure(run_id,
+            guard_secondary(exc, diagnostic, 'finish_failure', lambda exc=exc: store.finish_failure(run_id,
                 interrupted=isinstance(exc, KeyboardInterrupt), cancelled=cancelled, error_id=diagnostic['error_id']), runtime=runtime)
             state = guard_secondary(exc, diagnostic, 'read_run_status', lambda: store.get(run_id), runtime=runtime)
             status = state['execution_status'] if state else status
-            guard_secondary(exc, diagnostic, 'reporter.fail', lambda: reporter.fail(code, diagnostic['message'],
+            guard_secondary(exc, diagnostic, 'reporter.fail', lambda exc=exc: reporter.fail(code, diagnostic['message'],
                 interrupted=isinstance(exc, KeyboardInterrupt), diagnostic=diagnostic), runtime=runtime)
             guard_secondary(exc, diagnostic, 'update_run', lambda: runtime.update_run(run_id, status, error=code, finished=True), runtime=runtime)
             guard_secondary(exc, diagnostic, 'failure.json', lambda: atomic_json(log / 'failure.json',
@@ -370,9 +368,10 @@ class Task:
             raise
         finally:
             if supervisor is not None:
-                try:
+                with SecondaryOperation('supervisor.__exit__', catch=BaseException) as exit_outcome:
                     supervisor.__exit__(None, None, None)
-                except BaseException as cleanup_error:
+                if exit_outcome.error is not None:
+                    cleanup_error = exit_outcome.error
                     from .diagnostics import record_exception
                     record_exception(cleanup_error, log / 'cleanup', runtime=runtime, run_id=run_id)
             ACTIVE.reset(reporter_token)

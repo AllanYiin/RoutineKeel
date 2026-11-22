@@ -7,7 +7,7 @@ import sqlite3
 import time
 import uuid
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from filelock import FileLock, Timeout
@@ -25,7 +25,7 @@ _PROCESS_MONOTONIC_ORIGIN = time.monotonic()
 
 
 def _utc():
-    return datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+    return datetime.now(UTC).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
 
 
 class EventRecorder:
@@ -48,11 +48,10 @@ class EventRecorder:
         if self.runtime is None:
             return
         try:
-            with closing(self.runtime.connect()) as db:
-                with db:
-                    db.execute('INSERT INTO event_index(event_id,run_id,step_attempt_id,event_type,timestamp_utc,file_path,offset_bytes) VALUES(?,?,?,?,?,?,?) ON CONFLICT(event_id) DO UPDATE SET file_path=excluded.file_path,offset_bytes=excluded.offset_bytes',
-                               (payload['event_id'], self.run_id, payload.get('step_attempt_id'),
-                                payload['name'], payload['timestamp_utc'], file_name, offset))
+            with closing(self.runtime.connect()) as db, db:
+                db.execute('INSERT INTO event_index(event_id,run_id,step_attempt_id,event_type,timestamp_utc,file_path,offset_bytes) VALUES(?,?,?,?,?,?,?) ON CONFLICT(event_id) DO UPDATE SET file_path=excluded.file_path,offset_bytes=excluded.offset_bytes',
+                           (payload['event_id'], self.run_id, payload.get('step_attempt_id'),
+                            payload['name'], payload['timestamp_utc'], file_name, offset))
         except sqlite3.Error:
             # The fsynced JSONL is authoritative; rebuild_index repairs this.
             pass
@@ -76,10 +75,9 @@ class EventRecorder:
         os.replace(current, rotated)
         if self.runtime is not None:
             try:
-                with closing(self.runtime.connect()) as db:
-                    with db:
-                        db.execute('UPDATE event_index SET file_path=? WHERE run_id=? AND file_path=?',
-                                   (rotated.name, self.run_id, current.name))
+                with closing(self.runtime.connect()) as db, db:
+                    db.execute('UPDATE event_index SET file_path=? WHERE run_id=? AND file_path=?',
+                               (rotated.name, self.run_id, current.name))
             except sqlite3.Error:
                 pass
         segments.append(rotated)
@@ -90,9 +88,8 @@ class EventRecorder:
             dropped += 1
             if self.runtime is not None:
                 try:
-                    with closing(self.runtime.connect()) as db:
-                        with db:
-                            db.execute('DELETE FROM event_index WHERE run_id=? AND file_path=?', (self.run_id, oldest.name))
+                    with closing(self.runtime.connect()) as db, db:
+                        db.execute('DELETE FROM event_index WHERE run_id=? AND file_path=?', (self.run_id, oldest.name))
                 except sqlite3.Error:
                     pass
         manifest_path = self.logdir / 'flight_manifest.json'
