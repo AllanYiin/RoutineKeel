@@ -304,6 +304,15 @@
           },
           "title": "Branches",
           "type": "object"
+        },
+        "fallbacks": {
+          "patternProperties": {
+            "^[a-z][a-z0-9_-]{0,63}$": {
+              "type": "string"
+            }
+          },
+          "title": "Fallbacks",
+          "type": "object"
         }
       },
       "required": [
@@ -382,6 +391,37 @@
             }
           ],
           "title": "Value"
+        },
+        "field": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Field"
+        },
+        "field_type": {
+          "anyOf": [
+            {
+              "enum": [
+                "string",
+                "integer",
+                "number",
+                "boolean"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Field Type"
         }
       },
       "required": [
@@ -598,7 +638,9 @@
           "propertyNames": {
             "enum": [
               "true",
-              "false"
+              "false",
+              "default",
+              "error"
             ]
           },
           "title": "Routes",
@@ -607,7 +649,8 @@
         "on_error": {
           "enum": [
             "failed",
-            "review_required"
+            "review_required",
+            "route"
           ],
           "title": "On Error",
           "type": "string"
@@ -818,7 +861,8 @@
       "default": "2.0",
       "enum": [
         "2.0",
-        "2.1"
+        "2.1",
+        "2.2"
       ],
       "title": "Graph Contract Version",
       "type": "string"

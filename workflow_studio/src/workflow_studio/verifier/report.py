@@ -15,6 +15,26 @@ from .replay import output_bytes, replay
 from .static import verify_static
 
 
+def legacy_admission(ir, build, report):
+    from routinekeel_contracts.builder import issue_admission
+
+    if report["package_hash"] != build["package_hash"]:
+        raise StudioError("TEST_FAILED", "報告與候選套件不同。")
+    return issue_admission(
+        ir,
+        build["package_hash"],
+        "PASS" if report["static"] == "passed" else "FAIL",
+        [
+            {
+                "case_id": str([r["case_id"], r["version"], r["output"]]),
+                "status": r["status"],
+                "output_hash": r["actual_sha256"],
+            }
+            for r in report["cases"]
+        ],
+    )
+
+
 class Verifier:
     def __init__(self, studio, runtime_python=None):
         self.studio = studio
@@ -113,6 +133,7 @@ class Verifier:
                         )
                     raise StudioError("TEST_FAILED", "實際成果與固定成功案例不符。")
                 result["status"] = "passed"
+            report["builder_receipt"] = legacy_admission(revision.ir, build, report)
             report["status"] = "passed"
         except (StudioError, OSError, ValueError, KeyError) as exc:
             report["error_code"] = exc.code if isinstance(exc, StudioError) else "TEST_FAILED"

@@ -176,11 +176,22 @@ class Releases:
             raise StudioError("PUBLISH_FAILED", "工作流識別碼與保留目錄衝突。")
         project = self.studio.projects.get(project_id)
         revision = self.studio.projects.get_revision(project_id, build["revision_id"])
+        from ..verifier.report import Verifier, legacy_admission
+
+        report = Verifier(self.studio).get(project_id, approval["report_id"])
+        builder_receipt = legacy_admission(revision.ir, build, report)
+        if report.get("builder_receipt", builder_receipt) != builder_receipt:
+            raise StudioError("TEST_FAILED", "已驗證套件與 Builder 收據不符。")
+        if (
+            self.studio.repository.connection.execute(
+                "SELECT 1 FROM studio_interviews WHERE project_id=?", (project_id,)
+            ).fetchone()
+            and not historical
+        ):
+            raise StudioError("PUBLISH_FAILED", "對話專案須從已確認藍圖經底座試做及安裝。")
         if not historical:
             if project.status != "active":
                 raise StudioError("PROJECT_INACTIVE", "請先恢復專案後再發布新版本。")
-            from ..verifier.report import Verifier
-
             Approvals(self.studio).validate_cases(
                 project_id, Verifier(self.studio).get(project_id, approval["report_id"])
             )
@@ -271,6 +282,7 @@ class Releases:
                 "manifest_hash": digest(files["flow.json"]),
                 "package_hash": build["package_hash"],
                 "previous_release_id": expected_current,
+                "builder_receipt": builder_receipt,
                 "created_at": now(),
                 "state": "published",
             }

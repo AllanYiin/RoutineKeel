@@ -79,16 +79,20 @@ def convert_linear(source):
                 )
                 previous = [gate]
     finals = [v["name"] for v in source["definition"]["final_outputs"]["items"]]
-    nodes.append(
-        {
-            "kind": "join",
-            "id": "delivery",
-            "policy": "all_success",
-            "depends_on": previous,
-            "inputs": {ports[n]: {"source": refs[n], "port": types[n]} for n in finals},
-            "outputs": {ports[n]: types[n] for n in finals},
-        }
-    )
+    outputs = {ports[n]: refs[n] for n in finals}
+    if not any(ref.startswith(f"artifact://{nodes[-1]['id']}/") for ref in outputs.values()):
+        # Only add a barrier if a later step or explicit review must finish before delivery.
+        nodes.append(
+            {
+                "kind": "join",
+                "id": "delivery",
+                "policy": "all_success",
+                "depends_on": previous,
+                "inputs": {ports[n]: {"source": refs[n], "port": types[n]} for n in finals},
+                "outputs": {ports[n]: types[n] for n in finals},
+            }
+        )
+        outputs = {ports[n]: "artifact://delivery/" + ports[n] for n in finals}
     manifest = source["manifest"]
     graph = {
         "blueprint_schema_version": 2,
@@ -101,7 +105,7 @@ def convert_linear(source):
         },
         "inputs": {ports[n]: types[n] for n in source["inputs"]},
         "nodes": nodes,
-        "outputs": {ports[n]: "artifact://delivery/" + ports[n] for n in finals},
+        "outputs": outputs,
         "quality_contract": {"v1_artifact_contracts": artifacts},
         "provenance": {
             "source_sha256": source["source_hash"],

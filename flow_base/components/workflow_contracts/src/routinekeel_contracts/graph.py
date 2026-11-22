@@ -31,6 +31,8 @@ class Predicate(Contract):
     source: str
     op: Literal["equals", "less_than", "greater_than"]
     value: str | int | float | bool
+    field: Identifier | None = None
+    field_type: Literal["string", "integer", "number", "boolean"] | None = None
 
 
 class Limits(Contract):
@@ -65,8 +67,8 @@ class Review(Node):
 class Switch(Node):
     kind: Literal["switch"]
     condition: Predicate
-    routes: dict[Literal["true", "false"], list[Identifier]]
-    on_error: Literal["failed", "review_required"]
+    routes: dict[Literal["true", "false", "default", "error"], list[Identifier]]
+    on_error: Literal["failed", "review_required", "route"]
 
 
 class Join(Node):
@@ -74,6 +76,7 @@ class Join(Node):
     policy: Literal["all_success", "all_done", "selected_branch"]
     switch: Identifier | None = None
     branches: dict[str, dict[Identifier, str]] = Field(default_factory=dict)
+    fallbacks: dict[Identifier, str] = Field(default_factory=dict)
 
 
 class ForEach(Node):
@@ -114,7 +117,7 @@ class Workflow(Contract):
 
 class Blueprint(Graph):
     blueprint_schema_version: Literal[2]
-    graph_contract_version: Literal["2.0", "2.1"] = "2.0"
+    graph_contract_version: Literal["2.0", "2.1", "2.2"] = "2.0"
     workflow: Workflow
     quality_contract: dict[str, JsonValue]
     provenance: dict[str, JsonValue]

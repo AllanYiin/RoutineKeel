@@ -1,11 +1,10 @@
 """Static data and control-flow validation for the non-executable blueprint."""
 
-from graphlib import CycleError, TopologicalSorter
-
 from pydantic import ValidationError
 
+from .builder import layers
 from .errors import StudioError
-from .graph import Blueprint, ForEach, Join, Repeat, Switch
+from .graph import Blueprint, ForEach, GraphPort, Join, Repeat, Switch
 from .references import parse_reference
 
 
@@ -54,6 +53,10 @@ def port_for(graph, nodes, value):
 
 
 def check_predicate(predicate, port):
+    require((predicate.field is None) == (predicate.field_type is None), "欄位條件須宣告欄位與型別")
+    if predicate.field:
+        require(port.type == "object", "欄位條件需要物件來源")
+        port = GraphPort(type=predicate.field_type)
     operand = {bool: "boolean", str: "string", int: "integer", float: "number"}[
         type(predicate.value)
     ]
@@ -62,7 +65,7 @@ def check_predicate(predicate, port):
     require(predicate.op == "equals" or numeric, "大小比較需要數值埠")
 
 
-def validate_structure(graph, depth=0, *, max_nodes=200):
+def validate_structure(graph, depth=0, *, max_nodes=200, dependencies=None, extended=False):
     require(depth <= 8, "子圖巢狀層數超過限制")
     require(len(graph.nodes) <= max_nodes, "此版本的 Graph 節點數超過上限")
     nodes = {n.id: n for n in graph.nodes}
@@ -77,8 +80,15 @@ def validate_structure(graph, depth=0, *, max_nodes=200):
                 compatible(port_for(graph, nodes, binding.source), binding.port), "輸入型別不相容"
             )
         if isinstance(node, Switch):
+            labels = set(node.routes)
             require(
-                not node.outputs and set(node.routes) == {"true", "false"}, "條件須宣告兩個出口"
+                extended or (node.condition.field is None and labels == {"true", "false"}),
+                "延伸分支需要 Graph 2.2",
+            )
+            require(("error" in labels) == (node.on_error == "route"), "錯誤分支須有對應出口")
+            require(
+                not node.outputs and labels - {"error"} in ({"true", "false"}, {"true", "default"}),
+                "條件須有完整出口",
             )
             refs.append(node.condition.source)
             check_predicate(node.condition, port_for(graph, nodes, node.condition.source))
@@ -90,6 +100,7 @@ def validate_structure(graph, depth=0, *, max_nodes=200):
                     deps[target].add(node.id)
         if isinstance(node, Join):
             if node.policy == "selected_branch":
+                require(not node.fallbacks, "選路匯合須由分支提供產物")
                 switch = nodes.get(node.switch)
                 require(
                     isinstance(switch, Switch) and set(node.branches) == set(switch.routes),
@@ -108,14 +119,29 @@ def validate_structure(graph, depth=0, *, max_nodes=200):
             else:
                 require(not node.branches and node.switch is None, "普通匯合不能指定分支")
                 if node.policy == "all_done":
-                    require(not node.inputs and not node.outputs, "all_done 不得讀取可能失敗的產物")
+                    require(
+                        extended or not (node.inputs or node.outputs),
+                        "帶備援交付的 all_done 需要 Graph 2.2",
+                    )
+                    require(
+                        node.inputs.keys() == node.outputs.keys() == node.fallbacks.keys(),
+                        "all_done 各交付須有明確備援",
+                    )
+                    for name, value in node.fallbacks.items():
+                        require(
+                            reference(value).scheme == "input"
+                            and compatible(port_for(graph, nodes, value), node.outputs[name])
+                            and compatible(node.inputs[name].port, node.outputs[name]),
+                            "備援須為可用且相容的輸入",
+                        )
                 else:
+                    require(not node.fallbacks, "all_success 不使用失敗備援")
                     require(node.inputs.keys() == node.outputs.keys(), "匯合交付須有對應輸入")
                     for name, binding in node.inputs.items():
                         require(compatible(binding.port, node.outputs[name]), "匯合轉送型別不符")
         if isinstance(node, (ForEach, Repeat)):
             body = node.body
-            validate_structure(body, depth + 1, max_nodes=max_nodes)
+            validate_structure(body, depth + 1, max_nodes=max_nodes, extended=extended)
             body_nodes = {n.id: n for n in body.nodes}
             if isinstance(node, ForEach):
                 refs.append(node.items)
@@ -137,10 +163,13 @@ def validate_structure(graph, depth=0, *, max_nodes=200):
                     "逐項輸出須為有元素型別的 results 陣列",
                 )
                 require(
-                    compatible(port_for(body, body_nodes, body.outputs["result"]), results.items),
+                    results.items.type == "object"
+                    if node.on_item_failure == "collect_errors"
+                    else compatible(
+                        port_for(body, body_nodes, body.outputs["result"]), results.items
+                    ),
                     "逐項交付型別不符",
                 )
-                bound = node.max_items
             else:
                 refs.append(node.initial.source)
                 require(
@@ -162,8 +191,6 @@ def validate_structure(graph, depth=0, *, max_nodes=200):
                 )
                 require(node.condition.source in body.outputs.values(), "迭代條件須來自子圖交付物")
                 check_predicate(node.condition, port_for(body, body_nodes, node.condition.source))
-                bound = node.max_iterations
-            require(bound <= node.limits.max_work, "迭代上限超過總工作預算")
         for value in refs:
             port_for(graph, nodes, value)
             ref = reference(value)
@@ -171,14 +198,8 @@ def validate_structure(graph, depth=0, *, max_nodes=200):
                 deps[node.id].add(ref.owner)
         require(deps[node.id] <= nodes.keys(), "依賴不存在的節點")
     order = []
-    sorter = TopologicalSorter(deps)
-    try:
-        sorter.prepare()
-    except CycleError as exc:
-        raise StudioError("GRAPH_INVALID", "一般依賴圖不允許循環") from exc
     guards = {}
-    while sorter.is_active():
-        ready = sorted(sorter.get_ready())
+    for ready in layers(deps):
         for key in ready:
             node = nodes[key]
             selected = isinstance(node, Join) and node.policy == "selected_branch"
@@ -205,7 +226,9 @@ def validate_structure(graph, depth=0, *, max_nodes=200):
                     ref = reference(binding.source)
                     if ref.scheme == "artifact":
                         require(
-                            guards[ref.owner].items() <= expected.items(), "匯合不能讀取未選分支"
+                            node.policy == "all_done"
+                            or guards[ref.owner].items() <= expected.items(),
+                            "匯合不能讀取未選分支",
                         )
             else:
                 for parent in sorted(deps[key]):
@@ -215,7 +238,6 @@ def validate_structure(graph, depth=0, *, max_nodes=200):
                         )
             guards[key] = expected
         order.extend(ready)
-        sorter.done(*ready)
     contributing = set()
     for value in graph.outputs.values():
         ref = reference(value)
@@ -229,10 +251,12 @@ def validate_structure(graph, depth=0, *, max_nodes=200):
             contributing.update(deps[key])
     require(contributing == nodes.keys(), "有節點無法到達具名交付")
     graph.nodes = [nodes[key] for key in order]
+    if dependencies is not None:
+        dependencies.update({key: sorted(parents) for key, parents in deps.items()})
     return order
 
 
-def validate_blueprint(payload):
+def validate_blueprint(payload, *, dependencies=None):
     try:
         graph = Blueprint.model_validate(payload)
     except ValidationError as exc:
@@ -246,5 +270,8 @@ def validate_blueprint(payload):
         )
         raise StudioError(code, "Graph v2 宣告欄位或節點種類不受支援") from exc
     return graph, validate_structure(
-        graph, max_nodes=401 if graph.graph_contract_version == "2.1" else 200
+        graph,
+        max_nodes=200 if graph.graph_contract_version == "2.0" else 401,
+        extended=graph.graph_contract_version == "2.2",
+        dependencies=dependencies,
     )
