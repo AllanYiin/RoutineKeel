@@ -286,8 +286,9 @@ def run_workflow(runtime, task, workflow, source, output=None, *, offline=False,
                 raise FlowError('SUPERVISOR_HEARTBEAT', '執行期間無法更新監督程序 lease') from supervisor.heartbeat_error
             if store.get(run_id)['execution_status'] != 'succeeded':
                 raise FlowError('DELIVERY_INCOMPLETE', '交付與 Run 終態尚未一致', run_id=run_id)
-            reporter.event_recorder.record('delivery.published', attributes={'result_status': str(report.get('status', 'unknown')).lower()})
-            reporter.event_recorder.record('run.finished', attributes={'result_status': str(report.get('status', 'unknown')).lower()})
+            reporter.event_recorder.record('delivery.preview_saved' if report.get('graph_delivery_status')=='withheld' else 'delivery.published',
+                                           attributes={'result_status':str(report.get('graph_result_status',report.get('status','unknown'))).lower()})
+            reporter.event_recorder.record('run.finished', attributes={'result_status': str(report.get('graph_result_status',report.get('status', 'unknown'))).lower()})
             runtime.update_run(run_id, report.get('status', 'complete'), job_id=report.get('job_id'), finished=True)
             atomic_json(logs / 'run.json', {'flow_id': task.flow_id, 'run_id': run_id, 'job_id': report.get('job_id'), 'status': report.get('status', 'complete')})
             adapter = task.load(runtime)
@@ -482,11 +483,27 @@ def _run_workflow(runtime, task, workflow, source, output, *, run_id, offline=Fa
             if not getattr(workflow, 'outputs', {}):
                 report.setdefault('compatibility_warnings', []).append('此流程沿用最後 Step 的 legacy 輸出映射。')
             report.update(flow_id=task.flow_id, run_id=run_id, job_id=job, runtime=__version__, steps=history, snapshot=snapshot, output=str(output), output_layout=layout)
+            withheld=report.get("graph_delivery_status")=="withheld"
+            if "graph_result_status" in report:
+                report.update(result_status=report["graph_result_status"],delivery_status="withheld" if withheld else "published",
+                              execution_status=report["blueprint"].get("execution_status",report["blueprint"]["status"]))
+            if withheld:
+                from .storage.delivery import delivery_root, write_version_manifest, commit_graph_preview
+                preview_folder=delivery_root(output)/"previews"/run_id
+                from .outputs import reject_links
+                reject_links(preview_folder)
+                report.update(output=str(preview_folder),requested_output=str(output))
             atomic_json(report_path, report)
             write_delivery_index(stage, report)
             recorder.record('delivery.verified', attributes={'status': 'verified'})
             atomic_json(logs / 'report.json', report)
-            promote_staging(output, stage, run_id, store)
+            if withheld:
+                write_version_manifest(stage,run_id)
+                preview_folder.parent.mkdir(parents=True,exist_ok=True)
+                stage.rename(preview_folder)
+                commit_graph_preview(runtime,preview_folder,run_id)
+            else:
+                promote_staging(output, stage, run_id, store)
             return report
         except BaseException as exc:
             run_context = current(runtime)

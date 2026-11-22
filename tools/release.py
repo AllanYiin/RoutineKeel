@@ -224,7 +224,7 @@ def write_workspace_archive(staging, reports):
     workspace_directories(workspace)
     (workspace / 'README.md').write_text(
         '# RoutineKeel\n\n'
-        '主要方向：workflow_studio 設計 → blueprints 藍圖包 → flow_base 轉換為可執行 workflow。\n'
+        'workflow_studio 產生設計藍圖，flow_base 建置候選工作流。候選工作流先載入臨時工作區驗證，通過後才安裝到正式工作區。\n'
         'GitHub 保留課程字幕、檔案複製兩個參考案例，不以持續增加內建流程作為產品主線。\n\n'
         'Studio 入口：在宿主對話讀 workflow_studio/AGENTS.md；studio.bat／studio.sh guide 提供引導資料，不開原生視窗。\n'
         '底座入口：flow_base/run_app.bat；參考流程位於 workflows/FLOW_<名稱>/。\n'

@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from pathlib import PurePosixPath
 
-from ..runtime import FlowError
+from ..runtime import FlowError, digest
 
 TERMINAL = frozenset({'succeeded', 'failed', 'cancelled', 'interrupted'})
 ACTIVE = frozenset({'created', 'queued', 'preparing', 'running', 'publishing', 'cancelling'})
@@ -227,11 +227,19 @@ class RunStore:
                            (delivery_id, run['job_id'], run_id, artifact_set_id, 'staged', None, None))
                 return delivery_id
 
-    def publish_delivery(self, delivery_id, *, complete_run=False, result_status=None):
+    def publish_delivery(self, delivery_id, *, complete_run=False, result_status=None,quality=None):
         with closing(self.runtime.connect()) as db:
             with db:
                 db.execute('BEGIN IMMEDIATE')
                 row = db.execute('SELECT d.job_id,d.run_id,d.status,a.manifest_json,a.manifest_sha256,x.execution_status FROM deliveries d JOIN artifact_sets a ON a.artifact_set_id=d.artifact_set_id JOIN run_executions x ON x.run_id=d.run_id WHERE d.delivery_id=?', (delivery_id,)).fetchone()
+                if quality is not None and row is not None:
+                    from ..quality import latest
+                    current=latest(db,quality["assessment_id"])
+                    if (current["result_status"]!="accepted" or current["revision"]!=quality["quality_revision"]
+                            or digest(current["outputs"])!=digest(quality["outputs"])):
+                        raise FlowError("STATE_CONFLICT","品質決定已變更，正式交付未切換")
+                    db.execute("INSERT OR IGNORE INTO graph_published VALUES (?,?,?,?)",
+                               (row["run_id"],quality["assessment_id"],current["revision"],digest(current["outputs"])))
                 if row is None or row['status'] != 'staged':
                     raise FlowError('STATE_CONFLICT', '只有 staged Delivery 可發布', delivery_id=delivery_id)
                 if row['execution_status'] != 'publishing':

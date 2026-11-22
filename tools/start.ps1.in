@@ -193,7 +193,7 @@ if (($LauncherArgs.Count -eq 1) -and ($LauncherArgs[0] -eq '--bootstrap-only')) 
 }
 if ($LauncherArgs.Count -eq 0) { $LauncherArgs = @('chat') }
 $StudioIndex = [Array]::IndexOf($LauncherArgs, 'studio')
-$StudioConfirmation = $StudioIndex -ge 0 -and $StudioIndex + 1 -lt $LauncherArgs.Count -and $LauncherArgs[$StudioIndex + 1] -eq 'confirm'
+$StudioConfirmation = $StudioIndex -ge 0 -and $StudioIndex + 1 -lt $LauncherArgs.Count -and $LauncherArgs[$StudioIndex + 1] -eq 'reply'
 $Interactive = $StudioConfirmation -or ($LauncherArgs -contains 'chat') -or (($LauncherArgs -contains 'launch') -and
     ($LauncherArgs -notcontains '--prepare-only') -and ($LauncherArgs -notcontains '--action'))
 $LaunchPhase = 'command'

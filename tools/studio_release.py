@@ -299,7 +299,7 @@ def build_studio(project, staging, *, root, base, run, write_bootstrap):
 SHA-256 用來檢查完整性，不等於發行者的數位簽章。
 
 不開視窗的安裝檢查：Windows 使用 start_studio.ps1 --prepare-only，其他平台使用 sh studio.sh --prepare-only。
-命令 status 顯示版本與 schema，projects 顯示專案摘要。interview 提供訪談草稿與跨程序續編，--workspace 可另指定資料目錄。可信本機文字終端使用 interview confirm 核對當前回答。
+命令 status 顯示版本與 schema，projects 顯示專案摘要。interview 提供訪談草稿與跨程序續編，--workspace 可另指定資料目錄。使用者在桌面對話回答，由宿主轉交問題版本與實際回覆。
 說明見 docs/user-guide.md、docs/privacy-and-model-usage.md 及 docs/upgrade-and-rollback.md。
 入門範例在 examples/first-copy。文件中的 {local-path} 代表已移除的原測試機路徑。
 
@@ -310,7 +310,7 @@ SHA-256 用來檢查完整性，不等於發行者的數位簽章。
         dest / "AGENTS.md",
         """# Studio 安裝包操作入口
 
-先讀 docs/host-conversation.md。宿主負責提問及呈現，guide 提供各層引導資料。interview 以本機專案版本保存草稿及確認。宿主不得代替使用者操作可信本機文字確認入口。
+先讀 docs/host-conversation.md。宿主在對話中提問，取得使用者實際回覆後呼叫 studio_record_reply。模型推論寫入草稿，真人回覆連同問題與版本另存。只在關鍵決策或指定校閱點停下。
 
 這是設計期工作台，不是已安裝的領域流程。在宿主對話內依本目錄 AGENTS.md 逐層引導。
 操作專案使用 workflow_studio 服務；流程執行仍使用 flow_base 的公開 WorkflowService。

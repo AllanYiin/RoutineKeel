@@ -5,6 +5,7 @@ import shutil
 import os
 import json
 import hashlib
+import time
 from pathlib import Path, PurePosixPath
 from contextlib import closing
 
@@ -104,6 +105,46 @@ def verify_version(version):
         return True
     except (OSError, ValueError, KeyError, TypeError, FlowError):
         return False
+
+
+def commit_graph_preview(runtime, folder, run_id):
+    from ..core.lifecycle import manifest_reference, utc_now
+    manifest=folder/VERSION_MANIFEST
+    if not verify_version(folder):
+        raise FlowError("DELIVERY_INVALID","預覽產物未通過指紋檢查")
+    report=read_json(folder/"report.json")
+    if report["run_id"]!=run_id or report.get("graph_delivery_status")!="withheld":
+        raise FlowError("DELIVERY_INVALID","預覽資料與執行版本不符")
+    with closing(runtime.connect()) as db, db:
+        db.execute("BEGIN IMMEDIATE")
+        existing=db.execute("SELECT manifest_sha256 FROM graph_previews WHERE run_id=?",(run_id,)).fetchone()
+        checksum=sha256(manifest)
+        if existing:
+            if existing[0]!=checksum: raise FlowError("DELIVERY_INVALID","既有預覽已變更")
+            return
+        updated=db.execute("""UPDATE run_executions SET execution_status='succeeded',state_version=state_version+1,
+             result_status=?,delivery_status='withheld',ended_at=? WHERE run_id=? AND execution_status='publishing'""",
+             (report["graph_result_status"],utc_now(),run_id))
+        if updated.rowcount!=1: raise FlowError("STATE_CONFLICT","工作狀態已變更，未登錄預覽")
+        db.execute("INSERT INTO graph_previews VALUES (?,?,?,?)",(run_id,report["blueprint"].get("assessment_id"),
+             json.dumps(manifest_reference(runtime,manifest)),checksum))
+        db.execute("UPDATE runs SET status='complete',finished=? WHERE run_id=?",
+                   (time.time(),run_id))
+
+
+def recover_graph_previews(runtime):
+    with closing(runtime.connect()) as db:
+        runs=db.execute("""SELECT r.run_id,r.output FROM runs r JOIN run_executions x USING(run_id)
+                         WHERE x.execution_status='publishing' AND r.output IS NOT NULL""").fetchall()
+    for row in runs:
+        try:
+            folder=delivery_root(row["output"])/"previews"/row["run_id"]
+            if (folder/VERSION_MANIFEST).is_file():
+                commit_graph_preview(runtime,folder,row["run_id"])
+        except (FlowError,OSError) as exc:
+            # Preserve a failed recovery point without preventing unrelated jobs from opening.
+            atomic_json(runtime.home/"preview_recovery"/(row["run_id"]+".json"),
+                        {"run_id":row["run_id"],"status":"needs_attention","code":getattr(exc,"code",type(exc).__name__)})
 
 
 def _snapshot_legacy(output, versions, run_id):
@@ -276,8 +317,12 @@ def promote_staging(output, stage, run_id, store, *, checkpoint=None):
                             '發布前收到取消或狀態已變更', run_id=run_id)
         atomic_json(pointer, current)
         checkpoint('after_pointer')
-        report_status = str(read_json(version / 'report.json').get('status', 'unknown')).lower()
-        store.publish_delivery(delivery_id, complete_run=True, result_status=report_status)
+        report = read_json(version / 'report.json')
+        report_status = str(report.get('graph_result_status',report.get('status', 'unknown'))).lower()
+        if report.get("graph_delivery_status")=="eligible":
+            store.publish_delivery(delivery_id, complete_run=True, result_status=report_status, quality=report["blueprint"])
+        else:
+            store.publish_delivery(delivery_id, complete_run=True, result_status=report_status)
     except BaseException as original:
         restored = False
         try:

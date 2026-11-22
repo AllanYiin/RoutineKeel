@@ -25,7 +25,7 @@ def parser():
     commands.add_parser('list', help='列出同層含 flow.json 的流程，不載入任務程式')
     commands.add_parser('ui', help='開啟本機圖形工作台；無圖形環境時仍可用 CLI')
     commands.add_parser('mcp-stdio', help='啟動可選的本機 MCP stdio 工具入口')
-    c = commands.add_parser('studio', help='對話訪談與可信本機文字確認')
+    c = commands.add_parser('studio', help='桌面對話訪談、實際答覆與續編')
     c.add_argument('operation')
     c.add_argument('--payload', default='{}', help='操作參數 JSON')
     c = commands.add_parser('queue-worker', help='另外啟動本機任務佇列 Worker；不由 MCP 派生')
@@ -83,6 +83,13 @@ def parser():
     c.add_argument('--intent', type=Path, required=True)
     c.add_argument('--execute', action='store_true')
     c.add_argument('--offline', action='store_true')
+    c = commands.add_parser('workflow-quality', help='預覽品質判定、保存回饋及版本化設定')
+    c.add_argument('session_id')
+    c.add_argument('operation', choices=['preview','feedback','history','save_profile','profiles'], nargs='?', default='preview')
+    c.add_argument('--payload',type=Path)
+    c = commands.add_parser('resolve-blueprint', help='核對藍圖需要的工具與目前可用能力')
+    c.add_argument('--draft-id', required=True)
+    c.add_argument('--offline', action='store_true')
     c = commands.add_parser('install-workflow', help='匯入訪談藍圖、試做或首次安裝')
     selector = c.add_mutually_exclusive_group(required=True)
     selector.add_argument('--archive', type=Path)
@@ -95,7 +102,7 @@ def parser():
     c.add_argument('--install-hash')
     c = commands.add_parser('blueprint-task', help='取得待辦、回傳結果或退回重做')
     c.add_argument('session_id')
-    c.add_argument('operation', choices=['next','claim','complete','revise'], nargs='?', default='next')
+    c.add_argument('operation', choices=['next','status','authorize','decline','claim','stream_delta','complete','reconcile','revise','retry','cancel'], nargs='?', default='next')
     c.add_argument('--payload', type=Path)
     c = commands.add_parser('update-workflow', help='預覽或套用新版流程 ZIP，保留設定、成果及歷史')
     c.add_argument('--archive', type=Path, required=True)
@@ -362,7 +369,7 @@ def main(argv=None):
             params = json.loads(args.payload)
             if not isinstance(params,dict):
                 raise ValueError('訪談請求須為 JSON 物件')
-            if args.operation in {'confirm','stream'}:
+            if args.operation == 'stream':
                 return studio_terminal(workspace.root, params, operation=args.operation)
             send = studio_request(workspace.root, args.operation, params)
             print(json.dumps({'ok':True, 'result':send},ensure_ascii=False))
@@ -395,6 +402,10 @@ def main(argv=None):
                       'execution': 'dispatch --intent intent.json --execute', 'policy': 'Select installed IDs and declared parameter_paths only; no generated code.'}
         elif command in {'doctor', 'diagnose', 'logs', 'explain-error', 'export-diagnostics'}:
             return diagnostic_command(workspace, args)
+        elif command == 'workflow-quality':
+            result=service.workflow_quality(args.session_id,args.operation,read_json(args.payload) if args.payload else {})
+        elif command == 'resolve-blueprint':
+            result = service.resolve_blueprint_capabilities(args.draft_id,offline=args.offline)
         elif command == 'install-workflow':
             result = service.install_workflow(archive=args.archive, draft_id=args.draft_id,
                 resolution=read_json(args.resolution) if args.resolution else None,

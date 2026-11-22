@@ -100,9 +100,15 @@ def inspect_blueprint(raw):
             if "blueprint.json" in files:
                 from ..graph.source import graph_source
 
-                require(files.keys() == {"blueprint.json"}, "Graph v2 包含未宣告成員")
                 payload = load_json(files["blueprint.json"].decode("utf-8-sig"))
-                return graph_source(payload, raw), files
+                source = graph_source(payload, raw)
+                from routinekeel_contracts.errors import StudioError
+                from routinekeel_contracts.skill_files import check_skill_files
+                try:
+                    check_skill_files(source["graph"], {n:b for n,b in files.items() if n != "blueprint.json"})
+                except StudioError as exc:
+                    raise FlowError(exc.code, str(exc)) from exc
+                return source, files
             require(
                 all(n in files for n in REQUIRED),
                 "藍圖缺少宣告或含多個根目錄",
