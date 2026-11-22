@@ -54,12 +54,18 @@ def probe(request, temporary):
     source = Path(request['source']) if request.get('source') else None
     output = Path(request['output']) if request.get('output') else None
     result = plan(workspace.runtime, task, workflow, source, output)
+    from .agent import describe
+    result["invocation"]=describe(task)
     resolved_output = choose_output(workspace.runtime, task, source, output)
     fingerprint = None
     if source is not None and source.is_file() and resolved_output is not None:
         _, input_hash, _ = _execution_identity(workspace.runtime, task, source, resolved_output)
         fingerprint = _execution_spec_hash(workspace.runtime, task, workflow, input_hash,
                                            resolved_output, bool(request.get('offline')))
+    result["next_actions"]=([] if result.get("blocked") or not fingerprint else
+        [{"tool":"submit_workflow","arguments":{"workflow_id":task.manifest.id,"source":str(source),
+          "output":str(output) if output else None,"overrides":request.get("overrides") or {},
+          "offline":bool(request.get("offline")),"execution_spec_hash":fingerprint}}])
     return {'plan': result, 'execution_spec_hash': fingerprint,
             'flow_id_status': task.flow_id_status,
             'estimates_status': 'declared' if result.get('estimates') else 'unknown'}

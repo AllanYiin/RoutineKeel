@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..runtime import FlowError, atomic_json, digest, read_json
-from ..workspace import Workspace, catalog
+from ..workspace import Workspace
 from ..package_updates import package_operation
 from .types import PlanRequest, PlanResult, StartRequest, StartResult, SubmitRequest, SubmitResult
 
@@ -39,7 +39,14 @@ class WorkflowService:
                 'exists': self.workspace.root.is_dir(), 'workflow_count': len(tasks)}
 
     def list_workflows(self):
-        return catalog(self.workspace)
+        from .agent import describe
+        tasks=self.workspace.discover()
+        return [{**t.manifest.model_dump(exclude={'sha256','package','defaults','rules'}),'flow_id':t.flow_id,
+                 'folder':t.folder.name,'invocation':describe(t)} for t in tasks.values()]
+
+    def agent_workflow(self, **identifiers):
+        from .agent import conversation
+        return conversation(self,**identifiers)
 
     def install_workflow(self, *, archive=None, draft_id=None, resolution=None, cases=None,
                          build_id=None, install_hash=None, member=None, offset=0):
@@ -188,8 +195,9 @@ class WorkflowService:
         return recover_update(self.workspace)
 
     def describe_workflow(self, workflow_id):
+        from .agent import describe
         task = self.workspace.task(workflow_id)
-        return {'contract_version': self.contract_version, 'flow_id': task.flow_id,
+        return {'contract_version': self.contract_version, 'flow_id': task.flow_id,'invocation':describe(task),
                 'id': task.manifest.id, 'title': task.manifest.title,
                 'version': task.manifest.version, 'description': task.manifest.description,
                 'actions': list(task.manifest.actions), 'outputs': dict(task.manifest.outputs),
@@ -413,8 +421,9 @@ class WorkflowService:
                 'result_status': status['result_status'],
                 'delivery_status':status['delivery_status'],
                 'artifacts': self.list_run_artifacts(status['run_id'])}
-        session_id = 'job_' + status['run_id'].removeprefix('run_')
-        if (self.workspace.runtime.home / 'blueprint_jobs' / session_id / 'state.json').is_file():
+        from .agent import from_run
+        session_id = from_run(self.workspace.runtime,status['run_id'])
+        if session_id:
             result['blueprint_session_id'] = session_id
         return result
 
