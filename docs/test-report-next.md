@@ -59,3 +59,16 @@ uv run --locked --project workflow_studio --group dev ruff format --check --conf
 ## 資料復原
 
 版本回退憑更新編號使用底座的檔案備份。資料庫降版或完整工作區還原需停寫，將 SQLite 備份、對應套件與成果同時還原到另一個空目錄，核對版本、完整性與代表性資料後才重新啟用。回退不會重新派送外部操作。
+
+## Stage 16 本機候選交付
+
+候選目錄為 `dist/candidate-rk-next-0.3.0-rc1/release/`。底座與 Studio 使用 0.3.0。兩個參考流程與選配媒體套件均使用新的修補版本，以便現有安裝辨別套件內容。實際版本為字幕 0.5.1、複製 0.2.4、媒體 0.1.1。對話契約與資料庫升級細節見[維護與打包](maintenance.md)。
+
+完整檔案 `RoutineKeel-workspace-0.3.0.zip` 共 3,703,888 bytes，SHA-256 為 `205f36ebce995feee0c3bc9fcb83aaf7ddf50ae81ad16540f9fb2e7b73b4dc6c`。其餘四個分包的大小、版本與指紋列於同目錄的 `versions.json` 及 `SHA256SUMS`。
+
+- 五個 ZIP 的 CRC 與 SHA-256 通過。六個 wheel 的 RECORD、模組內容及來源逐檔比對通過。既有發行目錄仍符合原校驗清單。
+- 原始碼的 66 份文件檢查 56 個本機連結，解壓工作區的 52 份文件檢查 23 個本機連結，缺漏均為零。
+- 在全新工作區解壓最終 ZIP，只預置先前下載的公開依賴快取及 CPython。實際啟動器重新建立底座、Studio 與 MCP 環境。從包內 stdio 實測訪談、計畫、提交、獨立 Worker、重連及成果讀取。
+- 使用既有複製流程 0.2.3 的分包實際執行，再以最終 0.2.4 ZIP 更新並執行，最後依更新收據回復到 0.2.3 後重跑。三次取得獨立 Run，內容均與輸入相同。
+- 發行包相關的底座、更新、遷移、對話與整合回歸共 106 項通過，0 跳過。`dist/v122-stage16-runtime.xml`、`dist/v122-stage16-package-accept.json`。
+- Studio 的分包、藍圖匯出、發布中斷及回復測試 31 項通過，0 跳過。`dist/v122-stage16-studio.xml`。包含本階段新增的交付檢查後，累計 659 個底座與流程測例及 534 個 Studio 測例，每項都有本機 PASS 紀錄。

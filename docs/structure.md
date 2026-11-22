@@ -11,5 +11,9 @@
 | `blueprints/` | 全包內提供空目錄；私人內容不打包 |
 
 全包 `RoutineKeel-workspace-<底座版本>.zip` 提供相同結構。
+
+Studio 訪談、不可變修訂與來源屬於設計期。底座在工作區狀態目錄的 `blueprint_drafts/` 保存來源與候選建置，在 `blueprint_jobs/` 保存節點與待辦，在 `graph_evolution/` 保存修訂比較。正式工作流仍由 `workflows/` 探索。備份時一併保存工作流、兩個元件的狀態及對應成果。[版本與驗收索引](specs/README.md)
 分包解壓至共同的 RoutineKeel 根目錄；不要將流程移出 workflows/。
 Python 匯入名稱保留在各元件 src/ 內；共享環境、快取、日誌與各流程 outputs/ 由執行時建立。
+
+RK-NEXT 的模組、資料版本、測試命令與還原演練見[開發基線](specs/rk-next-baseline.md)。

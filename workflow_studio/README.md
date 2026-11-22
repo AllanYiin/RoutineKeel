@@ -4,10 +4,10 @@
 本版本保留專案、來源、版本、合約、編譯及驗證核心，排除 Tk 桌面版及其啟動器。
 
 操作見 [對話內引導](docs/host-conversation.md)。CLI 預設 `guide`，另有 `projects`、`status`；不開原生視窗、不自動呼叫模型。
-逐層答案由宿主保存；目前不宣稱已有自動訪談狀態與藍圖匯出服務。既有核心可透過 StudioService 或 conversation/session.py 使用。
+RK-NEXT 開發版將答覆保存在本機 Studio 專案。直接在桌面對話回答或修正草稿，記下 project_id 即可在另一個對話續編。程式入口為 `StudioService.interviews`。
 
 原始碼、Release 與本機使用同一結構：`../flow_base/`、`../workflows/FLOW_…/`、`../blueprints/`、本目錄。
-產出藍圖後由底座另行試做及安裝；設計完成不等於通過驗收或取得發布授權。
+確認設計後，Studio 匯出資料藍圖。底座建置候選工作流、載入臨時工作區並跑驗收案例，通過後才可安裝到正式工作區。授權發布由使用者另行決定。
 
 開發檢查：
 

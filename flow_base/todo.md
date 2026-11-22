@@ -1,5 +1,22 @@
 # 一鍵啟動工作清單
 
+- [x] RK-NEXT Stage 0 基線、資料庫還原與發行布局；證據見根目錄 `docs/specs/rk-next-baseline.md`。
+- [x] RK-NEXT Stage 1 共享驗證器、版本化驗證收據、安裝前重驗、獨立環境封裝驗收。
+- [x] RK-NEXT Stage 2 Graph v2 靜態契約、具名輸出及 v1 相容匯入。
+- [x] RK-NEXT Stage 3 同一 Studio 專案跨程序續編、版本衝突及 v14 備份還原。
+- [x] RK-NEXT Stage 4 桌面對話直接提交實際使用者回覆，保留引用、問題與版本；已驗收 MCP 重連、純文字與串流。
+- [x] RK-NEXT Stage 5 對話摘要確認、不可執行藍圖匯出、真實 importer 往返及歷史版本重取。
+- [x] RK-NEXT Stage 6 本機與宿主能力解析、工具清冊實際觀測、版本與權限變更阻擋。
+- [x] RK-NEXT Stage 7 對話藍圖的候選建置、臨時工作區驗收、同一 Builder 收據與正式安裝。
+- [x] RK-NEXT Stage 8 節點檢查點、並存待辦、取消、重試與只重做受影響後代。
+- [x] RK-NEXT Stage 9 真正分支與匯合、錯誤備援、未選路徑跳過。
+- [x] RK-NEXT Stage 10–11 關鍵節點校閱、對外操作回執恢復、有界迭代。
+- [x] RK-NEXT Stage 12 品質評估、正式交付、回饋與版本化設定。
+- [x] RK-NEXT Stage 13 依執行證據修訂與比較版本、核准升級及回退。
+- [x] RK-NEXT Stage 14 Agent 目錄、具名待辦與跨 CLI／MCP 重連。
+- [x] RK-NEXT Stage 15 本機技術驗收。656 個底座／流程及 534 個 Studio 測例逐項通過；真人、macOS 與遠端 CI 另列最後驗收。
+- [x] RK-NEXT Stage 16 本機候選 0.3.0、對話指南、乾淨工作區、實際安裝／更新／回退與交付文件。正式發布及最後人工驗收另行辦理。
+
 - [x] 原始碼、Release 與本機採根層元件結構；流程位於 workflows/FLOW_*，狀態與日誌位於 flow_base。保留舊平面配置，ZIP 更新支援兩種路徑；驗證與回復見 docs/layout-migration.md（儲存庫根目錄）。
 
 - [x] 0.2.14：訪談藍圖首次安裝、隔離試做、可續跑的宿主與人審待辦，驗證 Reel 音軌、字幕、直式成片與人工交付。

@@ -186,7 +186,7 @@ wheels = [
 
 [[package]]
 name = "flow-base"
-version = "0.2.15"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "annotated-types" },

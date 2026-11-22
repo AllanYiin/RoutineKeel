@@ -5,7 +5,7 @@
 再產生不同 manifest 的第二版（調整 timeout），通過試做及核准後注入故障。
 既有成果檔使用固定 fixture；不操作使用者的正式工作區。
 
-定義：[publication_faults.json](../../../tests/studio/fixtures/publication_faults.json)。
+20 個故障注入點定義在原始碼的 `tests/studio/fixtures/publication_faults.json`。[執行紀錄](test-report.md)
 每點必須確實觸發一次指定故障，不能以其他錯誤提早退出冒充通過。
 
 | ID | 注入位置／變更 | 核對結果 |

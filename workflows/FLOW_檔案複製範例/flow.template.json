@@ -2,7 +2,7 @@
   "schema_version": 1,
   "runtime_api": "0.2",
   "id": "ai_flow02",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "title": "檔案複製驗證範例",
   "description": "本機複製單一檔案，以第二個獨立流程驗證共用底座、狀態、快取、日誌。不呼叫 LLM。",
   "keywords": [

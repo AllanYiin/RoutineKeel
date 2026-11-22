@@ -54,7 +54,7 @@ wheels = [
 
 [[package]]
 name = "flow-base"
-version = "0.2.15"
+version = "0.3.0"
 source = { editable = "../flow_base" }
 dependencies = [
     { name = "annotated-types" },
@@ -497,7 +497,7 @@ wheels = [
 
 [[package]]
 name = "workflow-studio"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "filelock" },

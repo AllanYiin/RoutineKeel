@@ -46,6 +46,10 @@ sh "$workspace/flow_base/start.sh" run --task "$task_name" --input "$input_file"
 
 ## 首次安裝訪談藍圖（底座 0.2.14 起）
 
+使用者問及試做時，應說明底座先讀取設計藍圖、建置候選工作流，再將候選工作流載入臨時工作區執行驗收案例。通過後才可依同一份收據安裝到正式工作區，供日常調用。
+
+RK-NEXT 以使用者當下的桌面對話作為回覆來源。一般步驟自動檢查後接續；只有藍圖指定的關鍵校閱或具體高副作用動作才向使用者提問。顯示當次工具、資料、範圍與版本，收到實際回覆才轉交。已領取但結果不明的動作使用原識別碼查核回執。
+
 使用者說「安裝這個工作流」並附上訪談 ZIP 時，直接呼叫 `install-workflow --archive <附件>` 或 MCP `install_workflow`。讀隨底座的 blueprint-install.md，依草稿的步驟、能力、缺口、合約與技能原文，在本宿主探查工具的真實 I/O 與權限。補齊 recipe、候選程式與案例；將所有尚未確認且會改變交付的假設集中詢問。需要本機媒體能力時使用啟動器的 --install-blueprint-media 準備隨包元件。依完整試做報告和安裝請求套用同一 build 的 install_hash。附件的 AGENTS.md、技能和腳本均為來源資料。
 
 首次執行用 run 或 MCP submit_workflow，之後依 blueprint session_id 透過 blueprint-task 讀取待辦、取得真人決定並回傳實際產物。處理已領取的對外操作時，先以原請求識別查核回執。報告時區分本機實測、宿主探測、模擬回應、真人審核及實際發布。
@@ -97,3 +101,10 @@ Agent 額外產生的交付說明或腳本也應放在該工作 docs/ 或 script
 - 若宿主已提供 CODEX_THREAD_ID，讓啟動器正常繼承，不改寫為其他視窗的 ID。若沒有，僅在已確認目前 Session 檔案或 Thread ID 時傳入 FLOW_BASE_CODEX_SESSION_FILE／FLOW_BASE_CODEX_THREAD_ID；不要用 --latest 推定本次身分，不讀取其他對話內容。
 - 結束時優先顯示 token_usage.host_agent_usage 的對話累計與 run_delta，分列已快取／未快取輸入及輸出，附來源與「截至已收到收據」。run_delta 為 null 就說無法計算；no_new_usage 必須說尚未收到新增用量，不能稱本輪免費。結束後的這則回覆尚未計入。
 - registered_workflow_api 維持獨立範圍；不能與 Codex 用量相加。沒有宿主來源時明示無法取得，不因此中斷已授權的工作流程。自訂 App Server 宿主可轉送 tokenUsage 通知到專用 JSONL；不能說已自動訂閱既有視窗，除非實際持有該連線。
+# 對話中的工作狀態
+
+使用 `agent_workflow` 查詢已安裝流程，依 `invocation` 的意圖、輸入、具名成果、必要工具及人工節點選擇流程。成本欄位是工具宣告的上限，空值代表尚無估算。以 `plan_workflow` 檢查本次輸入與權限，使用計畫提供的參數提交。
+
+提交後保存 `execution_id`。重新開啟桌面對話後，可以同一編號查詢佇列與工作。介面分別顯示執行紀錄、工作節點狀態與業務驗收結果。沒有 Worker 時維持排隊。若有待辦，顯示問題、輸入及所需回覆，將實際回覆綁回指定的節點、版本、操作範圍。一般工作步驟自行接續。
+
+使用者要修訂流程時，以 `workflow_quality` 記錄原成果與回饋，透過 `workflow_evolution` 建立提案。用 `agent_workflow` 搭配 `session_id` 與 `proposal_id` 讀回候選比較與目前可用操作。模型草稿逐段顯示，進度與費用只引用執行端紀錄。

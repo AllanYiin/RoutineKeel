@@ -333,7 +333,7 @@ def qa_bundle(req):
     save(out / 'asr_details.json', data)
     save(out / 'timing_issues.json', data.get('timing_issues', []))
     save(out / 'review_config.json', config)
-    save(out / 'manifest.json', {'version': 'flow-subtitles-0.5.0', 'source': '', 'source_title': req.get('source_title', '課程影片'),
+    save(out / 'manifest.json', {'version': 'flow-subtitles-0.5.1', 'source': '', 'source_title': req.get('source_title', '課程影片'),
                                 'duration': data['duration'], 'model': data['model'], 'model_revision': data['model_revision'],
                                 'config_sha256': value_hash(config), 'source_sha256': req['source_sha256']})
     # portable-srt hashes JSON with its default ensure_ascii setting.
