@@ -5,7 +5,7 @@ import hashlib
 import os
 import sqlite3
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from . import v001, v002, v003, v004, v005
@@ -95,7 +95,7 @@ def migrate(db: sqlite3.Connection, path: Path, *, existed: bool):
             if migration.VERSION > version:
                 migration.apply(db)
                 db.execute('INSERT INTO schema_migrations(version, applied_at, checksum) VALUES(?,?,?)',
-                           (migration.VERSION, datetime.now(timezone.utc).isoformat(), migration.CHECKSUM))
+                           (migration.VERSION, datetime.now(UTC).isoformat(), migration.CHECKSUM))
                 db.execute(f'PRAGMA user_version={migration.VERSION}')
         missing = v001.NEW_TABLES - _tables(db)
         if missing:

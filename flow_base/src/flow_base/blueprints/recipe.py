@@ -1,12 +1,13 @@
 """Admission of the host's resolution of an interview blueprint."""
 
-from importlib.metadata import entry_points
 import json
-from pydantic import BaseModel, ConfigDict, Field
+from importlib.metadata import entry_points
 from typing import Literal
 
-from .source import require, review_roles, validate_value
+from pydantic import BaseModel, ConfigDict, Field
+
 from .program import run_program, validate_program
+from .source import require, review_roles, validate_value
 
 
 class Model(BaseModel):

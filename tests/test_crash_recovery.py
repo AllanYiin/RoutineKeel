@@ -1,20 +1,23 @@
 """Expired leases need verified process identity before reconciliation."""
 import os
+import shutil
 import subprocess
 import sys
 import threading
 import time
-import shutil
 from types import SimpleNamespace
-from pathlib import Path
 
 import pytest
-
 from flow_base.core.lifecycle import RunStore
-from flow_base.execution.supervisor import Supervisor, identity_matches, process_started_at
+from flow_base.core.service import WorkflowService
+from flow_base.execution.supervisor import (
+    Supervisor,
+    identity_matches,
+    process_started_at,
+)
 from flow_base.runtime import FlowError, Runtime, run_process
-from flow_base.workspace import Workspace
-from flow_base.execution.supervisor import start_detached
+from package_paths import WORKSPACE
+from test_workspace import completed_run
 
 
 def test_macos_process_birth_parses_c_locale_and_rejects_zombie(monkeypatch):
@@ -82,8 +85,9 @@ def test_supervisor_observes_cancel_without_premature_terminal(tmp_path):
     store = RunStore(runtime)
     run_id = store.create(job_id='job', revision_id='rev', spec_hash='spec')
     store.transition(run_id, 'created', 'queued')
-    from flow_base.core.run_context import RunContext
     from types import SimpleNamespace
+
+    from flow_base.core.run_context import RunContext
     context = RunContext(runtime, run_id, tmp_path / 'logs', SimpleNamespace())
     with Supervisor(runtime, run_id, context, interval=0.02, lease_seconds=1):
         store.transition(run_id, 'preparing', 'running')
@@ -107,31 +111,37 @@ def test_process_cancellation_waits_for_exit(tmp_path):
 
 
 def test_detached_supervisor_finishes_after_client_exits(tmp_path):
-    root = Path(__file__).resolve().parents[1]
-    shutil.copytree(root / 'dist/workspace/workflows/FLOW_檔案複製範例', tmp_path / 'copy_flow')
+    shutil.copytree(WORKSPACE / 'workflows/FLOW_檔案複製範例', tmp_path / 'copy_flow')
     source = tmp_path / 'input.txt'
     source.write_text('detached result', encoding='utf-8')
     code = (
         'import sys; from pathlib import Path; from flow_base.workspace import Workspace; '
         'from flow_base.execution.supervisor import start_detached; '
         'w=Workspace(Path(sys.argv[1])); t=w.task("ai_flow02"); '
-        'v=t.configuration(w.runtime); '
+        'v=t.configuration(w.runtime); Path(sys.argv[4]).touch(); sys.stdin.readline(); '
         'a=start_detached(w,t,v,Path(sys.argv[2]),Path(sys.argv[3]),idempotency_key="same"); '
         'b=start_detached(w,t,v,Path(sys.argv[2]),Path(sys.argv[3]),idempotency_key="same"); '
         'assert a["run_id"]==b["run_id"]; print(a["run_id"],flush=True)'
     )
-    parent = subprocess.run([sys.executable, '-c', code, str(tmp_path), str(source), str(tmp_path / 'result')],
-                            capture_output=True, text=True, timeout=10)
-    assert parent.returncode == 0, parent.stderr
-    run_id = parent.stdout.strip().splitlines()[-1]
+    ready = tmp_path / 'client-ready'
+    with subprocess.Popen([sys.executable, '-c', code, str(tmp_path), str(source),
+                           str(tmp_path / 'result'), str(ready)], stdin=subprocess.PIPE,
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as parent:
+        try:
+            startup_deadline = time.monotonic() + 60
+            while not ready.exists():
+                assert parent.poll() is None, 'Client exited before preparing the workflow'
+                assert time.monotonic() < startup_deadline, 'Client startup timed out'
+                time.sleep(0.1)
+            stdout, stderr = parent.communicate(input='submit\n', timeout=10)
+        finally:
+            if parent.poll() is None:
+                parent.kill()
+                parent.communicate(timeout=5)
+    assert parent.returncode == 0, stderr
+    run_id = stdout.strip().splitlines()[-1]
     runtime = Runtime(tmp_path / 'share_states')
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        runtime.initialize()
-        row = RunStore(runtime).get(run_id)
-        if row['execution_status'] in {'succeeded', 'failed', 'interrupted'}:
-            break
-        time.sleep(0.1)
+    row = completed_run(WorkflowService(tmp_path),run_id)
     assert row['execution_status'] == 'succeeded', (row, (tmp_path / 'share_logs' / 'supervisor' / run_id / 'error.json').exists())
     assert (tmp_path / 'result/artifacts/result.bin').read_text(encoding='utf-8') == 'detached result'
     from flow_base.observability.events import EventRecorder

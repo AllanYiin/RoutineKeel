@@ -3,7 +3,7 @@ from pathlib import PurePosixPath
 
 from .errors import StudioError
 
-RESERVED = re.compile(r"^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)", re.I)
+RESERVED = re.compile(r"^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)", re.IGNORECASE)
 
 
 def safe_relative(name: str) -> str:

@@ -2,7 +2,11 @@
 import json
 
 from flow_base.diagnostics import record_exception
-from flow_base.observability.diagnostics import cause_evidence, safe_export, export_diagnostics
+from flow_base.observability.diagnostics import (
+    cause_evidence,
+    export_diagnostics,
+    safe_export,
+)
 from flow_base.runtime import FlowError
 
 

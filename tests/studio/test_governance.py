@@ -22,6 +22,20 @@ def verified_approval(tmp_path):
     return studio, project, build, cases, verifier, policy, approval
 
 
+def test_interview_project_cannot_promote_through_legacy_release_api(tmp_path):
+    studio, p, build, _cases, verifier, policy, approval = verified_approval(tmp_path)
+    try:
+        report = verifier.get(p.project_id, approval["report_id"])
+        assert report["builder_receipt"]["package_hash"] == build["package_hash"]
+        studio.interviews.start(p.project_id, studio.projects.get(p.project_id).version)
+        target = tmp_path / "alternate"
+        with pytest.raises(StudioError, match="對話專案"):
+            Releases(studio).publish(p.project_id, approval["approval_id"], target, policy)
+        assert not target.exists()
+    finally:
+        studio.close()
+
+
 @pytest.mark.parametrize("nested", [False, True])
 def test_publish_idempotency_update_rollback_and_preserve_outputs(tmp_path, nested):
     studio, p, build, cases, verifier, policy, approval = verified_approval(tmp_path)

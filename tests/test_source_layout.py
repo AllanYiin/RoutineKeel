@@ -1,8 +1,7 @@
 """Keep checkout, build workspace and archive component paths in agreement."""
-from pathlib import Path
 import json
 import tomllib
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 

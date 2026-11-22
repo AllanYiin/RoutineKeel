@@ -4,7 +4,6 @@ import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-
 from flow_base.runtime import FlowError, Runtime
 from flow_base.storage.migrations import MIGRATIONS, v001, v002, v003
 
@@ -59,12 +58,15 @@ def test_verified_preupgrade_backup_restores_legacy_database(tmp_path):
     checksum = (home / 'state.sqlite3.before-v001.sqlite3.sha256').read_text().strip()
     assert hashlib.sha256(backup.read_bytes()).hexdigest() == checksum
     restored = tmp_path / 'restored.sqlite3'
-    with sqlite3.connect(backup) as source, sqlite3.connect(restored) as target:
+    with sqlite3.connect(backup.as_uri() + '?mode=ro', uri=True) as source, sqlite3.connect(restored) as target:
+        with pytest.raises(sqlite3.OperationalError, match='readonly'):
+            source.execute("UPDATE runs SET status='changed'")
         source.backup(target)
         assert target.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
         assert target.execute('PRAGMA user_version').fetchone()[0] == 0
         assert target.execute('SELECT status FROM runs').fetchone()[0] == 'complete'
         assert target.execute('SELECT response FROM requests').fetchone()[0] == 'receipt'
+    assert hashlib.sha256(backup.read_bytes()).hexdigest() == checksum
 
 
 def test_failed_migration_rolls_back_then_retries(tmp_path, monkeypatch):
@@ -196,7 +198,7 @@ def test_v003_upgrade_adds_queue_without_rewriting_existing_runs(tmp_path):
         assert old.execute('PRAGMA user_version').fetchone()[0] == 3
         assert old.execute('SELECT status FROM runs').fetchone()[0] == 'complete'
     with Runtime(home).connect() as db:
-        assert db.execute('PRAGMA user_version').fetchone()[0] == 4
+        assert db.execute('PRAGMA user_version').fetchone()[0] == MIGRATIONS[-1].VERSION
         assert db.execute('SELECT status FROM runs').fetchone()[0] == 'complete'
         assert db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='execution_queue'").fetchone()
 

@@ -1,16 +1,15 @@
 """Cross-path Run/Action isolation under the single-writer workspace policy."""
-from concurrent.futures import ThreadPoolExecutor
-from contextlib import redirect_stderr
 import json
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import redirect_stderr
 
 from flow_base.contracts import Step, Workflow
 from flow_base.core.run_context import current
 from flow_base.engine import Adapter, run_workflow
 from flow_base.runtime import FlowError
 from flow_base.workspace import Workspace
-from test_workspace import workspace
 
 
 def test_hundred_mixed_runs_and_actions_keep_identity_and_outputs(workspace, monkeypatch):
@@ -57,9 +56,8 @@ def test_hundred_mixed_runs_and_actions_keep_identity_and_outputs(workspace, mon
                 time.sleep(0.02)
         raise AssertionError('workspace writer did not become available')
 
-    with open(os.devnull, 'w') as quiet, redirect_stderr(quiet):
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            completed = list(pool.map(execute, range(100)))
+    with open(os.devnull, 'w') as quiet, redirect_stderr(quiet), ThreadPoolExecutor(max_workers=4) as pool:
+        completed = list(pool.map(execute, range(100)))
     assert len(completed) == 100
     run_ids = [report['run_id'] for _, report in completed]
     assert len(set(run_ids)) == 100

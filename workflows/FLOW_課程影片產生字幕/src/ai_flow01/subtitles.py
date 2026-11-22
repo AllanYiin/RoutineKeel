@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
+
+from flow_base.runtime import FlowError, atomic_json, read_json, sha256
 
 from .contracts import Segment
-from .review import review
 from .resources import SEPARATOR, SEPARATOR_PROFILE, catalogue, resource_path
-from flow_base.runtime import FlowError, atomic_json, read_json, sha256
+from .review import review
 
 
 def validate_segments(rows, duration=None):
@@ -81,8 +81,9 @@ def transcribe(ctx, step, dependencies, target):
     ctx.runtime.worker(ctx.workflow.profile, request, timeout=options.worker_timeout_seconds, log=ctx.logdir / "asr.log")
     data = read_json(target)
     # Preserve recognizer evidence before applying any alignment fallback.
-    from .timeline import normalize_word_timelines
     from flow_base.runtime import atomic_copy, event
+
+    from .timeline import normalize_word_timelines
     raw = target.with_suffix('.raw.json')
     atomic_copy(target, raw)
     data['vad_artifact'] = vad_plan.relative_to(ctx.runtime.home).as_posix()

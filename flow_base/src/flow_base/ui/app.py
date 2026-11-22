@@ -5,8 +5,10 @@ import math
 import queue
 import threading
 import tkinter as tk
-from pathlib import Path
+from contextlib import contextmanager
 from tkinter import filedialog, messagebox, ttk
+
+from flow_base.runtime import FlowError
 
 from .model import LocalUIModel, error_card, preview_file
 
@@ -143,7 +145,7 @@ class DesktopApp:
         path = filedialog.askdirectory(parent=self.root, title='開啟 RoutineKeel 專案')
         if not path:
             return
-        try:
+        with self._handle_callback_errors():
             self.model.open_project(path)
             self.selected_task = None
             self.source_var.set('')
@@ -158,7 +160,12 @@ class DesktopApp:
             self._write(self.error_text, '')
             self._write(self.plan_text, '')
             self.progress_label.configure(text='已開啟專案；請選擇工作流與輸入。')
-        except Exception as exc:
+
+    @contextmanager
+    def _handle_callback_errors(self):
+        try:
+            yield
+        except Exception as exc:  # noqa: BLE001 -- surface failures to the user at the Tk callback boundary
             self._error(exc)
 
     def _refresh_workflows(self):
@@ -167,7 +174,7 @@ class DesktopApp:
             self.available = self.model.workflows()
             for item in self.available:
                 self.workflow_list.insert('end', f"{item['title']}（{item['id']}）")
-        except Exception as exc:
+        except (OSError, ValueError, KeyError, TypeError, tk.TclError, FlowError) as exc:
             self.available = []
             self._error(exc)
 
@@ -201,7 +208,7 @@ class DesktopApp:
                 self.text_preview.pack(fill='both', expand=True)
             else:
                 self.image_label.configure(text='無法預覽內容：' + (item.reason or '格式不支援'))
-        except Exception as exc:
+        except (OSError, ValueError, tk.TclError, FlowError) as exc:
             self.preview = None
             self.preview_label.configure(text='無法讀取檔案')
             self._error(exc)
@@ -235,7 +242,7 @@ class DesktopApp:
         def work():
             try:
                 self.messages.put((name, action(), None))
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 -- return arbitrary worker errors to the UI thread
                 self.messages.put((name, None, exc))
         threading.Thread(target=work, name=f'ui-{name}', daemon=True).start()
 
@@ -254,12 +261,10 @@ class DesktopApp:
         self._background('start', self.model.start)
 
     def _cancel(self):
-        try:
+        with self._handle_callback_errors():
             response = self.model.cancel()
             self.progress_label.configure(text='取消已請求；等待執行程序停止。' if not response['confirmed_stopped']
                                           else '已確認取消')
-        except Exception as exc:
-            self._error(exc)
 
     def _drain_messages(self):
         while True:
@@ -291,7 +296,7 @@ class DesktopApp:
     def _poll_run(self):
         run_id = self.model.run_id
         if run_id:
-            try:
+            with self._handle_callback_errors():
                 status = self.model.status(run_id)
                 state = status['execution_status']
                 if state != self.last_status:
@@ -303,8 +308,6 @@ class DesktopApp:
                         self.cancel_button.configure(state='disabled')
                         self._show_run_details(run_id)
                         self._refresh_history()
-            except Exception as exc:
-                self._error(exc)
         self.root.after(1000, self._poll_run)
 
     def _refresh_history(self):
@@ -313,7 +316,7 @@ class DesktopApp:
             self.history = self.model.history()
             for row in self.history:
                 self.history_list.insert('end', f"{row.get('run_id')}｜{row.get('status')}")
-        except Exception as exc:
+        except (OSError, ValueError, KeyError, TypeError, tk.TclError, FlowError) as exc:
             self.history = []
             self._error(exc)
 
@@ -328,7 +331,7 @@ class DesktopApp:
         self._show_run_details(run_id)
 
     def _show_run_details(self, run_id):
-        try:
+        with self._handle_callback_errors():
             status = self.model.status(run_id)
             self.cancel_button.configure(state='disabled' if status['execution_status'] in TERMINAL
                                          else 'normal')
@@ -341,8 +344,6 @@ class DesktopApp:
             else:
                 self._write(self.error_text, f"Run：{run_id}\n狀態：{status['execution_status']}\n"
                             '沒有已確認的執行錯誤。')
-        except Exception as exc:
-            self._error(exc)
 
     def _export_diagnostics(self):
         if not self.model.run_id:
@@ -351,11 +352,9 @@ class DesktopApp:
                                             defaultextension='.json', filetypes=[('JSON', '*.json')])
         if not path or not messagebox.askyesno('確認匯出', '只匯出已遮罩診斷至所選檔案？', parent=self.root):
             return
-        try:
+        with self._handle_callback_errors():
             self.model.export_diagnostics(path)
             messagebox.showinfo('匯出完成', '已保存已遮罩診斷。', parent=self.root)
-        except Exception as exc:
-            self._error(exc)
 
     def run(self):
         self.root.mainloop()

@@ -43,7 +43,7 @@ def check_with_studio(ir, registry, package):
                     raise StudioError("CONTRACT_MISMATCH","安裝包與已驗證藍圖、綁定或受控執行器不同")
     except StudioError as exc:
         return {"policy_version": POLICY_VERSION, "status": "FAIL", "reason": exc.code}
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- any unexpected verifier failure blocks installation
         return {"policy_version": POLICY_VERSION, "status": "FAIL", "reason": type(exc).__name__}
     return {"policy_version": POLICY_VERSION, "status": "PASS"}
 

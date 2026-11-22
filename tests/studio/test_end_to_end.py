@@ -41,6 +41,7 @@ def test_hundred_different_inputs_keep_published_outputs_and_ids_isolated(tmp_pa
         env=env,
         capture_output=True,
         timeout=600,
+        check=False,
     )
     (directory / "isolation-console.log").write_bytes(result.stdout + result.stderr)
     assert result.returncode == 0, (result.stdout + result.stderr)[-12000:].decode(

@@ -4,7 +4,7 @@ import json
 import os
 import platform
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
@@ -65,7 +65,7 @@ def write_evidence(tmp_path, name, metrics):
     payload = {
         "schema_version": 1,
         "check": name,
-        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "recorded_at": datetime.now(UTC).isoformat(),
         "environment": environment(),
         "test_workspace": str(tmp_path),
         "metrics": metrics,

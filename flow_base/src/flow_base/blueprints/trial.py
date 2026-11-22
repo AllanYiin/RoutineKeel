@@ -6,7 +6,7 @@ from pathlib import Path
 
 from ..outputs import reject_links
 from ..runtime import atomic_json, digest, read_json
-from .sessions import Session, ASSET
+from .sessions import ASSET, Session
 from .source import require
 
 
@@ -85,8 +85,8 @@ def exercise(root, workflow, measurements=None):
         session = Session(service.workspace.runtime, view["session_id"])
         is_graph = read_json(session.path)["plan"].get("format") == 2
         if is_graph:
-            from ..graph.session import GraphSession
             from ..graph.iterations import merged_meter
+            from ..graph.session import GraphSession
 
             session = GraphSession(service.workspace.runtime, view["session_id"])
         mocks = []
@@ -212,6 +212,6 @@ if __name__ == "__main__":
     measurements=[]
     try:
         atomic_json(trial / "result.json", exercise(trial, task, measurements))
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- the verifier subprocess must report any candidate failure as a failed trial
         atomic_json(trial / "result.json", {"passed": False, "error": str(exc)[:1000],"measurements":measurements})
         sys.exit(1)

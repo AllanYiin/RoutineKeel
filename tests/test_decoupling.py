@@ -6,17 +6,17 @@ import zipfile
 from pathlib import Path
 
 import pytest
-
 from flow_base.intent import model_intent
 from flow_base.runtime import FlowError
 from flow_base.workspace import Workspace
-from test_workspace import cli, workspace
+from package_paths import WORKSPACE
+from test_workspace import cli
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_base_wheel_has_no_domain_code_or_dependencies():
-    wheel = next((ROOT/'dist/workspace/flow_base').glob('*.whl'))
+    wheel = next((WORKSPACE / 'flow_base').glob('flow_base-*.whl'))
     with zipfile.ZipFile(wheel) as archive:
         assert all(not name.startswith(('ai_flow01/', 'ai_flow02/')) for name in archive.namelist())
         metadata = archive.read(next(n for n in archive.namelist() if n.endswith('/METADATA'))).decode()

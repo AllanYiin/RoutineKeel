@@ -1,5 +1,6 @@
 """Offline, human-facing review exports. No model calls or web service."""
 from __future__ import annotations
+
 import base64
 import csv
 import hashlib
@@ -7,8 +8,8 @@ import html
 import io
 import json
 import re
-import zipfile
 import wave
+import zipfile
 from collections import defaultdict
 from pathlib import Path
 
@@ -188,7 +189,8 @@ def import_answers(out, csv_path):
     if Path(csv_path).stat().st_size>10*1024*1024:raise ValueError('填答 CSV 過大')
     edits_path=out/'edits.json'
     edits=json.loads(edits_path.read_text(encoding='utf-8-sig')) if edits_path.exists() else {}
-    if not isinstance(edits,dict):raise ValueError('既有人工修訂格式不正確')
+    if not isinstance(edits,dict):
+        raise ValueError('既有人工修訂格式不正確')  # noqa: TRY004 -- malformed persisted JSON is a value error for this file reader
     additions={};seen=set()
     with Path(csv_path).open(encoding='utf-8-sig',newline='') as f:
         reader=csv.DictReader(f)

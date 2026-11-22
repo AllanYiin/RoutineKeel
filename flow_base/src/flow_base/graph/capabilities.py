@@ -4,7 +4,7 @@ import json
 import os
 import shutil
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from routinekeel_contracts.graph import ForEach, GraphPort, Repeat, Task
@@ -34,7 +34,7 @@ def read_host_inventory(workspace):
         if data["version"] != 1 or not isinstance(data["tools"], dict):
             unavailable("宿主能力目錄格式無效。")
         expires = datetime.fromisoformat(data["expires_at"])
-        if expires.tzinfo is None or expires <= datetime.now(timezone.utc):
+        if expires.tzinfo is None or expires <= datetime.now(UTC):
             unavailable("工具清冊已過期，請由宿主重新取得。")
         return data
     except (OSError, TypeError, KeyError, ValueError):

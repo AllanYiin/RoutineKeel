@@ -7,7 +7,11 @@ from test_verifier import verification_case
 from workflow_studio.compiler.package import digest
 from workflow_studio.contracts import StudioError
 from workflow_studio.registry.policy import ToolPolicy
-from workflow_studio.verifier.authorization import RuntimeAuthorization, disclosure, environment
+from workflow_studio.verifier.authorization import (
+    RuntimeAuthorization,
+    disclosure,
+    environment,
+)
 
 
 def test_verification_requires_exact_runtime_scope_before_credentials(tmp_path, monkeypatch):

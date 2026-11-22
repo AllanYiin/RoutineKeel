@@ -26,6 +26,7 @@ raise SystemExit(main())
         text=True,
         encoding="utf-8",
         timeout=15,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
     guide = json.loads(result.stdout)["result"]

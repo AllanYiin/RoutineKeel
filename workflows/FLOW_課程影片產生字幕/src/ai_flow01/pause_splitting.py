@@ -6,7 +6,6 @@ import unicodedata
 import wave
 from pathlib import Path
 
-
 MIN_PAUSE_MS = 200
 RATE = 16000
 

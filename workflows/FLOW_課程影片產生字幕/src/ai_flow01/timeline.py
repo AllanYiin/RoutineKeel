@@ -1,8 +1,10 @@
 """Conservative word-alignment fallback; segment timing is never invented."""
 from copy import deepcopy
-from pydantic import ValidationError
-from .contracts import Segment
+
 from flow_base.runtime import FlowError
+from pydantic import ValidationError
+
+from .contracts import Segment
 
 
 def normalize_word_timelines(rows, duration):

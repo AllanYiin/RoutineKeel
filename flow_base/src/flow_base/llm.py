@@ -1,17 +1,15 @@
 """Bounded text-only review with durable reservations and no automatic retries."""
 from __future__ import annotations
 
-import difflib
 import json
-import math
 import os
 import time
 import urllib.request
 import uuid
-from decimal import Decimal, ROUND_CEILING
+from decimal import ROUND_CEILING, Decimal
 
 from .contracts import LLM
-from .runtime import FlowError, canonical, digest
+from .runtime import FlowError, canonical
 
 
 def money(tokens, rate):

@@ -1,12 +1,12 @@
 """Versioned public contracts. No environment access at import time."""
 from __future__ import annotations
 
-from pathlib import PurePosixPath
 import re
+from pathlib import PurePosixPath
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class Contract(BaseModel):

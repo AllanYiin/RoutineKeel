@@ -129,12 +129,13 @@ def load_model(req):
 
 def verify(req):
     import importlib.metadata
+
     import numpy as np
     model, device, fallback = load_model(req)
     # Execute encoder/decoder, not just a device enumeration or model import.
     segments, _ = model.transcribe(np.zeros(16000, dtype=np.float32), language="en", beam_size=1, vad_filter=False)
     list(segments)
-    from faster_whisper.vad import get_speech_timestamps, VadOptions
+    from faster_whisper.vad import VadOptions, get_speech_timestamps
     get_speech_timestamps(np.zeros(16000, dtype=np.float32), VadOptions())
     return {"ok": True, "device": device, "fallback": fallback, "python": sys.version.split()[0],
             "engine": "faster-whisper", "model": req.get('model'), "model_revision": req.get('model_revision'),
@@ -200,7 +201,7 @@ def pad_speech_regions(detected, length, pad, skip_samples):
 
 def vad(req):
     import numpy as np
-    from faster_whisper.vad import get_speech_timestamps, VadOptions
+    from faster_whisper.vad import VadOptions, get_speech_timestamps
     pcm = read_pcm(req['input'])
     audio = pcm.astype(np.float32) / 32768.0
     threshold = req.get('vad_threshold', 0.3)

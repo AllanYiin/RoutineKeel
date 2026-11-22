@@ -4,11 +4,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
-from flow_base import hardware, runtime as runtime_module
+from ai_flow01.adapter import Adapter, resolve_environment
 from flow_base.runtime import FlowError, Runtime
 from flow_base.workspace import Manifest, Task
-from ai_flow01.adapter import Adapter, resolve_environment
+
+from flow_base import hardware
+from flow_base import runtime as runtime_module
 
 
 def environment(status='available', detected='detected'):

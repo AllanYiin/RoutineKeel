@@ -66,6 +66,7 @@ print('REPORT_JSON=' + json.dumps(result))
         text=True,
         encoding="utf-8",
         timeout=60,
+        check=False,
     )
     assert run.returncode == 0, run.stdout + run.stderr
     report = json.loads(

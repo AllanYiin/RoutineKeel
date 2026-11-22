@@ -1,5 +1,6 @@
 """Task-neutral accelerator discovery. Driver probing runs in a bounded subprocess."""
 from __future__ import annotations
+
 import csv
 import ctypes
 import io
@@ -72,25 +73,29 @@ def parse_devices(text):
 
 
 def inspect_gpu(run_process):
+    from .observability.recovery import SecondaryOperation
+
     gpu = {'status': 'not_detected', 'devices': [], 'backend_verified': False, 'diagnostics': []}
     smi = nvidia_smi_path()
     if smi:
-        try:
+        with SecondaryOperation('read NVIDIA device metadata') as device_probe:
             output = run_process([smi, '--query-gpu=name,driver_version,memory.total,memory.free',
                                   '--format=csv,noheader,nounits'], timeout=10)
             gpu['devices'] = parse_devices(output)
             gpu['status'] = 'detected' if gpu['devices'] else 'not_detected'
-        except Exception as exc:
+        if device_probe.error is not None:
+            exc = device_probe.error
             gpu['status'] = 'unknown'
             gpu['diagnostics'].append({'probe': 'nvidia-smi', 'error': getattr(exc, 'code', type(exc).__name__)})
-    try:
+    with SecondaryOperation('read CUDA driver status') as driver_probe:
         result = json.loads(run_process([sys.executable, '-I', str(Path(__file__).resolve()), '--cuda-driver'], timeout=10))
         if result['status'] not in {'available', 'unavailable', 'unknown', 'disabled'} or not isinstance(result['device_count'], int):
             raise ValueError('invalid driver probe response')
         gpu['cuda'] = result
         if result['status'] == 'available':
             gpu['status'] = 'detected'
-    except Exception as exc:
+    if driver_probe.error is not None:
+        exc = driver_probe.error
         gpu['cuda'] = {'status': 'unknown', 'device_count': 0, 'reason': getattr(exc, 'code', type(exc).__name__)}
     return gpu
 

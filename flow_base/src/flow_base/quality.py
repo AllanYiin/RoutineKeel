@@ -306,7 +306,10 @@ def feedback(
                 isinstance(outputs, dict) and outputs.keys() == before["outputs"].keys(),
                 "修正須保留具名交付",
             )
-            from routinekeel_contracts.graph_validator import port_for, validate_blueprint
+            from routinekeel_contracts.graph_validator import (
+                port_for,
+                validate_blueprint,
+            )
 
             from .graph.session import GraphSession, checked_value
             from .runtime import read_json

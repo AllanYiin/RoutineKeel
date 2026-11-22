@@ -3,9 +3,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any
 
 APSM_VERSION = "1.0"
 VALID_USAGE_SCENES = {
@@ -14,14 +13,14 @@ VALID_USAGE_SCENES = {
     "scene_c_internal_tool",
     "scene_d_engineer_maintained",
 }
-VALID_PROFILE_VALUES: Dict[str, Set[str]] = {
+VALID_PROFILE_VALUES: dict[str, set[str]] = {
     "user_type": {"personal", "small_team", "internal_team", "engineer_maintained"},
     "usage_duration": {"one_off", "occasional", "long_term"},
     "change_frequency": {"rare", "occasional", "continuous"},
     "failure_cost": {"manual_redo_ok", "multi_user_disruption", "workflow_blocking"},
 }
 
-VALID_COMBINATIONS: Set[Tuple[str, str, str]] = {
+VALID_COMBINATIONS: set[tuple[str, str, str]] = {
     ("separated", "node_spa", "python_api"),
     ("separated", "node_spa", "node_api"),
     ("separated", "node_ssr", "python_api"),
@@ -37,12 +36,12 @@ VALID_COMBINATIONS: Set[Tuple[str, str, str]] = {
 }
 
 
-def load_json(path: Path) -> Dict[str, Any]:
+def load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
-def load_env(path: Path) -> Dict[str, str]:
-    env: Dict[str, str] = {}
+def load_env(path: Path) -> dict[str, str]:
+    env: dict[str, str] = {}
     if not path.exists():
         return env
     for line in path.read_text(encoding="utf-8-sig").splitlines():
@@ -54,11 +53,11 @@ def load_env(path: Path) -> Dict[str, str]:
     return env
 
 
-def add_issue(issues: List[Dict[str, str]], code: str, path: str, message: str) -> None:
+def add_issue(issues: list[dict[str, str]], code: str, path: str, message: str) -> None:
     issues.append({"code": code, "path": path, "message": message})
 
 
-def normalize_config(raw: Dict[str, Any]) -> Dict[str, Any]:
+def normalize_config(raw: dict[str, Any]) -> dict[str, Any]:
     project_profile = raw.get("project_profile", {})
     if not isinstance(project_profile, dict):
         project_profile = {}
@@ -76,7 +75,7 @@ def normalize_config(raw: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def infer_archetype(cfg: Dict[str, str]) -> str:
+def infer_archetype(cfg: dict[str, str]) -> str:
     if cfg["architecture"] == "separated":
         return "web_app"
     if cfg["architecture"] == "monorepo":
@@ -90,7 +89,7 @@ def infer_archetype(cfg: Dict[str, str]) -> str:
     return ""
 
 
-def infer_usage_scene(project_profile: Dict[str, str]) -> str:
+def infer_usage_scene(project_profile: dict[str, str]) -> str:
     user_type = project_profile.get("user_type", "")
     usage_duration = project_profile.get("usage_duration", "")
     change_frequency = project_profile.get("change_frequency", "")
@@ -117,7 +116,7 @@ def infer_usage_scene(project_profile: Dict[str, str]) -> str:
     return "scene_b_shared_tool"
 
 
-def validate_config(cfg: Dict[str, Any], errors: List[Dict[str, str]], warnings: List[Dict[str, str]]) -> None:
+def validate_config(cfg: dict[str, Any], errors: list[dict[str, str]], warnings: list[dict[str, str]]) -> None:
     for key in ("name", "apsm_version", "architecture", "frontend", "backend", "version"):
         if not cfg.get(key):
             add_issue(errors, "missing_config_field", "project.config.json", f"Missing required field: {key}")
@@ -211,15 +210,15 @@ def validate_config(cfg: Dict[str, Any], errors: List[Dict[str, str]], warnings:
         )
 
 
-def required_env_keys(cfg: Dict[str, Any]) -> Set[str]:
+def required_env_keys(cfg: dict[str, Any]) -> set[str]:
     keys = {"BACKEND_HOST", "BACKEND_PORT"}
     if cfg["architecture"] in {"separated", "monorepo"} and cfg["frontend"] in {"node_spa", "node_ssr"}:
         keys.update({"FRONTEND_HOST", "FRONTEND_PORT", "API_BASE_URL"})
     return keys
 
 
-def required_runtime_keys(cfg: Dict[str, Any]) -> Set[str]:
-    keys: Set[str] = set()
+def required_runtime_keys(cfg: dict[str, Any]) -> set[str]:
+    keys: set[str] = set()
     if cfg["backend"] != "none":
         keys.add("backend_port")
     if cfg["frontend"] in {"node_spa", "node_ssr"}:
@@ -227,7 +226,7 @@ def required_runtime_keys(cfg: Dict[str, Any]) -> Set[str]:
     return keys
 
 
-def expected_layout(cfg: Dict[str, Any]) -> Dict[str, Set[str]]:
+def expected_layout(cfg: dict[str, Any]) -> dict[str, set[str]]:
     files = {
         "project.config.json",
         ".env",
@@ -302,7 +301,7 @@ def expected_layout(cfg: Dict[str, Any]) -> Dict[str, Set[str]]:
     }
 
 
-def validate_layout(project_root: Path, cfg: Dict[str, Any], errors: List[Dict[str, str]], warnings: List[Dict[str, str]]) -> None:
+def validate_layout(project_root: Path, cfg: dict[str, Any], errors: list[dict[str, str]], warnings: list[dict[str, str]]) -> None:
     layout = expected_layout(cfg)
     for rel_dir in sorted(layout["dirs"]):
         path = project_root / rel_dir
@@ -325,7 +324,7 @@ def validate_layout(project_root: Path, cfg: Dict[str, Any], errors: List[Dict[s
             add_issue(warnings, "missing_optional_file", rel_file, "Recommended file is missing")
 
 
-def validate_env(project_root: Path, cfg: Dict[str, str], errors: List[Dict[str, str]]) -> None:
+def validate_env(project_root: Path, cfg: dict[str, str], errors: list[dict[str, str]]) -> None:
     env_path = project_root / ".env"
     if not env_path.exists():
         add_issue(errors, "missing_file", ".env", "Environment file is missing")
@@ -346,7 +345,7 @@ def validate_env(project_root: Path, cfg: Dict[str, str], errors: List[Dict[str,
             add_issue(errors, "invalid_port", ".env", f"{key} must be a positive integer")
 
 
-def validate_runtime(project_root: Path, cfg: Dict[str, Any], errors: List[Dict[str, str]]) -> None:
+def validate_runtime(project_root: Path, cfg: dict[str, Any], errors: list[dict[str, str]]) -> None:
     ports_path = project_root / ".runtime" / "ports.json"
     if ports_path.exists():
         try:
@@ -379,8 +378,8 @@ def validate_runtime(project_root: Path, cfg: Dict[str, Any], errors: List[Dict[
                 add_issue(errors, "missing_runtime_key", ".runtime/launcher_state.json", f"Missing required runtime key: {key}")
 
 
-def validate_package_scripts(project_root: Path, cfg: Dict[str, Any], errors: List[Dict[str, str]], warnings: List[Dict[str, str]]) -> None:
-    package_paths: List[Tuple[str, Tuple[str, ...]]] = []
+def validate_package_scripts(project_root: Path, cfg: dict[str, Any], errors: list[dict[str, str]], warnings: list[dict[str, str]]) -> None:
+    package_paths: list[tuple[str, tuple[str, ...]]] = []
     combo = (cfg["architecture"], cfg["frontend"], cfg["backend"])
 
     if combo == ("separated", "node_spa", "python_api"):
@@ -393,9 +392,7 @@ def validate_package_scripts(project_root: Path, cfg: Dict[str, Any], errors: Li
     elif combo == ("separated", "node_ssr", "node_api"):
         package_paths.append(("backend/package.json", ("dev", "start")))
         package_paths.append(("frontend/package.json", ("dev", "start")))
-    elif combo == ("monorepo", "node_spa", "python_api"):
-        package_paths.append(("src/web/package.json", ("dev",)))
-    elif combo == ("monorepo", "node_spa", "node_api"):
+    elif combo == ("monorepo", "node_spa", "python_api") or combo == ("monorepo", "node_spa", "node_api"):
         package_paths.append(("src/web/package.json", ("dev",)))
     elif combo == ("monorepo", "node_ssr", "python_api"):
         package_paths.append(("src/web/package.json", ("dev", "start")))
@@ -430,7 +427,7 @@ def validate_package_scripts(project_root: Path, cfg: Dict[str, Any], errors: Li
             add_issue(warnings, "weak_package_scripts", rel_path, "No dev/start scripts found")
 
 
-def validate_project(project_root: Path) -> Dict[str, Any]:
+def validate_project(project_root: Path) -> dict[str, Any]:
     config_file = project_root / 'project.config.json'
     if config_file.is_file():
         try:
@@ -440,8 +437,8 @@ def validate_project(project_root: Path) -> Dict[str, Any]:
         if profile.get('apsm_extension') == 'flow_base_cli_v1':
             from flow_base_profile import validate
             return validate(project_root)
-    errors: List[Dict[str, str]] = []
-    warnings: List[Dict[str, str]] = []
+    errors: list[dict[str, str]] = []
+    warnings: list[dict[str, str]] = []
 
     if not project_root.exists() or not project_root.is_dir():
         add_issue(errors, "missing_project_root", str(project_root), "Project root does not exist")

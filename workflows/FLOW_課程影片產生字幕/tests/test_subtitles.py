@@ -1,12 +1,11 @@
 import json
 
 import pytest
-
+from ai_flow01.review import review
+from ai_flow01.subtitles import cues_from_segments, render, validate_segments
 from flow_base.contracts import LLM
 from flow_base.llm import Ledger
-from ai_flow01.review import review
-from flow_base.runtime import Runtime, FlowError
-from ai_flow01.subtitles import cues_from_segments, render, validate_segments
+from flow_base.runtime import FlowError, Runtime
 
 
 def settings(**kwargs):
@@ -106,8 +105,8 @@ def test_no_llm_in_offline_mode(tmp_path):
 
 
 def test_local_review_never_calls_provider(tmp_path, monkeypatch):
-    from ai_flow01.contracts import LocalReviewPolicy
     import flow_base.llm
+    from ai_flow01.contracts import LocalReviewPolicy
     monkeypatch.setattr(flow_base.llm, 'http_call', lambda *_: pytest.fail('no provider calls allowed'))
     revised, report = review(Runtime(tmp_path), 'job', segments(), LocalReviewPolicy(), [])
     assert revised == segments() and report['status'] == 'REVIEW_REQUIRED'

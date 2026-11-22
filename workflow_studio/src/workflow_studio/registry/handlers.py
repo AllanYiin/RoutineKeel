@@ -96,14 +96,13 @@ class HandlerLibrary:
             ):
                 raise StudioError("CONTRACT_MISMATCH", "重用 Handler 只接受已宣告的參數。")
             fixed = copy.deepcopy(record["parameters"])
-            if set(supplied) - {"arguments"}:
-                if canonical_json(
-                    {k: v for k, v in supplied.items() if k != "arguments"}
-                ) != canonical_json({k: v for k, v in fixed.items() if k != "arguments"}):
-                    raise StudioError(
-                        "CONTRACT_MISMATCH",
-                        "已註冊 Handler 的程式與測試不可改寫，請建立新工具版本。",
-                    )
+            if set(supplied) - {"arguments"} and canonical_json(
+                {k: v for k, v in supplied.items() if k != "arguments"}
+            ) != canonical_json({k: v for k, v in fixed.items() if k != "arguments"}):
+                raise StudioError(
+                    "CONTRACT_MISMATCH",
+                    "已註冊 Handler 的程式與測試不可改寫，請建立新工具版本。",
+                )
             fixed["arguments"].update(supplied.get("arguments", {}))
             normalized = validate_handler(fixed).model_dump()
             expanded_size += len(canonical_json(normalized).encode()) - len(

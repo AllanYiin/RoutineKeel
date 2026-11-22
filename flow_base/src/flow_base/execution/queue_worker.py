@@ -6,7 +6,7 @@ import time
 import uuid
 from pathlib import Path
 
-from ..core.queue import QueueStore, TERMINAL
+from ..core.queue import TERMINAL, QueueStore
 from ..core.service import WorkflowService
 from ..core.types import StartRequest
 from ..runtime import FlowError

@@ -12,13 +12,17 @@ except ImportError:
     tk = None
 
 import pytest
-
 from flow_base.core.lifecycle import RunStore
 from flow_base.diagnostics import record_exception
 from flow_base.runtime import FlowError
-from flow_base.ui.model import LocalUIModel, error_card, fit_dimensions, parse_overrides, preview_file
+from flow_base.ui.model import (
+    LocalUIModel,
+    error_card,
+    fit_dimensions,
+    parse_overrides,
+    preview_file,
+)
 from flow_base.workspace import Workspace
-from test_workspace import workspace
 
 
 def test_preview_reports_real_content_and_keeps_image_ratio(tmp_path):

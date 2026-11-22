@@ -4,15 +4,26 @@ from __future__ import annotations
 import dataclasses
 import uuid
 from pathlib import Path
-from .presentation import Reporter, ACTIVE
-from .core.run_context import RunContext, ACTIVE_RUN
-from .core.lifecycle import RunStore
-from .execution.supervisor import Supervisor
-from .diagnostics import record_exception, launcher_id
-from .observability.diagnostics import guard_secondary
+from typing import ClassVar
+
+from flow_base.observability.recovery import SecondaryOperation
 
 from . import __version__
-from .runtime import FlowError, Runtime, atomic_json, digest, read_json, require_space, sha256, event
+from .core.lifecycle import RunStore
+from .core.run_context import ACTIVE_RUN, RunContext
+from .diagnostics import launcher_id, record_exception
+from .execution.supervisor import Supervisor
+from .observability.diagnostics import guard_secondary
+from .presentation import ACTIVE, Reporter
+from .runtime import (
+    FlowError,
+    Runtime,
+    atomic_json,
+    digest,
+    read_json,
+    require_space,
+    sha256,
+)
 
 
 def merge(base, patch):
@@ -38,7 +49,7 @@ class Context:
 
 class Adapter:
     """Public task API 0.2. Override domain behavior; runtime remains unaware of it."""
-    handlers = {}
+    handlers: ClassVar[dict] = {}
 
     def configuration(self, overrides):
         raise NotImplementedError
@@ -141,7 +152,12 @@ def _execution_spec_hash(runtime, task, workflow, input_hash, output, offline):
 
 
 def run_demo(runtime, task, output):
-    from .outputs import choose_output, artifact_directory, validate_tree, write_delivery_index
+    from .outputs import (
+        artifact_directory,
+        choose_output,
+        validate_tree,
+        write_delivery_index,
+    )
     output = choose_output(runtime, task, requested=output)
     validate_tree(output)
     if output.exists() and any(output.iterdir()):
@@ -191,14 +207,15 @@ def run_demo(runtime, task, output):
         store.transition(run_id, 'publishing', 'succeeded', result_status='demonstration', delivery_status='published')
         reporter.event_recorder.record('delivery.published', attributes={'result_status': 'demonstration'})
         reporter.event_recorder.record('run.finished', attributes={'result_status': 'demonstration'})
-        try:
+        with SecondaryOperation('runtime.update_run') as update_run_outcome:
             runtime.update_run(run_id, 'complete', finished=True)
             reporter.complete('executed')
             reporter.end(result, {'label': '示範結束：未執行正式處理，不能當作驗收證據。'})
-        except Exception as post_error:
-            try:
+        if update_run_outcome.error is not None:
+            post_error = update_run_outcome.error
+            with SecondaryOperation('record_exception') as diagnostic_write:
                 result['post_delivery_diagnostic'] = record_exception(post_error, logs / 'post_delivery', run_id=run_id)['diagnostic_json']
-            except Exception:
+            if diagnostic_write.error is not None:
                 result['post_delivery_diagnostic'] = 'unavailable'
         return result
     except BaseException as exc:
@@ -206,25 +223,21 @@ def run_demo(runtime, task, output):
         status = 'cancelled' if cancelled else ('interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed')
         code = exc.code if isinstance(exc, FlowError) else type(exc).__name__
         if attempt_id and not attempt_finished:
-            try:
+            with SecondaryOperation('reporter.event_recorder.record'):
                 reporter.event_recorder.record('step.failed', severity='ERROR',
                                                attributes={'step_id': 'demo', 'code': code})
-            except Exception:
-                pass
-        try:
+        with SecondaryOperation('reporter.event_recorder.record'):
             reporter.event_recorder.record('run.interrupted' if isinstance(exc, KeyboardInterrupt) else ('run.cancelled' if cancelled else 'run.failed'),
                                            severity='ERROR', attributes={'code': code})
-        except Exception:
-            pass
         diagnostic = record_exception(exc, logs, flow_id=task.flow_id, run_id=run_id, launch_id=launcher_id(runtime))
-        guard_secondary(exc, diagnostic, 'finish_attempt', lambda: store.finish_attempt_failure(
+        guard_secondary(exc, diagnostic, 'finish_attempt', lambda exc=exc: store.finish_attempt_failure(
             attempt_id, interrupted=isinstance(exc, KeyboardInterrupt), cancelled=cancelled,
             error_id=diagnostic['error_id']), runtime=runtime)
-        guard_secondary(exc, diagnostic, 'finish_failure', lambda: store.finish_failure(run_id,
+        guard_secondary(exc, diagnostic, 'finish_failure', lambda exc=exc: store.finish_failure(run_id,
             interrupted=isinstance(exc, KeyboardInterrupt), cancelled=cancelled, error_id=diagnostic['error_id']), runtime=runtime)
         state = guard_secondary(exc, diagnostic, 'read_run_status', lambda: store.get(run_id), runtime=runtime)
         status = state['execution_status'] if state else status
-        guard_secondary(exc, diagnostic, 'reporter.fail', lambda: reporter.fail(code, diagnostic['message'],
+        guard_secondary(exc, diagnostic, 'reporter.fail', lambda exc=exc: reporter.fail(code, diagnostic['message'],
             interrupted=isinstance(exc, KeyboardInterrupt), diagnostic=diagnostic), runtime=runtime)
         guard_secondary(exc, diagnostic, 'update_run', lambda: runtime.update_run(run_id, status, error=code, finished=True), runtime=runtime)
         guard_secondary(exc, diagnostic, 'failure.json', lambda: atomic_json(logs / 'failure.json',
@@ -232,13 +245,14 @@ def run_demo(runtime, task, output):
              'token_usage': reporter.usage.finish(), 'presentation': reporter.references()}), runtime=runtime)
         if isinstance(exc, FlowError):
             guard_secondary(exc, diagnostic, 'attach_error_ids',
-                lambda: exc.details.update(flow_id=task.flow_id, run_id=run_id), runtime=runtime)
+                lambda exc=exc: exc.details.update(flow_id=task.flow_id, run_id=run_id), runtime=runtime)
         raise
     finally:
         if supervisor is not None:
-            try:
+            with SecondaryOperation('supervisor.__exit__', catch=BaseException) as supervisor_cleanup:
                 supervisor.__exit__(None, None, None)
-            except BaseException as cleanup_error:
+            if supervisor_cleanup.error is not None:
+                cleanup_error = supervisor_cleanup.error
                 record_exception(cleanup_error, logs / 'cleanup', runtime=runtime, run_id=run_id)
         ACTIVE.reset(reporter_token)
         ACTIVE_RUN.reset(run_token)
@@ -281,7 +295,7 @@ def run_workflow(runtime, task, workflow, source, output=None, *, offline=False,
         reporter.event_recorder.record('run.preparing')
         reporter.start()
         report = _run_workflow(runtime, task, workflow, source, output, run_id=run_id, offline=offline, prepared=prepared)
-        try:
+        with SecondaryOperation('finalize published run') as post_delivery_update:
             if supervisor.heartbeat_error:
                 raise FlowError('SUPERVISOR_HEARTBEAT', '執行期間無法更新監督程序 lease') from supervisor.heartbeat_error
             if store.get(run_id)['execution_status'] != 'succeeded':
@@ -294,28 +308,27 @@ def run_workflow(runtime, task, workflow, source, output=None, *, offline=False,
             adapter = task.load(runtime)
             summary = adapter.result_summary(report) if hasattr(adapter, 'result_summary') else None
             reporter.end(report, summary)
-        except Exception as post_error:
-            try:
+        if post_delivery_update.error is not None:
+            post_error = post_delivery_update.error
+            with SecondaryOperation('record_exception') as diagnostic_write:
                 report['post_delivery_diagnostic'] = record_exception(post_error, logs / 'post_delivery', run_id=run_id)['diagnostic_json']
-            except Exception:
+            if diagnostic_write.error is not None:
                 report['post_delivery_diagnostic'] = 'unavailable'
         return report
     except BaseException as exc:
         cancelled = isinstance(exc, FlowError) and exc.code in {'PROCESS_CANCELLED', 'RUN_CANCEL_REQUESTED'}
         status = 'cancelled' if cancelled else ('interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed')
         code = exc.code if isinstance(exc, FlowError) else type(exc).__name__
-        try:
+        with SecondaryOperation('reporter.event_recorder.record'):
             reporter.event_recorder.record('run.interrupted' if isinstance(exc, KeyboardInterrupt) else ('run.cancelled' if cancelled else 'run.failed'),
                                            severity='ERROR', attributes={'code': code})
-        except Exception:
-            pass
         diagnostic = record_exception(exc, logs, flow_id=task.flow_id, run_id=run_id,
                                       launch_id=launcher_id(runtime), step=reporter.step_id)
-        guard_secondary(exc, diagnostic, 'finish_failure', lambda: store.finish_failure(run_id,
+        guard_secondary(exc, diagnostic, 'finish_failure', lambda exc=exc: store.finish_failure(run_id,
             interrupted=isinstance(exc, KeyboardInterrupt), cancelled=cancelled, error_id=diagnostic['error_id']), runtime=runtime)
         state = guard_secondary(exc, diagnostic, 'read_run_status', lambda: store.get(run_id), runtime=runtime)
         status = state['execution_status'] if state else status
-        guard_secondary(exc, diagnostic, 'reporter.fail', lambda: reporter.fail(code, diagnostic['message'],
+        guard_secondary(exc, diagnostic, 'reporter.fail', lambda exc=exc: reporter.fail(code, diagnostic['message'],
             interrupted=isinstance(exc, KeyboardInterrupt), diagnostic=diagnostic), runtime=runtime)
         guard_secondary(exc, diagnostic, 'update_run', lambda: runtime.update_run(run_id, status, error=code, finished=True), runtime=runtime)
         guard_secondary(exc, diagnostic, 'run.json', lambda: atomic_json(logs / 'run.json',
@@ -326,23 +339,33 @@ def run_workflow(runtime, task, workflow, source, output=None, *, offline=False,
              'token_usage': reporter.usage.finish(), 'presentation': reporter.references()}), runtime=runtime)
         if isinstance(exc, FlowError):
             guard_secondary(exc, diagnostic, 'attach_error_ids',
-                lambda: exc.details.update(flow_id=task.flow_id, run_id=run_id), runtime=runtime)
+                lambda exc=exc: exc.details.update(flow_id=task.flow_id, run_id=run_id), runtime=runtime)
         raise
     finally:
         if supervisor is not None:
-            try:
+            with SecondaryOperation('supervisor.__exit__', catch=BaseException) as supervisor_cleanup:
                 supervisor.__exit__(None, None, None)
-            except BaseException as cleanup_error:
+            if supervisor_cleanup.error is not None:
+                cleanup_error = supervisor_cleanup.error
                 record_exception(cleanup_error, logs / 'cleanup', runtime=runtime, run_id=run_id)
         ACTIVE.reset(reporter_token)
         ACTIVE_RUN.reset(run_token)
 
 
 def _run_workflow(runtime, task, workflow, source, output, *, run_id, offline=False, prepared=None):
-    from .outputs import output_layout, artifact_directory, validate_tree, write_delivery_index
+    from .outputs import (
+        artifact_directory,
+        output_layout,
+        validate_tree,
+        write_delivery_index,
+    )
     from .storage.artifacts import MANIFEST, build_artifact_set, validate_artifact_set
-    from .storage.delivery import (prepare_staging, promote_staging,
-                                   recover_transactions, delivery_root)
+    from .storage.delivery import (
+        delivery_root,
+        prepare_staging,
+        promote_staging,
+        recover_transactions,
+    )
     adapter = task.load(runtime)
     source, output = Path(source).resolve(), Path(output).resolve()
     if not source.is_file():
@@ -368,9 +391,8 @@ def _run_workflow(runtime, task, workflow, source, output, *, run_id, offline=Fa
         validate_tree(output)
         previous_report = output / 'report.json'
         layout = output_layout(output, task.manifest.output_layout)
-        if output.exists() and (not output.is_dir() or any(output.iterdir())):
-            if not previous_report.is_file() or read_json(previous_report).get('job_id') != job:
-                raise FlowError('OUTPUT_EXISTS', 'Output contains another job; choose an empty directory')
+        if (output.exists() and (not output.is_dir() or any(output.iterdir()))) and (not previous_report.is_file() or read_json(previous_report).get('job_id') != job):
+            raise FlowError('OUTPUT_EXISTS', 'Output contains another job; choose an empty directory')
         work.mkdir(parents=True, exist_ok=True)
         logs.mkdir(parents=True, exist_ok=True)
         if hasattr(adapter, 'check_output'):
@@ -488,7 +510,11 @@ def _run_workflow(runtime, task, workflow, source, output, *, run_id, offline=Fa
                 report.update(result_status=report["graph_result_status"],delivery_status="withheld" if withheld else "published",
                               execution_status=report["blueprint"].get("execution_status",report["blueprint"]["status"]))
             if withheld:
-                from .storage.delivery import delivery_root, write_version_manifest, commit_graph_preview
+                from .storage.delivery import (
+                    commit_graph_preview,
+                    delivery_root,
+                    write_version_manifest,
+                )
                 preview_folder=delivery_root(output)/"previews"/run_id
                 from .outputs import reject_links
                 reject_links(preview_folder)
@@ -512,20 +538,16 @@ def _run_workflow(runtime, task, workflow, source, output, *, run_id, offline=Fa
                                           launch_id=launcher_id(runtime), step=ACTIVE.get().step_id)
             state = guard_secondary(exc, diagnostic, 'read_run_status', lambda: RunStore(runtime).get(run_id), runtime=runtime)
             if state and state['execution_status'] == 'publishing':
-                try:
+                with SecondaryOperation('ACTIVE.get.event_recorder.record'):
                     ACTIVE.get().event_recorder.record('delivery.failed', severity='ERROR',
                         attributes={'code': exc.code if isinstance(exc, FlowError) else type(exc).__name__})
-                except Exception:
-                    pass
             if active_attempt:
-                try:
+                with SecondaryOperation('ACTIVE.get.event_recorder.record'):
                     ACTIVE.get().event_recorder.record('step.failed', severity='ERROR',
                         attributes={'step_id': ACTIVE.get().step_id or 'unknown',
                                     'code': exc.code if isinstance(exc, FlowError) else type(exc).__name__})
-                except Exception:
-                    pass
             cancelled = isinstance(exc, FlowError) and exc.code in {'PROCESS_CANCELLED', 'RUN_CANCEL_REQUESTED'}
-            guard_secondary(exc, diagnostic, 'finish_attempt_failure', lambda: RunStore(runtime).finish_attempt_failure(active_attempt,
+            guard_secondary(exc, diagnostic, 'finish_attempt_failure', lambda exc=exc: RunStore(runtime).finish_attempt_failure(active_attempt,
                 interrupted=isinstance(exc, KeyboardInterrupt), cancelled=cancelled, error_id=diagnostic['error_id']), runtime=runtime)
             failure = {'job_id': job, 'status': 'cancelled' if cancelled else ('interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed'),
                        'flow_id': task.flow_id, 'run_id': run_id, 'output_layout': layout,

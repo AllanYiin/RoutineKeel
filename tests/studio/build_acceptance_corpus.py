@@ -35,21 +35,21 @@ def definition(
     intermediates=None,
     training_count=1,
 ):
-    return dict(
-        id=f"C{number:02d}",
-        title=title,
-        mode=mode,
-        rule=rule,
-        brief=brief,
-        inputs=inputs,
-        expected=expected,
-        input_format=input_format,
-        output_format=output_format,
-        comparison=comparison,
-        diagram=diagram,
-        intermediates=intermediates,
-        training_count=training_count,
-    )
+    return {
+        "id": f"C{number:02d}",
+        "title": title,
+        "mode": mode,
+        "rule": rule,
+        "brief": brief,
+        "inputs": inputs,
+        "expected": expected,
+        "input_format": input_format,
+        "output_format": output_format,
+        "comparison": comparison,
+        "diagram": diagram,
+        "intermediates": intermediates,
+        "training_count": training_count,
+    }
 
 
 def definitions():

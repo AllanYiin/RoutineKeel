@@ -9,22 +9,23 @@ from argparse import Namespace
 from pathlib import Path
 
 import pytest
-
-from flow_base.observability.errors import ALIASES, STANDARD, explain_error, explain_exception
-from flow_base.observability.commands import doctor
-from flow_base.runtime import FlowError, Runtime
-from flow_base.runtime import require_space, run_process
-from flow_base.contracts import Step
-from flow_base.contracts import Workflow
-from flow_base.engine import Adapter, run_workflow
-from flow_base.core.lifecycle import RunStore
-from flow_base.storage.artifacts import build_artifact_set
-from flow_base.storage.delivery import write_version_manifest, rollback_delivery
-from flow_base.observability.events import EventRecorder
-from flow_base.workspace import Workspace
 from flow_base.cli import diagnostic_command, emit_error
+from flow_base.contracts import Step, Workflow
+from flow_base.core.lifecycle import RunStore
+from flow_base.engine import Adapter, run_workflow
+from flow_base.observability.commands import doctor
+from flow_base.observability.errors import (
+    ALIASES,
+    STANDARD,
+    explain_error,
+    explain_exception,
+)
+from flow_base.observability.events import EventRecorder
 from flow_base.presentation import Reporter
-from test_workspace import workspace
+from flow_base.runtime import FlowError, Runtime, require_space, run_process
+from flow_base.storage.artifacts import build_artifact_set
+from flow_base.storage.delivery import rollback_delivery, write_version_manifest
+from flow_base.workspace import Workspace
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -33,7 +34,7 @@ def _cli(root, *arguments):
     env = os.environ.copy()
     env['PYTHONPATH'] = str(ROOT / 'flow_base/src')
     return subprocess.run([sys.executable, '-m', 'flow_base', '--workspace', str(root),
-                           *map(str, arguments)], env=env, capture_output=True, text=True, timeout=30)
+                           *map(str, arguments)], env=env, capture_output=True, text=True, timeout=30, check=False)
 
 
 def test_every_base_flow_error_has_chinese_guidance_and_actions():

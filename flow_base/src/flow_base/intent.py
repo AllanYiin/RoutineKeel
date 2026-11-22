@@ -7,7 +7,7 @@ from pathlib import Path
 
 from pydantic import Field
 
-from .contracts import Contract, LLM
+from .contracts import LLM, Contract
 from .engine import merge
 from .llm import Ledger, http_call
 from .runtime import FlowError, canonical, digest, read_json
@@ -43,7 +43,7 @@ def local_intent(workspace, text, *, source=None, output=None, selected=None):
     intent.task = task.manifest.id
     # A negated task name is not evidence of an instruction to execute that task.
     for keyword in task.manifest.keywords:
-        if re.search(r'(不要|不用|不需要|別).{0,6}' + re.escape(keyword), text, re.I):
+        if re.search(r'(不要|不用|不需要|別).{0,6}' + re.escape(keyword), text, re.IGNORECASE):
             intent.questions.append('需求包含否定的流程名稱，請明確指定這次要執行的流程。')
     quoted = re.findall(r'[「“"]([^」”"\n]+)[」”"]', text)
     if not intent.input:
@@ -53,7 +53,7 @@ def local_intent(workspace, text, *, source=None, output=None, selected=None):
         elif len(candidates) > 1:
             intent.questions.append('目前一次執行一個輸入檔案，請指定其中一個。')
     if not intent.output:
-        match = re.search(r'(?:輸出到|存到|放到|output to)\s*[「“"]([^」”"\n]+)[」”"]', text, re.I)
+        match = re.search(r'(?:輸出到|存到|放到|output to)\s*[「“"]([^」”"\n]+)[」”"]', text, re.IGNORECASE)
         if match:
             intent.output = match.group(1)
     assignments = {}

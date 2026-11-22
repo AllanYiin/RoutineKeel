@@ -1,9 +1,7 @@
 """Explicit CLI/workspace extension to the supplied project launcher/validator."""
-from pathlib import Path
 import json
-import subprocess
-import sys
 import tomllib
+from pathlib import Path
 
 BAT = r'''@echo off
 setlocal DisableDelayedExpansion

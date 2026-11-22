@@ -1,8 +1,17 @@
 """Recover completed local ASR after validation failure, without decoding again."""
 from pathlib import Path
+
 from flow_base.engine import Context
-from flow_base.runtime import FlowError, atomic_json, atomic_copy, read_json, sha256, event
 from flow_base.outputs import artifact_directory, validate_tree, write_delivery_index
+from flow_base.runtime import (
+    FlowError,
+    atomic_copy,
+    atomic_json,
+    event,
+    read_json,
+    sha256,
+)
+
 from . import worker
 from .resources import catalogue
 from .timeline import normalize_word_timelines
@@ -153,7 +162,7 @@ def recover(runtime, adapter, output=None, raw_asr=None):
         normalized = work / 'normalized.json'; atomic_json(normalized, data)
         ctx = Context(runtime, workflow, source, work, failed['job_id'], prepared, True,
                       Path(action['logdir']), action['flow_id'], action['run_id'])
-        from .subtitles import review_step, export_step
+        from .subtitles import export_step, review_step
         reviewed = review_step(ctx, workflow.steps[3], {'transcribe': normalized}, work / 'review.json')
         terminal = export_step(ctx, workflow.steps[4], {'review': reviewed}, work / 'export.json')
         atomic_copy(output / 'report.json', output / 'docs' / ('before-' + action['run_id'] + '.json'))
@@ -167,8 +176,9 @@ def recover(runtime, adapter, output=None, raw_asr=None):
                       recovery={'source_run_id':failed['run_id'], 'asr_calls':0,
                                 'verified_regions':len(vad['regions']), 'raw_sha256':sha256(raw_path),
                                 'timing_issue_ids':[x['id'] for x in issues]})
-        from flow_base import __version__
         from flow_base.usage import UsageMeter
+
+        from flow_base import __version__
         report.update(runtime=__version__, token_usage=UsageMeter().summary())
         atomic_json(output / 'report.json', report)
         write_delivery_index(output, report)

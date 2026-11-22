@@ -5,8 +5,8 @@ import argparse
 import sqlite3
 import tempfile
 import traceback
-from contextlib import closing
 from pathlib import Path
+
 from pydantic import ValidationError
 
 from ..runtime import FlowError, Runtime, atomic_json, read_json
@@ -40,7 +40,7 @@ class ReadOnlyRuntime(Runtime):
 
 
 def probe(request, temporary):
-    from ..engine import plan, _execution_identity, _execution_spec_hash
+    from ..engine import _execution_identity, _execution_spec_hash, plan
     from ..outputs import choose_output
 
     workspace = Workspace(Path(request['workspace']))
@@ -92,7 +92,7 @@ def main(argv=None):
                     'message': '計畫輸入、流程設定或本機環境未通過檢查。',
                     'details': {'exception_type': type(exc).__name__}}})
         return 2
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- the isolated planning process returns a structured error to its caller
         atomic_json(args.response, {'ok': False, 'error': {'code': 'PLAN_PROBE_FAILED',
                     'message': '隔離計畫程序未能完成；請查本機診斷。',
                     'details': {'exception_type': type(exc).__name__,

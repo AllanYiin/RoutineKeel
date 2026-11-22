@@ -13,7 +13,11 @@ from workflow_studio.llm.provider import Chunk
 from workflow_studio.llm.usage import Budget
 from workflow_studio.registry.handlers import MARKER
 from workflow_studio.service import StudioService
-from workflow_studio.storage.migrations import APPLICATION_ID, MIGRATIONS, SCHEMA_VERSION
+from workflow_studio.storage.migrations import (
+    APPLICATION_ID,
+    MIGRATIONS,
+    SCHEMA_VERSION,
+)
 from workflow_studio.storage.sqlite import SQLiteRepository
 
 
@@ -25,7 +29,7 @@ def source_handler(
     expected="id,amount\nA,100\n",
     format="csv",
 ):
-    studio, p, revision, policy = build_ir(
+    studio, p, revision, _policy = build_ir(
         tmp_path, program_ir(parameters or csv_parameters(), format)
     )
     studio.close()
@@ -342,7 +346,7 @@ def test_repair_uses_template_arguments_without_transmitting_fixed_body(tmp_path
 
 
 def test_old_verified_build_cannot_export_a_newly_edited_step(tmp_path):
-    model, _, _, report, item = source_handler(tmp_path)
+    model, _, _, report, _item = source_handler(tmp_path)
     old_build, old_hash = report["build_id"], report["package_hash"]
     model.edit_node("copy", arguments={"minimum": 200})
     with pytest.raises(StudioError) as exc:

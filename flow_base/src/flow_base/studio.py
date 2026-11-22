@@ -54,7 +54,7 @@ def studio_request(workspace, operation, params):
             encoding="utf-8",
             capture_output=True,
             timeout=45,
-            env=worker_environment(),
+            env=worker_environment(), check=False,
         )
     except subprocess.TimeoutExpired as exc:
         raise FlowError(
@@ -86,4 +86,4 @@ def studio_terminal(workspace, params, *, operation="stream"):
         "--payload",
         json.dumps(params),
     ]
-    return subprocess.run(args, env=worker_environment()).returncode
+    return subprocess.run(args, env=worker_environment(), check=False).returncode

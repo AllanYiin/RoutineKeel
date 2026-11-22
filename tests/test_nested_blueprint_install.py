@@ -1,9 +1,12 @@
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
+import pytest
 from flow_base.workspace import Workspace
 from test_blueprint_install import apply, candidate
+
+pytestmark = pytest.mark.usefixtures("desktop_test_catalog")
 
 
 def test_nested_first_install_uses_shared_state_and_preserves_workflow_identity(tmp_path):
@@ -24,10 +27,11 @@ def test_repository_directory_is_not_an_installed_studio_validator():
     code = (
         'import sys; sys.path.insert(0, sys.argv[1]);'
         'from flow_base.blueprints.ir import check_with_studio;'
-        'assert check_with_studio(None,None,None) == "not_installed"'
+        'sys.modules["routinekeel_contracts.validator"] = None;'
+        'assert check_with_studio(None,None,None)["status"] == "NOT_RUN"'
     )
     result = subprocess.run(
         [sys.executable, '-c', code, str(root / 'flow_base/src')],
-        cwd=root, capture_output=True, text=True, timeout=15,
+        cwd=root, capture_output=True, text=True, timeout=15, check=False,
     )
     assert result.returncode == 0, result.stderr

@@ -4,7 +4,15 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from .runtime import FlowError, atomic_bytes, atomic_copy, atomic_json, digest, read_json, sha256
+from .runtime import (
+    FlowError,
+    atomic_bytes,
+    atomic_copy,
+    atomic_json,
+    digest,
+    read_json,
+    sha256,
+)
 
 LAYOUT = 'categorized-v1'
 

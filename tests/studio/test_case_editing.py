@@ -103,7 +103,7 @@ def test_case_editor_invalidates_old_approval_but_retains_original_report(tmp_pa
     from workflow_studio.service import StudioService
     from workflow_studio.verifier.report import Verifier
 
-    studio, p, build, cases, verifier, policy, approval = verified_approval(tmp_path)
+    studio, p, _build, cases, verifier, policy, approval = verified_approval(tmp_path)
     report = verifier.get(p.project_id, approval["report_id"])
     studio.close()
     model = StudioSession(tmp_path / "studio")

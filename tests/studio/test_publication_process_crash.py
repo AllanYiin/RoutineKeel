@@ -54,6 +54,7 @@ def test_publisher_process_death_keeps_previous_release_recoverable(tmp_path, po
             env=env,
             capture_output=True,
             timeout=60,
+            check=False,
         )
         assert process.returncode == 97, process.stderr.decode("utf-8", errors="replace")
         assert (root / "crash-marker.txt").read_text() == point

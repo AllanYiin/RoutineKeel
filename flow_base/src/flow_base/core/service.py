@@ -8,13 +8,20 @@ import subprocess
 import sys
 import tempfile
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
+from ..package_updates import package_operation
 from ..runtime import FlowError, atomic_json, digest, read_json
 from ..workspace import Workspace
-from ..package_updates import package_operation
-from .types import PlanRequest, PlanResult, StartRequest, StartResult, SubmitRequest, SubmitResult
+from .types import (
+    PlanRequest,
+    PlanResult,
+    StartRequest,
+    StartResult,
+    SubmitRequest,
+    SubmitResult,
+)
 
 RUN_ID = re.compile(r'^run_[a-f0-9]{32}$')
 
@@ -97,9 +104,9 @@ class WorkflowService:
         return evolution.change(self, identity, params.pop("expected_revision", None), operation, params)
 
     def workflow_quality(self,session_id,operation="preview",payload=None):
-        from ..graph.session import GraphSession
         from ..blueprints.source import require
-        from ..quality import preview,feedback,save_profile
+        from ..graph.session import GraphSession
+        from ..quality import feedback, preview, save_profile
         runtime=self.workspace.runtime
         session=GraphSession(runtime,session_id)
         require(session.path.is_file(),"找不到工作")
@@ -305,7 +312,7 @@ class WorkflowService:
                 env.update(plan_probe_catalog(self.workspace,request.task,folder/"public-tool-descriptors.json"))
             process = subprocess.run([sys.executable, '-m', 'flow_base.core.plan_probe',
                                       '--request', str(input_path), '--response', str(output_path)],
-                                     cwd=folder, env=env, capture_output=True, timeout=40)
+                                     cwd=folder, env=env, capture_output=True, timeout=40, check=False)
             if not output_path.is_file():
                 raise FlowError('PLAN_PROBE_FAILED', '隔離計畫程序未回報結果', exit_code=process.returncode)
             response = read_json(output_path)
@@ -337,7 +344,7 @@ class WorkflowService:
                                   idempotency_key=request.idempotency_key,
                                   spec_hash=planned.execution_spec_hash)
         return StartResult(run_id=launched['run_id'], status=launched['status'],
-                           submitted_at=datetime.now(timezone.utc).isoformat(),
+                           submitted_at=datetime.now(UTC).isoformat(),
                            execution_spec_hash=planned.execution_spec_hash)
 
     def submit_workflow(self, request):
@@ -378,7 +385,7 @@ class WorkflowService:
                             poll_after_ms=None if row['status'] in {'succeeded','failed','interrupted','cancelled'} else 1000)
 
     def get_workflow_status(self, execution_id):
-        from .queue import QueueStore, TERMINAL
+        from .queue import TERMINAL, QueueStore
 
         row = QueueStore(self.workspace.runtime).get(execution_id)
         status = row['status']
@@ -514,9 +521,9 @@ class WorkflowService:
         return diagnose(self.workspace.runtime, run_id)
 
     def list_run_artifacts(self, run_id):
-        from .lifecycle import resolve_manifest_reference
-        from ..storage.delivery import verify_version
         from ..runtime import sha256
+        from ..storage.delivery import verify_version
+        from .lifecycle import resolve_manifest_reference
         self._known_run(run_id)
         with closing(self.workspace.runtime.connect()) as db:
             row = db.execute("SELECT d.delivery_id,d.status,a.manifest_json,r.output FROM deliveries d JOIN artifact_sets a ON a.artifact_set_id=d.artifact_set_id JOIN runs r ON r.run_id=d.run_id WHERE d.run_id=? AND d.status IN ('published','superseded') ORDER BY d.published_at DESC LIMIT 1", (run_id,)).fetchone()
@@ -614,7 +621,7 @@ class WorkflowService:
                 raise FlowError('IDEMPOTENCY_CONFLICT', '既有重試 Run 的規格與原 Run 不符')
             return StartResult(run_id=prior['run_id'],
                                status=self.get_run_status(prior['run_id'])['execution_status'],
-                               submitted_at=datetime.now(timezone.utc).isoformat(),
+                               submitted_at=datetime.now(UTC).isoformat(),
                                execution_spec_hash=prior['execution_spec_hash'])
         for offline in (False, True):
             planned = self.plan_workflow(PlanRequest(task=row['task_id'], source=source, output=output,

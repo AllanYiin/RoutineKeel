@@ -4,9 +4,8 @@ import wave
 
 import numpy as np
 import pytest
-
-from ai_flow01 import pause_splitting as splitter, portable_core as core
-from test_local_pipeline import review_fixture
+from ai_flow01 import pause_splitting as splitter
+from ai_flow01 import portable_core as core
 
 
 def row(text="甲乙丙丁", start=0, end=27):

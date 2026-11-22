@@ -1,12 +1,10 @@
 """A failed second publish never displaces the Service-visible prior delivery."""
 import pytest
-
 from flow_base.contracts import Step, Workflow
 from flow_base.core.service import WorkflowService
 from flow_base.engine import Adapter, run_workflow
 from flow_base.storage.delivery import delivery_root
 from flow_base.workspace import Workspace
-from test_workspace import workspace
 
 
 def test_service_keeps_old_artifacts_when_second_publish_fails(workspace, monkeypatch):

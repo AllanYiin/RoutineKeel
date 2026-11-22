@@ -1,13 +1,16 @@
 """First install and host continuation using the public Service and real wheel loader."""
 
 import json
+import sys
 import zipfile
 from pathlib import Path
 
 import pytest
+from flow_base.blueprints.source import inspect_blueprint
 from flow_base.core.service import WorkflowService
 from flow_base.runtime import FlowError
-from flow_base.blueprints.source import inspect_blueprint
+
+pytestmark = pytest.mark.usefixtures("desktop_test_catalog")
 
 
 def blueprint(path, version="1.0.0", review=True):
@@ -113,6 +116,32 @@ def case():
     }
 
 
+@pytest.mark.parametrize("review_at", [None, "4"], ids=["automatic", "review-delivery"])
+def test_four_local_steps_pause_only_at_declared_review(tmp_path, review_at):
+    service = WorkflowService(tmp_path)
+    steps, recipes = [], {}
+    for i in range(1, 5):
+        source, output = f"p{i-1}", f"p{i}"
+        steps.append({"id":str(i),"title":f"轉換 {i}","inputs":[source],"outputs":[output]})
+        recipes[str(i)] = {"mode":"local",
+            "result":f'def transform(text, params):\n    return json_dumps({{"{output}": json_loads(text)["inputs"]["{source}"]}})',
+            "examples":[{"context":{"inputs":{source:value}},"expected":{output:value}} for value in ("A","B")]}
+    points = [{"after_step":"4","shows":["p4"]}] if review_at else []
+    definition = {"definition_version":"0.2","workflow_id":"four_steps","execution":{"order":"linear"},
+                  "steps":steps,"review":{"points":points},"final_outputs":{"items":[{"name":"p4","from":"4"}]}}
+    manifest = {"schema_version":1,"runtime_api":"0.2","id":"four_steps","title":"四步轉換",
+                "description":"測試本機自動接續","keywords":["四步"],"version":"1.0.0"}
+    blueprint_file = write_source(tmp_path/"four.zip",manifest,definition)
+    draft = service.install_workflow(archive=blueprint_file)["draft_id"]
+    graph = service.install_workflow(draft_id=draft)["source"]["graph"]
+    assert sum(node["kind"] == "human_review" for node in graph["nodes"]) == len(points)
+    replies = [{"step":"4","kind":"review"}] if review_at else []
+    trial = service.install_workflow(draft_id=draft,
+        resolution={"steps":recipes,"bindings":{},"gaps":{},"decisions":{"contracts":"測試合約"}},
+        cases=[{"inputs":{"p0":"四步完成"},"expected":{"p4":"四步完成"},"replies":replies}])
+    assert trial["evidence"]["cases"][0]["simulated_host_and_review"] == replies
+
+
 def candidate(ws, version="1.0.0"):
     service = WorkflowService(ws)
     path = blueprint(ws / "attachment.zip", version)
@@ -129,7 +158,48 @@ def apply(service, draft, built):
     )
 
 
+@pytest.mark.parametrize("missing", [True, False], ids=["not-run", "validator-exception"])
+def test_required_validation_blocks_build_and_preserves_draft(tmp_path, monkeypatch, missing):
+    from flow_base.blueprints.installer import draft_dir
+    from routinekeel_contracts import validator
+
+    service = WorkflowService(tmp_path)
+    draft = service.install_workflow(archive=blueprint(tmp_path / "input.zip"))["draft_id"]
+    if missing:
+        monkeypatch.setitem(sys.modules, "routinekeel_contracts.validator", None)
+    else:
+        def unavailable(*args):
+            raise RuntimeError("validator failed")
+        monkeypatch.setattr(validator, "validate_ir", unavailable)
+    with pytest.raises(FlowError):
+        service.install_workflow(draft_id=draft, resolution=resolution(), cases=[case()])
+    records = list(draft_dir(service.workspace, draft).glob("builds/*/verification.json"))
+    assert len(records) == 1
+    receipt = json.loads(records[0].read_bytes())
+    assert receipt["status"] == "blocked"
+    assert receipt["validation"]["status"] == ("NOT_RUN" if missing else "FAIL")
+    assert "install_hash" not in receipt
+    assert not service.workspace.discover(read_only=True)
+
+
+def test_install_requires_current_validator_even_after_passing_trial(tmp_path, monkeypatch):
+    service, draft, built = candidate(tmp_path)
+    assert built["validation"] == {"policy_version": "blueprint-ir-record/1", "status": "PASS"}
+    monkeypatch.setitem(sys.modules, "routinekeel_contracts.validator", None)
+    with pytest.raises(FlowError):
+        apply(service, draft, built)
+    assert not service.workspace.discover(read_only=True)
+
+
 def finish(service, result, op, **data):
+    pending=result["pending"]
+    if op=="complete" and pending["kind"] in {"human","review"} and data.get("evidence",{}).get("decision")=="approved":
+        data.update(scope_hash=pending["scope_hash"],payload_hash=pending["payload_hash"])
+        data["evidence"]={**data["evidence"],"user_text":"核對本次顯示的內容及對外範圍後同意"}
+    if op=="complete" and pending.get("claimed") and data.get("evidence",{}).get("receipt"):
+        from flow_base.graph.external import record_observation
+        record_observation(service.workspace.root,pending["idempotency_key"],pending["scope_hash"],
+                           data["evidence"]["receipt"],"succeeded",data["outputs"])
     return service.blueprint_task(
         result["session_id"],
         op,

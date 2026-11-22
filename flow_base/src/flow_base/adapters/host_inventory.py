@@ -1,6 +1,6 @@
 """Embedding-host adapter. Observe an already connected MCP client without invoking a tool."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from ..graph.capabilities import unavailable
 from ..runtime import digest
@@ -42,5 +42,5 @@ async def observe_tools(client, grants, *, validity_seconds=300):
         if cursor in seen or len(seen) >= 128:
             unavailable("工具清冊分頁無法收束。")
         seen.add(cursor)
-    expires = datetime.now(timezone.utc) + timedelta(seconds=validity_seconds)
+    expires = datetime.now(UTC) + timedelta(seconds=validity_seconds)
     return {"version": 1, "expires_at": expires.isoformat(), "tools": tools}

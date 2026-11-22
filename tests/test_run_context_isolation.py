@@ -5,7 +5,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from flow_base.core.run_context import RunContext, activate, current
 from flow_base.runtime import FlowError, Runtime
 
@@ -55,12 +54,11 @@ def test_context_resets_on_failure_and_rejects_other_runtime(tmp_path):
     runtime = Runtime(tmp_path / 'one')
     other = Runtime(tmp_path / 'two')
     context = RunContext(runtime, 'run_one', tmp_path / 'logs', SimpleNamespace())
-    with pytest.raises(RuntimeError, match='injected'):
-        with activate(context):
-            assert current(runtime) is context
-            assert current(other) is None
-            with pytest.raises(FlowError) as error:
-                other.worker('profile', {}, context=context)
-            assert error.value.code == 'RUN_CONTEXT_MISMATCH'
-            raise RuntimeError('injected')
+    with pytest.raises(RuntimeError, match='injected'), activate(context):
+        assert current(runtime) is context
+        assert current(other) is None
+        with pytest.raises(FlowError) as error:
+            other.worker('profile', {}, context=context)
+        assert error.value.code == 'RUN_CONTEXT_MISMATCH'
+        raise RuntimeError('injected')
     assert current(runtime) is None

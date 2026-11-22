@@ -1,25 +1,29 @@
 """Delivery staging protects the last published result before promotion."""
 import json
 import os
+import shutil
 import subprocess
 import sys
 import threading
-import shutil
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
-
-from flow_base.runtime import FlowError, read_json
-from flow_base.storage.delivery import (prepare_staging, staging_path,
-    promote_staging, delivery_root, verify_version, recover_transactions,
-    delivery_gc_preview, delivery_gc_apply, rollback_delivery)
+from flow_base.contracts import Step, Workflow
 from flow_base.core.lifecycle import RunStore
-from flow_base.runtime import Runtime
 from flow_base.engine import Adapter, run_workflow
-from flow_base.contracts import Workflow, Step
+from flow_base.runtime import FlowError, Runtime, read_json
+from flow_base.storage.delivery import (
+    delivery_gc_apply,
+    delivery_gc_preview,
+    delivery_root,
+    prepare_staging,
+    promote_staging,
+    recover_transactions,
+    rollback_delivery,
+    verify_version,
+)
 from flow_base.workspace import Workspace
-from test_workspace import workspace
 
 
 def test_staging_clones_existing_result_without_mutation(tmp_path):
@@ -152,7 +156,7 @@ def test_failure_during_promotion_restores_previous_result(tmp_path, fault):
     store = RunStore(runtime)
     output = tmp_path / 'job'
     first_run = _publishing_run(store)
-    first = promote_staging(output, _stage_result(output, first_run, 'one'), first_run, store)
+    promote_staging(output, _stage_result(output, first_run, 'one'), first_run, store)
     previous_pointer = read_json(delivery_root(output) / 'current.json')
     previous_report = (output / 'report.json').read_bytes()
     second_run = _publishing_run(store)
@@ -199,7 +203,7 @@ def test_crash_mid_mirror_is_recovered_from_journal(tmp_path, crash_point):
     env = os.environ.copy()
     env['PYTHONPATH'] = str(Path(__file__).resolve().parents[1] / 'flow_base/src')
     crashed = subprocess.run([sys.executable, '-c', code, str(runtime.home), str(output), str(stage), second_run, crash_point],
-                             env=env, capture_output=True, text=True, timeout=15)
+                             env=env, capture_output=True, text=True, timeout=15, check=False)
     assert crashed.returncode == 17, crashed.stderr
     assert recover_transactions(output, store) == []  # active lease is not presumed dead
     with runtime.connect() as db:

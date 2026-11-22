@@ -169,9 +169,8 @@ def explain_exception(exc, diagnostic=None):
         code = exc.code
         if code == 'PREFLIGHT_BLOCKED':
             blockers = exc.details.get('blockers', [])
-            if isinstance(blockers, list) and len(blockers) == 1 and isinstance(blockers[0], dict):
-                if blockers[0].get('code') == 'DISK_SPACE':
-                    code = 'DISK_SPACE_INSUFFICIENT'
+            if (isinstance(blockers, list) and len(blockers) == 1 and isinstance(blockers[0], dict)) and (blockers[0].get('code') == 'DISK_SPACE'):
+                code = 'DISK_SPACE_INSUFFICIENT'
     elif isinstance(exc, ValidationError):
         code = 'INVALID_CONFIGURATION'
     elif isinstance(exc, FileNotFoundError):
@@ -180,9 +179,7 @@ def explain_exception(exc, diagnostic=None):
         code = 'PERMISSION_DENIED'
     elif isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
         code = 'DISK_SPACE_INSUFFICIENT'
-    elif isinstance(exc, TimeoutError):
-        code = 'WORKER_TIMEOUT'
-    elif isinstance(exc, subprocess.TimeoutExpired):
+    elif isinstance(exc, (TimeoutError, subprocess.TimeoutExpired)):
         code = 'WORKER_TIMEOUT'
     elif isinstance(exc, subprocess.CalledProcessError):
         code = 'WORKER_CRASHED'

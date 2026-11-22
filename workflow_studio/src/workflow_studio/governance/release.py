@@ -83,9 +83,8 @@ class Releases:
                 raise StudioError("PUBLISH_FAILED", "發布狀態檔不屬於此 Studio 或工作區。")
             return row
 
-        if prior_pointer:
-            if owned_state(prior_pointer)["status"] == "abandoned":
-                raise StudioError("PUBLISH_FAILED", "正式指標指向已結束的準備，請核對完整備份。")
+        if prior_pointer and owned_state(prior_pointer)["status"] == "abandoned":
+            raise StudioError("PUBLISH_FAILED", "正式指標指向已結束的準備，請核對完整備份。")
         if journal.is_file():
             pending = json.loads(journal.read_text(encoding="utf-8"))
             owned = owned_state(pending)

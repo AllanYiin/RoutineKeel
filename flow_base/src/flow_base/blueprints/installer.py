@@ -5,8 +5,8 @@ import io
 import json
 import os
 import re
-import subprocess
 import shutil
+import subprocess
 import sys
 import tempfile
 import uuid
@@ -17,18 +17,18 @@ from ..execution.process import worker_environment
 from ..outputs import reject_links
 from ..package_updates import (
     MAX_ZIP,
-    _read_archive,
-    package_lock,
-    ensure_no_pending,
     _idle,
+    _read_archive,
+    ensure_no_pending,
+    package_lock,
 )
 from ..runtime import FlowError, atomic_bytes, atomic_json, digest, read_json, sha256
 from ..workspace import Manifest
+from .adapter import ADAPTER_SOURCE
+from .ir import POLICY_VERSION, check_with_studio, studio_ir
 from .recipe import compile_plan, local_operations
-from .ir import POLICY_VERSION, studio_ir, check_with_studio
 from .source import inspect_blueprint, require
 from .wheel import write_wheel
-from .adapter import ADAPTER_SOURCE
 
 
 def encoded(value):
@@ -122,7 +122,7 @@ def read_member(ws, key, name, offset):
     folder = draft_dir(ws, key)
     raw = read_archive(folder / "source.zip")
     require(hashlib.sha256(raw).hexdigest() == key, "草稿來源已變更")
-    src, files = inspect_blueprint(raw)
+    _src, files = inspect_blueprint(raw)
     require(
         name in files and not name.lower().endswith((".ttf", ".otf")),
         "請選擇藍圖內的文字檔",
@@ -263,7 +263,7 @@ def verify(ws, key, resolution, cases):
                     {"version": 1, "expires_at": "2099-01-01T00:00:00+00:00", "tools": {}},
                 )
             stage_fixtures(ws.root, trial, cases)
-            _, members, modes, _ = _read_archive(path)
+            _, members, _modes, _ = _read_archive(path)
             task = trial / src["manifest"]["id"]
             task.mkdir()
             for n, body in members.items():
@@ -289,7 +289,7 @@ def verify(ws, key, resolution, cases):
                 cwd=trial,
                 env=worker_environment() | {"ROUTINEKEEL_HOST_CATALOG": str(trial_catalog)},
                 capture_output=True,
-                timeout=300,
+                timeout=300, check=False,
             )
             require((trial / "result.json").is_file(), "隔離試做未回報結果")
             evidence = read_json(trial / "result.json")

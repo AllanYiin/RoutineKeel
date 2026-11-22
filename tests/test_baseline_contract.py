@@ -3,9 +3,9 @@ import json
 import tomllib
 from pathlib import Path
 
-import flow_base
-
 from flow_base.cli import main
+
+import flow_base
 
 
 def test_runtime_version_matches_package_metadata():

@@ -40,9 +40,8 @@ def check_portable(value):
                     "authorization",
                 }
                 and child
-            ):
-                if not isinstance(child, str) or not child.startswith("secret://"):
-                    fail("設計含有私人認證欄位，請改為具名需求。")
+            ) and (not isinstance(child, str) or not child.startswith("secret://")):
+                fail("設計含有私人認證欄位，請改為具名需求。")
             check_portable(child)
     elif isinstance(value, list):
         for child in value:
@@ -50,7 +49,7 @@ def check_portable(value):
     elif isinstance(value, str) and re.search(
         r"-----BEGIN [A-Z ]*PRIVATE KEY-----|\bBearer [A-Za-z0-9._~+/=-]{12,}|\bsk-[A-Za-z0-9_-]{20,}|(?:(?<![A-Za-z0-9_-])[A-Za-z]:[\\/]|/(?:Users|home)/)[^\s]+",
         value,
-        re.I,
+        re.IGNORECASE,
     ):
         fail("設計含有認證資料或本機絕對路徑，請先修訂。")
 

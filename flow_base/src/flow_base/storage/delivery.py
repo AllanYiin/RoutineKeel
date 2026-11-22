@@ -1,13 +1,14 @@
 """Same-filesystem staging for immutable delivery versions."""
 from __future__ import annotations
 
-import shutil
-import os
 import json
-import hashlib
+import os
+import shutil
 import time
-from pathlib import Path, PurePosixPath
 from contextlib import closing
+from pathlib import Path, PurePosixPath
+
+from flow_base.observability.recovery import SecondaryOperation
 
 from ..outputs import reject_links, validate_tree
 from ..runtime import FlowError, atomic_copy, atomic_json, read_json, sha256
@@ -283,15 +284,11 @@ def promote_staging(output, stage, run_id, store, *, checkpoint=None):
         checkpoint('transaction_recorded')
     except BaseException:
         if not existing_transaction:
-            try:
+            with SecondaryOperation('store.abort_delivery', catch=BaseException):
                 store.abort_delivery(delivery_id)
-            except BaseException:
-                pass
         if created_transaction and transaction.exists():
-            try:
+            with SecondaryOperation('_safe_remove_generated', catch=BaseException):
                 _safe_remove_generated(transaction, root)
-            except BaseException:
-                pass
         raise
     try:
         output.mkdir(parents=True, exist_ok=True)
@@ -325,28 +322,25 @@ def promote_staging(output, stage, run_id, store, *, checkpoint=None):
             store.publish_delivery(delivery_id, complete_run=True, result_status=report_status)
     except BaseException as original:
         restored = False
-        try:
+        with SecondaryOperation('_rollback_mirror', catch=BaseException) as rollback_mirror_outcome:
             _rollback_mirror(output, transaction, marker)
             store.abort_delivery(delivery_id)
             restored = True
-        except BaseException as secondary:
-            try:
+        if rollback_mirror_outcome.error is not None:
+            secondary = rollback_mirror_outcome.error
+            with SecondaryOperation('record mirror rollback failure', catch=BaseException):
                 from ..diagnostics import record_exception
                 primary = record_exception(original, transaction / 'primary-error', runtime=store.runtime, run_id=run_id)
                 record_exception(secondary, transaction / 'secondary-error', runtime=store.runtime,
                                  parent_error_id=primary['error_id'], run_id=run_id)
-            except BaseException:
-                pass
         if restored:
             try:
                 _safe_remove_generated(transaction, root)
             except OSError:
                 pass
         raise
-    try:
+    with SecondaryOperation('_safe_remove_generated', catch=BaseException):
         _safe_remove_generated(transaction, root)
-    except BaseException:
-        pass
     return {'delivery_id': delivery_id, 'version': str(version), 'pointer': str(pointer)}
 
 
@@ -419,9 +413,9 @@ def rollback_delivery(runtime, output, target_delivery_id, *, confirm=False):
         raise FlowError('ROLLBACK_CONFIRM_REQUIRED', '回復舊版成果前須明確確認')
     from ..core.lifecycle import RunStore, resolve_manifest_reference
     from ..execution.supervisor import Supervisor
+    from ..observability.events import EventRecorder
     from ..outputs import write_delivery_index
     from ..runtime import digest
-    from ..observability.events import EventRecorder
 
     output = Path(output).resolve()
     root = delivery_root(output)
@@ -469,14 +463,15 @@ def rollback_delivery(runtime, output, target_delivery_id, *, confirm=False):
                 delivered = promote_staging(output, stage, run_id, store)
                 result = {'run_id': run_id, 'delivery_id': delivered['delivery_id'],
                           'rollback_of': target_delivery_id, 'output': str(output)}
-                try:
+                with SecondaryOperation('record published delivery') as publication_update:
                     if store.get(run_id)['execution_status'] != 'succeeded':
                         raise FlowError('DELIVERY_INCOMPLETE', '回復版本尚未正式發布', run_id=run_id)
                     runtime.update_run(run_id, report.get('status', 'complete'),
                                        job_id=target['job_id'], finished=True)
                     recorder.record('delivery.published', attributes={'reason': 'rollback'})
                     recorder.record('run.finished', attributes={'result_status': str(report.get('status', 'unknown')).lower()})
-                except Exception as post_error:
+                if publication_update.error is not None:
+                    post_error = publication_update.error
                     from ..diagnostics import record_exception
                     result['post_delivery_diagnostic'] = record_exception(
                         post_error, runtime.logs / target['flow_id'] / run_id / 'post_delivery',
@@ -485,10 +480,8 @@ def rollback_delivery(runtime, output, target_delivery_id, *, confirm=False):
         except BaseException as exc:
             from ..diagnostics import record_exception
             from ..observability.diagnostics import guard_secondary
-            try:
+            with SecondaryOperation('recorder.record'):
                 recorder.record('run.failed', severity='ERROR', attributes={'code': type(exc).__name__})
-            except Exception:
-                pass
             record = record_exception(exc, runtime.logs / target['flow_id'] / run_id,
                                       runtime=runtime, run_id=run_id)
             guard_secondary(exc, record, 'rollback_run_failure',

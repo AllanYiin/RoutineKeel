@@ -4,13 +4,21 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
-import urllib.request
-import urllib.error
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from .contracts import Resource
-from .runtime import FlowError, Runtime, atomic_json, digest, read_json, require_space, sha256, event
+from .runtime import (
+    FlowError,
+    Runtime,
+    atomic_json,
+    digest,
+    event,
+    require_space,
+    sha256,
+)
 
 
 def resource_key(resource: Resource):

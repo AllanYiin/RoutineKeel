@@ -1,15 +1,17 @@
 """Heartbeat and process identity for synchronous local Runs."""
 from __future__ import annotations
 
-import os
 import argparse
 import json
+import os
 import subprocess
 import sys
 import threading
 import time
 import uuid
 from pathlib import Path
+
+from flow_base.observability.recovery import SecondaryOperation
 
 from ..core.lifecycle import RunStore
 from ..runtime import FlowError, atomic_json
@@ -118,11 +120,12 @@ class Supervisor:
 
     def _heartbeat(self):
         while not self._stop.wait(self.interval):
-            try:
+            with SecondaryOperation('renew supervisor lease') as heartbeat:
                 self.store.heartbeat(self.run_id, self.token, lease_seconds=self.lease_seconds)
                 if self.context and self.store.get(self.run_id)['execution_status'] == 'cancelling':
                     self.context.cancel_requested.set()
-            except Exception as exc:
+            if heartbeat.error is not None:
+                exc = heartbeat.error
                 self.heartbeat_error = exc
                 return
 
@@ -135,7 +138,7 @@ class Supervisor:
 def start_detached(workspace, task, workflow, source, output=None, *, overrides=None,
                    offline=False, idempotency_key=None, spec_hash=None):
     """Reserve a Run, then launch an on-demand supervisor independent of the caller."""
-    from ..engine import reserve_workflow_run, _execution_identity
+    from ..engine import _execution_identity, reserve_workflow_run
     from ..outputs import choose_output
 
     runtime = workspace.runtime
@@ -179,6 +182,7 @@ def start_detached(workspace, task, workflow, source, output=None, *, overrides=
             guard_secondary(exc, primary, 'finish_failure', lambda: RunStore(runtime).finish_failure(run_id), runtime=runtime)
             guard_secondary(exc, primary, 'update_run', lambda: runtime.update_run(run_id, 'failed', error='SUPERVISOR_START', finished=True), runtime=runtime)
             raise FlowError('SUPERVISOR_START', '無法啟動本機 Run supervisor', run_id=run_id) from exc
+        RunStore(runtime).record_spawn(run_id,child.pid,process_started_at(child.pid))
         return {'run_id': run_id, 'status': 'created', 'supervisor_pid': child.pid}
 
 
@@ -187,9 +191,9 @@ def main(argv=None):
     parser.add_argument('--workspace', type=Path, required=True)
     parser.add_argument('--run-id', required=True)
     args = parser.parse_args(argv)
-    from ..workspace import Workspace
-    from ..engine import run_workflow
     from ..diagnostics import record_exception
+    from ..engine import run_workflow
+    from ..workspace import Workspace
 
     workspace = Workspace(args.workspace)
     runtime = workspace.runtime
@@ -203,13 +207,13 @@ def main(argv=None):
         result = run_workflow(runtime, task, workflow, Path(spec['source']), Path(spec['output']),
                               offline=spec['offline'], reserved_run_id=args.run_id)
         return 0 if result else 1
-    except BaseException as exc:
+    except BaseException as exc:  # noqa: BLE001 -- the supervisor records the terminal run state for arbitrary adapter errors
         from ..observability.diagnostics import guard_secondary
         logdir = runtime.logs / 'supervisor' / args.run_id
         diagnostic = record_exception(exc, logdir, runtime=runtime, run_id=args.run_id)
-        guard_secondary(exc, diagnostic, 'finish_failure', lambda: RunStore(runtime).finish_failure(args.run_id,
+        guard_secondary(exc, diagnostic, 'finish_failure', lambda exc=exc: RunStore(runtime).finish_failure(args.run_id,
             interrupted=isinstance(exc, KeyboardInterrupt), error_id=diagnostic['error_id']), runtime=runtime)
-        guard_secondary(exc, diagnostic, 'update_run', lambda: runtime.update_run(args.run_id,
+        guard_secondary(exc, diagnostic, 'update_run', lambda exc=exc: runtime.update_run(args.run_id,
             'interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed',
             error=diagnostic['code'], finished=True), runtime=runtime)
         return 130 if isinstance(exc, KeyboardInterrupt) else 1

@@ -3,7 +3,7 @@
 import re
 import tempfile
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from ..outputs import reject_links
@@ -240,7 +240,7 @@ class Session:
             "task_id": s["pending"]["id"],
             "scope_hash": s["pending"]["scope_hash"],
             "payload_hash": s["pending"]["payload_hash"],
-            "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+            "timestamp_utc": datetime.now(UTC).isoformat(),
             "covered": {k: digest(v) for k, v in {**inputs, **outputs}.items()},
         }
 
@@ -467,7 +467,7 @@ class Session:
                         "revision": payload["revision"],
                         "user_text": payload["user_text"],
                         "task_id": p["id"],
-                        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+                        "timestamp_utc": datetime.now(UTC).isoformat(),
                     }
                 )
                 p["authorization_required"] = operation != "authorize"

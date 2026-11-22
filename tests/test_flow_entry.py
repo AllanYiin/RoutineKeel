@@ -2,16 +2,14 @@ import concurrent.futures
 import importlib.util
 import json
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
 
 import pytest
-
 from flow_base.runtime import atomic_json
 from flow_base.workspace import Workspace
-from test_workspace import workspace, cli, ROOT
+from test_workspace import ROOT, cli
 
 spec = importlib.util.spec_from_file_location('entry_profile', ROOT/'flow_base/scripts/flow_base_profile.py')
 profile = importlib.util.module_from_spec(spec)
@@ -92,7 +90,7 @@ def run_chat(workspace, folder, text, *args):
     env = dict(os.environ, PYTHONPATH=str(ROOT/'flow_base/src'), PYTHONDONTWRITEBYTECODE='1')
     return subprocess.run([sys.executable, '-m', 'flow_base', '--workspace', str(workspace),
                            'launch', '--folder', str(folder), *args], input=text,
-                          capture_output=True, text=True, env=env, timeout=40)
+                          capture_output=True, text=True, env=env, timeout=40, check=False)
 
 
 def test_launch_prepares_only_selected_flow_and_accepts_input_immediately(workspace):
@@ -102,7 +100,7 @@ def test_launch_prepares_only_selected_flow_and_accepts_input_immediately(worksp
     result = run_chat(workspace, folder, '/input 講義.txt\n/run\n/quit\n', '--offline')
     assert result.returncode == 0, result.stdout + result.stderr
     assert '目前流程：檔案複製驗證範例' in result.stdout
-    assert list((folder/'outputs').rglob('result.bin'))[0].read_text() == '只啟動指定流程'
+    assert next(iter((folder/'outputs').rglob('result.bin'))).read_text() == '只啟動指定流程'
     assert not (workspace/'share_states/environments').exists()
     states = [json.loads(p.read_text()) for p in (workspace/'share_states/launcher').glob('*.json')]
     assert states[-1]['status'] == 'ready'
@@ -140,7 +138,7 @@ exit 19
         subprocess.run(['sh', '-n', str(p)], check=True)
         assert p.stat().st_mode & 0o111
         r = subprocess.run(['sh', str(p), '--config', '我的 設定.json'], cwd=tmp_path,
-                           stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10)
+                           stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10, check=False)
         assert r.returncode == 19
         assert (base/'received.txt').read_text().splitlines() == ['launch', '--folder', str(folder), '--config', '我的 設定.json']
     bat = (folder/'run_app.bat').read_bytes()
@@ -155,7 +153,7 @@ def test_missing_base_explains_layout_without_creating_private_environment(tmp_p
     folder.mkdir()
     profile.generate_task(folder)
     r = subprocess.run(['sh', str(folder/'run_app.sh')], stdin=subprocess.DEVNULL,
-                       capture_output=True, text=True, timeout=10)
+                       capture_output=True, text=True, timeout=10, check=False)
     assert r.returncode == 2 and '同一層' in r.stderr
     assert not (folder/'.venv').exists()
 

@@ -1,7 +1,7 @@
 """Run validated pure-data nodes. Checkpoints use the Runtime's existing job namespace."""
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from routinekeel_contracts.references import parse_reference
 
@@ -127,7 +127,7 @@ class GraphSession(Session):
                 "sequence": len(state["audit"]) + 1,
                 "node_id": node_id,
                 "event": event,
-                "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+                "timestamp_utc": datetime.now(UTC).isoformat(),
                 **details,
             }
         )
@@ -434,7 +434,7 @@ class GraphSession(Session):
             self.checkpoint(state, key, "ready")
             try:
                 self.execute(state, node)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 -- preserve the node failure checkpoint for adapter errors
                 record.update(status="failed", error=getattr(exc, "code", type(exc).__name__))
                 self.checkpoint(state, key, "failed", error=record["error"])
         result=self.view(state)
@@ -515,9 +515,9 @@ class GraphSession(Session):
                     state["nodes"][node["id"]]["status"] not in {"running", "succeeded"},
                     "對外操作不可自動重送",
                 )
-        for key in sorted(affected):
-            previous = state["nodes"][key]
-            if retry_iteration and key == target and previous.get("loop"):
+        for node_id in sorted(affected):
+            previous = state["nodes"][node_id]
+            if retry_iteration and node_id == target and previous.get("loop"):
                 require(previous.get("error") == "CHILD_FAILED", "請重新檢視迭代上限或已停止的工作")
                 previous.update(status="ready", retry_child=True)
                 continue
@@ -529,10 +529,10 @@ class GraphSession(Session):
                 or previous.get("error") == "EXTERNAL_NOT_EXECUTED",
                 "已領取的外部操作須先有未執行的獨立證據才可回修",
             )
-            state["nodes"][key] = {
-                "instance_id": f"{self.id}/{key}",
+            state["nodes"][node_id] = {
+                "instance_id": f"{self.id}/{node_id}",
                 "status": "invalidated",
-                "attempt": state["nodes"][key]["attempt"],
+                "attempt": state["nodes"][node_id]["attempt"],
             }
         state["pending_tasks"] = {
             i: w for i, w in state["pending_tasks"].items() if w["step"] not in affected
@@ -669,7 +669,7 @@ class GraphSession(Session):
                 "revision": payload["revision"],
                 "user_text": payload["user_text"],
                 "decision": operation,
-                "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+                "timestamp_utc": datetime.now(UTC).isoformat(),
             }
             del state["pending_tasks"][task["id"]]
             state["requests"][request_id] = stamp

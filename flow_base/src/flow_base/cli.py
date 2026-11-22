@@ -7,14 +7,16 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from flow_base.observability.recovery import SecondaryOperation
+
 from . import __version__
-from .intent import Intent, local_intent, model_intent
-from .runtime import FlowError, inspect_environment, read_json, atomic_json
-from .workspace import Workspace, catalog
-from .diagnostics import cli_error
-from .observability.diagnostics import guard_secondary
 from .core.service import WorkflowService
 from .core.types import PlanRequest, StartRequest, SubmitRequest
+from .diagnostics import cli_error
+from .intent import Intent, local_intent, model_intent
+from .observability.diagnostics import guard_secondary
+from .runtime import FlowError, atomic_json, inspect_environment, read_json
+from .workspace import Workspace
 
 
 def parser():
@@ -276,13 +278,13 @@ def emit(value):
 
 def emit_error(runtime, exc, code=None, *, human=False):
     """A broken diagnostic or output channel cannot replace the original error."""
-    try:
+    with SecondaryOperation('cli_error', catch=BaseException) as diagnostic_write:
         result = cli_error(runtime, exc, code)
-    except BaseException:
+    if diagnostic_write.error is not None:
         original_code = exc.code if isinstance(exc, FlowError) else type(exc).__name__
         result = {'ok': False, 'error': {'code': code or original_code,
                   'message': '錯誤診斷暫時無法保存', 'details': {}, 'diagnostic': {'error_id': 'unavailable'}}}
-    try:
+    with SecondaryOperation('display CLI error', catch=BaseException) as error_display:
         if human:
             error = result['error']
             explanation = error.get('user_explanation', {})
@@ -301,17 +303,21 @@ def emit_error(runtime, exc, code=None, *, human=False):
             print('錯誤編號：' + error.get('diagnostic', {}).get('error_id', 'unavailable'))
         else:
             emit(result)
-    except BaseException:
-        try:
+    if error_display.error is not None:
+        with SecondaryOperation('print', catch=BaseException):
             print(f"{result['error']['code']}: {result['error']['diagnostic']['error_id']}", file=sys.stderr)
-        except BaseException:
-            pass
     return result
 
 
 def diagnostic_command(workspace, args):
-    from .observability.commands import (doctor, diagnose, logs, explain_error_id,
-                                          export_preview, human_text)
+    from .observability.commands import (
+        diagnose,
+        doctor,
+        explain_error_id,
+        export_preview,
+        human_text,
+        logs,
+    )
     runtime = workspace.runtime
     try:
         if args.command == 'doctor':
@@ -335,11 +341,11 @@ def diagnostic_command(workspace, args):
         if args.format == 'json':
             emit_error(runtime, exc)
         else:
-            try:
+            with SecondaryOperation('cli_error', catch=BaseException) as diagnostic_write:
                 error = cli_error(runtime, exc)
                 explanation = error['error'].get('user_explanation') or {}
                 error_id = error['error']['diagnostic']['error_id']
-            except BaseException:
+            if diagnostic_write.error is not None:
                 from .observability.errors import explain_exception
                 explanation = explain_exception(exc)
                 error_id = 'unavailable'
@@ -349,14 +355,14 @@ def diagnostic_command(workspace, args):
                 print('下一步：' + explanation['suggested_actions'][0], file=sys.stderr)
             print('錯誤編號：' + error_id, file=sys.stderr)
         return 2
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- the command boundary emits a diagnostic and a failure exit code
         if args.format == 'json':
             emit_error(runtime, exc, 'UNEXPECTED_ERROR')
         else:
-            try:
+            with SecondaryOperation('cli_error', catch=BaseException) as diagnostic_write:
                 result = cli_error(runtime, exc, 'UNEXPECTED_ERROR')
                 error_id = result['error']['diagnostic']['error_id']
-            except BaseException:
+            if diagnostic_write.error is not None:
                 error_id = 'unavailable'
             print('診斷功能發生未預期錯誤；請記下錯誤編號交給維護者。', file=sys.stderr)
             print('錯誤編號：' + error_id, file=sys.stderr)
@@ -520,6 +526,6 @@ def main(argv=None):
     except KeyboardInterrupt as exc:
         emit_error(runtime, exc, 'INTERRUPTED')
         return 130
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- the command boundary emits a diagnostic and a failure exit code
         emit_error(runtime, exc, 'UNEXPECTED_ERROR')
         return 1

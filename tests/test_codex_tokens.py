@@ -1,16 +1,15 @@
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from flow_base.codex_tokens import SessionMonitor, SessionReader, normalize, select_file
 from flow_base.presentation import ACTIVE, Reporter
-from flow_base.workspace import Task
 from flow_base.runtime import Runtime
+from flow_base.workspace import Task
 
 
 @pytest.fixture(autouse=True)
@@ -21,8 +20,8 @@ def isolated_host(monkeypatch, tmp_path):
 
 
 def usage(ins=100, cached=60, out=20):
-    return dict(input_tokens=ins, cached_input_tokens=cached, cache_write_input_tokens=0,
-                output_tokens=out, reasoning_output_tokens=5, total_tokens=ins + out)
+    return {'input_tokens': ins, 'cached_input_tokens': cached, 'cache_write_input_tokens': 0,
+                'output_tokens': out, 'reasoning_output_tokens': 5, 'total_tokens': ins + out}
 
 
 def new(values=None, identity='thread-a', rid='r1'):
@@ -182,7 +181,7 @@ def test_cli_standalone_and_runtime_command(tmp_path):
     env = dict(os.environ, PYTHONPATH=str(root / 'flow_base/src'))
     for module, extra in [('flow_base.codex_tokens', []), ('flow_base', ['tokens'])]:
         result = subprocess.run([sys.executable, '-m', module, *extra, '--file', str(path)],
-                                env=env, capture_output=True, text=True, timeout=10)
+                                env=env, capture_output=True, text=True, timeout=10, check=False)
         assert result.returncode == 0, result.stderr
         data = json.loads(result.stdout)
         assert data.get('result', data)['usage']['total_tokens'] == 120

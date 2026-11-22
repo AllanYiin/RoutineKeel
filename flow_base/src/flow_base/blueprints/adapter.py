@@ -1,13 +1,14 @@
 """Trusted adapter shared by installed blueprint wheels; wheel data is never executable source."""
 
+import shutil
+
 from ..contracts import Workflow
 from ..engine import Adapter as BaseAdapter
-from ..runtime import atomic_json, atomic_copy, digest, read_json
-from .source import require
-from .sessions import Session, Assets, refs
-from .recipe import local_operations
 from ..outputs import reject_links
-import shutil
+from ..runtime import atomic_copy, atomic_json, digest, read_json
+from .recipe import local_operations
+from .sessions import Assets, Session, refs
+from .source import require
 
 ADAPTER_SOURCE = b"""from pathlib import Path
 from flow_base.blueprints.adapter import BlueprintAdapter

@@ -5,28 +5,51 @@ import os
 import shutil
 import subprocess
 import sys
-import time
 
 import pytest
 
 pytest.importorskip('mcp')
-from mcp import Client, StdioServerParameters
-
+from flow_base.core.lifecycle import RunStore
 from flow_base.core.queue import QueueStore
 from flow_base.core.service import WorkflowService
 from flow_base.core.types import SubmitRequest
-from flow_base.core.lifecycle import RunStore
 from flow_base.runtime import atomic_json
-from test_workspace import workspace, cli
+from mcp import Client, StdioServerParameters
+from test_workspace import cli
 
 
 def client_for(root, *, mode='auto'):
+    host_env = {name:os.environ[name] for name in ("ROUTINEKEEL_HOST_CATALOG","ROUTINEKEEL_STUDIO_PYTHON") if name in os.environ}
     return Client(StdioServerParameters(command=sys.executable,
-        args=['-m', 'flow_base', '--workspace', str(root), 'mcp-stdio']), mode=mode)
+        args=['-m', 'flow_base', '--workspace', str(root), 'mcp-stdio'],env=host_env), mode=mode)
 
 
-async def call(client, name, **arguments):
-    response = await client.call_tool(name, arguments)
+def test_real_stdio_interview_resumes_and_keeps_host_answers_unconfirmed(tmp_path):
+    async def exercise():
+        async with client_for(tmp_path) as client:
+            state = (await call(client,'studio_create_project',name='週報',task='整理週報'))['result']
+            question = (await call(client,'studio_next_question',project_id=state['project_id']))['result']
+            assert question['text'] and question['free_text']
+            params = {'project_id': state['project_id'],'expected_revision': state['revision'],
+                          'request_id': 'pilot','domain': 'goal','value': '整理週報','evidence_refs': ['對話草稿'],
+                          'confidence': 0.8}
+            denied = await call(client,'studio_submit_answer',**params,status='confirmed')
+            assert denied['error']['code'] == 'USER_CONFIRMATION_REQUIRED'
+            saved = (await call(client,'studio_submit_answer',**params))['result']
+            assert saved['coverage']['goal']['status'] == 'inferred'
+            shown = (await call(client,'studio_next_question',project_id=state['project_id']))['result']
+            saved = (await call(client,'studio_record_reply',project_id=state['project_id'],domain='goal',
+                                question_id=shown['question_id'],expected_revision=shown['revision'],
+                                request_id='chat-2',user_text='整理每週的銷售報表'))['result']
+        async with client_for(tmp_path) as client:
+            reopened = (await call(client,'studio_get_project',project_id=state['project_id']))['result']
+            assert reopened == saved and reopened['coverage']['goal']['origin'] == 'desktop_conversation'
+            assert reopened['coverage']['goal']['value'] == '整理每週的銷售報表'
+    asyncio.run(exercise())
+
+
+async def call(client, tool_name, **arguments):
+    response = await client.call_tool(tool_name, arguments)
     assert not response.is_error, response.content
     return json.loads(response.content[0].text)
 
@@ -44,7 +67,13 @@ def test_stdio_negotiation_queue_tool_set_and_path_boundary(workspace):
                              'submit_workflow', 'get_workflow_status',
                              'get_workflow_result', 'cancel_workflow', 'preview_workflow_update',
                              'update_workflow', 'rollback_workflow_update', 'recover_workflow_update',
-                             'install_workflow', 'blueprint_task'}
+                             'install_workflow', 'blueprint_task',
+                             'studio_create_project', 'studio_list_projects', 'studio_get_project',
+                             'studio_update_project', 'studio_archive_project', 'studio_restore_project',
+                             'studio_next_question', 'studio_submit_answer', 'studio_pause_interview',
+                             'studio_resume_interview', 'studio_preview_source', 'studio_start_interview',
+                             'studio_record_reply', 'studio_preview_blueprint', 'studio_export_blueprint',
+                             'resolve_blueprint_capabilities','workflow_quality','workflow_evolution','agent_workflow'}
             forbidden = await call(client, 'submit_workflow', workflow_id='ai_flow02',
                                    source=str(outside))
             assert forbidden['error']['code'] == 'PERMISSION_DENIED'
@@ -68,18 +97,15 @@ def test_client_exit_reconnects_to_independent_worker_by_execution_id(workspace)
     source = workspace / 'input.txt'
     source.write_text('queued result after client exit', encoding='utf-8')
     output = workspace / 'result'
-    worker = subprocess.Popen([sys.executable, '-m', 'flow_base', '--workspace', str(workspace),
-                               'queue-worker', '--idle-timeout', '3', '--poll-interval', '0.1'],
-                              stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                              stderr=subprocess.PIPE, text=True)
+    worker = None
     try:
         async def submit():
             async with client_for(workspace) as client:
                 planned = await call(client, 'plan_workflow', workflow_id='ai_flow02',
                                      source=str(source), output=str(output))
-                args = dict(workflow_id='ai_flow02', source=str(source), output=str(output),
-                            idempotency_key='mcp-queued-fixture',
-                            execution_spec_hash=planned['result']['execution_spec_hash'])
+                args = {'workflow_id': 'ai_flow02', 'source': str(source), 'output': str(output),
+                            'idempotency_key': 'mcp-queued-fixture',
+                            'execution_spec_hash': planned['result']['execution_spec_hash']}
                 first = await call(client, 'submit_workflow', **args)
                 second = await call(client, 'submit_workflow', **args)
                 assert first['result']['execution_id'] == second['result']['execution_id']
@@ -88,15 +114,19 @@ def test_client_exit_reconnects_to_independent_worker_by_execution_id(workspace)
 
         execution_id = asyncio.run(submit())
         assert execution_id.startswith('execution_')
+        # The first client is now gone and the job is durably queued. Start the independent worker here.
+        worker = subprocess.Popen([sys.executable, '-m','flow_base','--workspace',str(workspace),
+                                   'queue-worker','--once'],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE,text=True)
 
         async def reconnect():
             async with client_for(workspace) as client:
-                deadline = time.monotonic() + 20
-                while time.monotonic() < deadline:
-                    response = await call(client, 'get_workflow_status', execution_id=execution_id)
-                    if response['result']['status'] in {'succeeded', 'failed', 'interrupted'}:
-                        break
-                    await asyncio.sleep(0.1)
+                first = await call(client,'get_workflow_status',execution_id=execution_id)
+                assert first['result']['execution_id'] == execution_id
+                # --once exits after recording the terminal queue state. Cold environment
+                # preparation is not a 20-second service contract.
+                await asyncio.to_thread(worker.wait, timeout=120)
+                response = await call(client, 'get_workflow_status', execution_id=execution_id)
                 assert response['result']['status'] == 'succeeded'
                 result = await call(client, 'get_workflow_result', execution_id=execution_id)
                 assert result['result']['result_available']
@@ -111,7 +141,7 @@ def test_client_exit_reconnects_to_independent_worker_by_execution_id(workspace)
         stdout, stderr = worker.communicate(timeout=12)
         assert worker.returncode == 0, stdout + stderr
     finally:
-        if worker.poll() is None:
+        if worker is not None and worker.poll() is None:
             worker.terminate()
             worker.communicate(timeout=5)
 
@@ -143,7 +173,9 @@ def test_queued_cancel_and_active_cancel_request(workspace):
                                                  workspace / 'active-result')
     store = RunStore(service.workspace.runtime)
     store.transition(run_id, 'created', 'queued')
-    store.claim(run_id, token='fixture-supervisor', pid=123, started_at=1.0)
+    from flow_base.execution.supervisor import process_started_at
+    pid = os.getpid()
+    store.claim(run_id, token='fixture-supervisor', pid=pid, started_at=process_started_at(pid))
     queue.mark_running(active, token, run_id)
     atomic_json(service.workspace.runtime.logs / item['flow_id'] / run_id / 'live_progress.json',
                 {'step_id': 'copy', 'progress': {'completed': 126, 'total': 391,
@@ -201,7 +233,7 @@ def test_mcp_stdio_process_has_no_listening_tcp_port(workspace):
         async with Client(params) as client:
             await client.list_tools()
             pid = pidfile.read_text(encoding='utf-8').strip()
-            observed = subprocess.run(['netstat', '-ano', '-p', 'tcp'],
+            observed = await asyncio.to_thread(subprocess.run, ['netstat', '-ano', '-p', 'tcp'],
                                       capture_output=True, text=True, check=True)
             rows = [line for line in observed.stdout.splitlines()
                     if line.strip().split()[-1:] == [pid] and 'LISTEN' in line.upper()]

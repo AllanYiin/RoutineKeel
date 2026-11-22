@@ -7,6 +7,8 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from flow_base.observability.recovery import SecondaryOperation
+
 CONFIRMED_CODES = frozenset({'INPUT_MISSING', 'OUTPUT_EXISTS', 'OUTPUT_CONFLICT',
                              'STATE_CONFLICT', 'RESOURCE_HASH', 'PROCESS_TIMEOUT',
                              'PROCESS_START', 'OFFLINE_RESOURCE_MISSING'})
@@ -16,6 +18,7 @@ PUBLIC_CODES = CONFIRMED_CODES | frozenset({'PROCESS_FAILED', 'UNEXPECTED_ERROR'
     'BUSY', 'RUN_CANCEL_REQUESTED', 'PROCESS_CANCELLED', 'WORKER_CRASHED',
     'DIAGNOSTIC_PERSIST_FAILED'})
 from .errors import ALIASES, STANDARD
+
 PUBLIC_CODES = PUBLIC_CODES | frozenset(ALIASES) | frozenset(STANDARD)
 ERROR_ID = re.compile(r'^error_[a-f0-9]{32}$')
 EXCEPTION_TYPES = frozenset({'FlowError', 'ValidationError', 'ValueError', 'KeyError',
@@ -82,12 +85,13 @@ def export_diagnostics(record, destination):
 
 def guard_secondary(original, primary_record, operation, work, *, runtime=None):
     """Keep the original exception as the one that escapes a reporting boundary."""
-    try:
+    with SecondaryOperation(operation, catch=BaseException) as work_outcome:
         return work()
-    except BaseException as secondary:
+    if work_outcome.error is not None:
+        secondary = work_outcome.error
         entry = {'operation': str(operation)[:80], 'type': type(secondary).__name__}
         primary_record.setdefault('secondary_errors', []).append(entry)
-        try:
+        with SecondaryOperation('persist secondary error', catch=BaseException):
             from ..diagnostics import record_exception
             primary_path = primary_record.get('diagnostic_json')
             base = Path(primary_path).parent if primary_path else (runtime.logs if runtime is not None else Path.cwd())
@@ -95,6 +99,4 @@ def guard_secondary(original, primary_record, operation, work, *, runtime=None):
             result = record_exception(secondary, folder, runtime=runtime,
                                       parent_error_id=primary_record['error_id'], operation=operation)
             entry['error_id'] = result['error_id']
-        except BaseException:
-            pass
         return None

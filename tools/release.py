@@ -1,5 +1,4 @@
 """Build one ZIP per component in dist, with a separate test workspace."""
-from pathlib import Path
 import argparse
 import ast
 import hashlib
@@ -11,6 +10,7 @@ import sys
 import tempfile
 import tomllib
 import zipfile
+from pathlib import Path
 
 from agent_guidance import write_package_guide, write_workspace_guide
 

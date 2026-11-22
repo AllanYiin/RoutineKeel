@@ -1,18 +1,22 @@
 """Structured exception evidence without validation payloads or frame locals."""
 from __future__ import annotations
+
 import json
 import math
 import os
 import re
+import sys
 import traceback
 import uuid
-import sys
-import sqlite3
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+
 from pydantic import ValidationError
-from .runtime import FlowError, atomic_json, atomic_bytes
+
+from flow_base.observability.recovery import SecondaryOperation
+
+from .runtime import FlowError, atomic_bytes, atomic_json
 
 
 def redact(value):
@@ -74,44 +78,42 @@ def record_exception(exc, folder, *, runtime=None, parent_error_id=None, **conte
     """Best-effort evidence. Every failure mode returns a minimal primary record."""
     from .observability.diagnostics import cause_evidence
 
-    try:
+    with SecondaryOperation('read prior diagnostic', catch=BaseException) as prior_diagnostic:
         previous = getattr(exc, '_flow_diagnostic', {})
         if not isinstance(previous, dict):
             previous = {}
-    except BaseException:
+    if prior_diagnostic.error is not None:
         previous = {}
     error_id = previous.get('error_id') or context.get('error_id') or 'error_' + uuid.uuid4().hex
     code = exc.code if isinstance(exc, FlowError) else type(exc).__name__
-    try:
+    with SecondaryOperation('describe_exception', catch=BaseException) as describe_exception_outcome:
         described = describe_exception(exc)
-    except BaseException:
+    if describe_exception_outcome.error is not None:
         described = {'code': code, 'exception_type': type(exc).__name__,
                      'message': 'Exception details unavailable', 'stack': []}
-    try:
+    with SecondaryOperation('redact', catch=BaseException) as redact_outcome:
         safe_context = redact(context)
-    except BaseException:
+    if redact_outcome.error is not None:
         safe_context = {}
     record = {**previous, **described, **safe_context, 'error_id': error_id}
     if parent_error_id:
         record['parent_error_id'] = parent_error_id
-    try:
+    with SecondaryOperation('cause_evidence', catch=BaseException) as cause_evidence_outcome:
         record['cause_status'], record['evidence'] = cause_evidence(exc)
-    except BaseException:
+    if cause_evidence_outcome.error is not None:
         record['cause_status'], record['evidence'] = 'unknown', []
     record['causes'] = []
-    try:
+    with SecondaryOperation('read chained exception', catch=BaseException):
         cause = exc.__cause__ or (None if exc.__suppress_context__ else exc.__context__)
         seen = {id(exc)}
         while cause is not None and id(cause) not in seen and len(record['causes']) < 8:
             seen.add(id(cause))
-            try:
+            with SecondaryOperation('describe chained exception', catch=BaseException) as cause_description:
                 record['causes'].append(describe_exception(cause))
-            except BaseException:
+            if cause_description.error is not None:
                 record['causes'].append({'code': type(cause).__name__, 'exception_type': type(cause).__name__,
                                          'message': 'Cause details unavailable', 'stack': []})
             cause = cause.__cause__ or (None if cause.__suppress_context__ else cause.__context__)
-    except BaseException:
-        pass
     folder = Path(folder)
     record['diagnostic_json'] = str(folder / 'error.json')
     record['exception_log'] = str(folder / 'exception.log')
@@ -122,54 +124,51 @@ def record_exception(exc, folder, *, runtime=None, parent_error_id=None, **conte
         for frame in item.get('stack', []):
             lines.append(f'  File "{frame["file"]}", line {frame["line"]}, in {frame["function"]}')
         if item.get('validation_errors'):
-            try:
+            with SecondaryOperation('serialize validation errors', catch=BaseException):
                 lines.append(json.dumps(item['validation_errors'], ensure_ascii=False, indent=2))
-            except BaseException:
-                pass
 
     record['diagnostic_persistence'] = 'run_log'
     json_saved = False
     text_saved = False
     for path, write in ((folder / 'error.json', lambda: atomic_json(folder / 'error.json', record)),
                         (folder / 'exception.log', lambda: atomic_bytes(folder / 'exception.log', ('\n'.join(lines)+'\n').encode()))):
-        try:
+        with SecondaryOperation('write', catch=BaseException) as write_outcome:
             write()
             if path.name == 'error.json':
                 json_saved = True
             else:
                 text_saved = True
-        except BaseException as write_error:
+        if write_outcome.error is not None:
+            write_error = write_outcome.error
             record['diagnostic_write_error'] = type(write_error).__name__
-            try:
+            with SecondaryOperation('report diagnostic write failure', catch=BaseException):
                 from .core.run_context import current
                 active = current()
                 if active and active.event_sink:
                     active.event_sink.record('diagnostic.persist_failed', severity='ERROR',
                                              attributes={'code': type(write_error).__name__})
-            except BaseException:
-                pass
 
     if runtime is None:
-        try:
+        with SecondaryOperation('find active runtime', catch=BaseException) as context_lookup:
             from .core.run_context import current
             active = current()
             runtime = active.runtime if active else None
-        except BaseException:
+        if context_lookup.error is not None:
             runtime = None
     db_saved = False
     if runtime is not None:
-        try:
+        with SecondaryOperation('index diagnostic in SQLite', catch=BaseException) as database_write:
             database = runtime.home / 'state.sqlite3'
             if database.is_file():
-                with closing(runtime.connect()) as db:
-                    with db:
-                        db.execute('PRAGMA busy_timeout=250')
-                        db.execute('INSERT OR IGNORE INTO diagnostics(error_id,run_id,step_attempt_id,code,cause_status,diagnostic_path,occurred_at) VALUES(?,?,?,?,?,?,?)',
-                                   (error_id, record.get('run_id'), record.get('step_attempt_id'),
-                                    code, record['cause_status'], record['diagnostic_json'] if json_saved else None,
-                                    datetime.now(timezone.utc).isoformat()))
+                with closing(runtime.connect()) as db, db:
+                    db.execute('PRAGMA busy_timeout=250')
+                    db.execute('INSERT OR IGNORE INTO diagnostics(error_id,run_id,step_attempt_id,code,cause_status,diagnostic_path,occurred_at) VALUES(?,?,?,?,?,?,?)',
+                               (error_id, record.get('run_id'), record.get('step_attempt_id'),
+                                code, record['cause_status'], record['diagnostic_json'] if json_saved else None,
+                                datetime.now(UTC).isoformat()))
                 db_saved = True
-        except BaseException as db_error:
+        if database_write.error is not None:
+            db_error = database_write.error
             record['diagnostic_db_error'] = type(db_error).__name__
     if not json_saved:
         record['diagnostic_json'] = None
@@ -177,14 +176,10 @@ def record_exception(exc, folder, *, runtime=None, parent_error_id=None, **conte
     if not text_saved:
         record['exception_log'] = None
     if not json_saved and not text_saved and not db_saved:
-        try:
+        with SecondaryOperation('print', catch=BaseException):
             print(f'[{error_id}] {code}: 診斷儲存失敗；原始錯誤仍保留。', file=sys.stderr, flush=True)
-        except BaseException:
-            pass
-    try:
+    with SecondaryOperation('attach diagnostic record', catch=BaseException):
         exc._flow_diagnostic = record
-    except BaseException:
-        pass
     return record
 
 
@@ -196,13 +191,11 @@ def cli_error(runtime, exc, code=None):
     if prior.get('run_diagnostic_json') or (prior.get('run_id') and prior.get('diagnostic_json') and prior.get('diagnostic_persistence') == 'run_log'):
         diagnostic['run_diagnostic_json'] = prior.get('run_diagnostic_json') or prior.get('diagnostic_json')
         # The returned link is also persisted for an operator reading the file later.
-        try:atomic_json(folder/'error.json',diagnostic)
-        except BaseException:pass
+        with SecondaryOperation('persist linked run diagnostic', catch=BaseException):
+            atomic_json(folder/'error.json',diagnostic)
     error = {'code':code or diagnostic['code'], 'message':diagnostic['message'],
              'details':diagnostic.get('details',{}), 'diagnostic':diagnostic}
-    try:
+    with SecondaryOperation('explain CLI error', catch=BaseException):
         from .observability.errors import explain_exception
         error['user_explanation'] = explain_exception(exc, diagnostic)
-    except BaseException:
-        pass
     return {'ok':False,'error':error}

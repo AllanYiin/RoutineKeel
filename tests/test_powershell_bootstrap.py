@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from package_paths import WORKSPACE
 
 ROOT = Path(__file__).resolve().parents[1]
 PWSH = os.environ.get('FLOW_BASE_TEST_PWSH') or shutil.which('pwsh')
@@ -14,7 +15,7 @@ pytestmark = pytest.mark.skipif(not PWSH or os.name == 'nt', reason='Requires Po
 
 def invoke(script, env=None):
     result = subprocess.run([PWSH, '-NoLogo', '-NoProfile', '-NonInteractive', '-File', str(script)],
-                            env=env, capture_output=True, text=True, timeout=30)
+                            env=env, capture_output=True, text=True, timeout=30, check=False)
     assert result.returncode == 0, result.stdout + result.stderr
     return json.loads(result.stdout.strip().splitlines()[-1])
 
@@ -35,7 +36,7 @@ def test_multiple_uv_paths_use_one_working_executable(tmp_path, statuses, select
     old.mkdir()
     (old/'keep.txt').write_text('untouched during tool discovery')
     # Run the production discovery block, including Get-Command and invocation.
-    prefix = (ROOT/'dist/workspace/flow_base/start.ps1').read_text().split('$Wheel =', 1)[0]
+    prefix = (WORKSPACE / 'flow_base/start.ps1').read_text().split('$Wheel =', 1)[0]
     script = app/'check.ps1'
     script.write_text(prefix + '\n[pscustomobject]@{path=$UvExe;type=$UvExe.GetType().FullName;count=$KnownUV.Count} | ConvertTo-Json -Compress\n')
     env = dict(os.environ, PATH=os.pathsep.join(str(x.parent) for x in commands) + os.pathsep + os.environ['PATH'], PROCESSOR_ARCHITECTURE='AMD64')
@@ -55,7 +56,7 @@ def test_no_working_candidate_returns_null(tmp_path):
 
 
 def test_full_launcher_has_valid_powershell_syntax(tmp_path):
-    source = (ROOT/'dist/workspace/flow_base/start.ps1').read_text()
+    source = (WORKSPACE / 'flow_base/start.ps1').read_text()
     launcher = tmp_path/'launcher.ps1'
     launcher.write_text(source)
     script = tmp_path/'parse.ps1'
@@ -74,7 +75,7 @@ def test_bootstrap_failure_records_diagnostic_before_touching_venv(tmp_path):
     script = app/'start.ps1'
     script.write_text(source, encoding='utf-8-sig')
     result = subprocess.run([PWSH,'-NoLogo','-NoProfile','-NonInteractive','-File',str(script)],
-                            env={**os.environ,'PROCESSOR_ARCHITECTURE':'AMD64'}, capture_output=True, text=True, timeout=30)
+                            env={**os.environ,'PROCESSOR_ARCHITECTURE':'AMD64'}, capture_output=True, text=True, timeout=30, check=False)
     assert result.returncode == 1
     assert '啟動失敗' in result.stdout
     state = json.loads(next((tmp_path/'share_states/launcher').glob('*.json')).read_text(encoding='utf-8'))
@@ -97,7 +98,7 @@ def test_command_transcript_captures_both_streams_and_preserves_exit(tmp_path, e
     script = app/'check.ps1'
     script.write_text(prefix + "\n$Python = Join-Path (Split-Path $PSScriptRoot) 'fixture-python'\n" + suffix, encoding='utf-8-sig')
     result = subprocess.run([PWSH,'-NoLogo','-NoProfile','-NonInteractive','-File',str(script),'run'],
-                            capture_output=True,text=True,timeout=30)
+                            capture_output=True,text=True,timeout=30, check=False)
     assert result.returncode == exit_code, result.stdout + result.stderr
     state = json.loads(next((tmp_path/'share_states/launcher').glob('*.json')).read_text())
     assert state['status'] == ('completed' if exit_code == 0 else 'failed')
@@ -108,7 +109,8 @@ def test_command_transcript_captures_both_streams_and_preserves_exit(tmp_path, e
         assert marker in result.stdout
 
 
-def test_interactive_output_is_not_transcribed(tmp_path):
+@pytest.mark.parametrize('command', [('chat',), ('studio','reply'), ('--workspace','.','studio','reply')])
+def test_interactive_output_is_not_transcribed(tmp_path, command):
     source = (ROOT/'tools/start.ps1.in').read_text()
     app = tmp_path/'flow_base';app.mkdir()
     binary = tmp_path/'fixture-python'
@@ -118,8 +120,8 @@ def test_interactive_output_is_not_transcribed(tmp_path):
     script.write_text(source.split('$env:UV_CACHE_DIR',1)[0] +
                      "\n$Python = Join-Path (Split-Path $PSScriptRoot) 'fixture-python'\n" +
                      source[source.index('# Command execution:'):],encoding='utf-8-sig')
-    result = subprocess.run([PWSH,'-NoLogo','-NoProfile','-NonInteractive','-File',str(script),'chat'],
-                            capture_output=True,text=True,timeout=30)
+    result = subprocess.run([PWSH,'-NoLogo','-NoProfile','-NonInteractive','-File',str(script),*command],
+                            capture_output=True,text=True,timeout=30, check=False)
     assert result.returncode == 0, result.stdout + result.stderr
     assert 'PRIVATE_CHAT_SENTINEL' in result.stdout
     log = next((tmp_path/'share_logs/launcher').glob('*.log')).read_text(encoding='utf-8-sig')

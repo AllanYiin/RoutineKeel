@@ -1,6 +1,9 @@
 """A second, independent task demonstrating the same runtime without ASR."""
-from flow_base.contracts import Workflow, Step
-from flow_base.engine import Adapter as BaseAdapter, merge
+from typing import ClassVar
+
+from flow_base.contracts import Step, Workflow
+from flow_base.engine import Adapter as BaseAdapter
+from flow_base.engine import merge
 from flow_base.runtime import atomic_copy
 
 
@@ -10,7 +13,7 @@ def copy_file(ctx, step, dependencies, target):
 
 
 class Adapter(BaseAdapter):
-    handlers = {'file.copy': copy_file}
+    handlers: ClassVar[dict] = {'file.copy': copy_file}
 
     def configuration(self, overrides):
         defaults = Workflow(id='file-copy', steps=[Step(id='copy', handler='file.copy')])
