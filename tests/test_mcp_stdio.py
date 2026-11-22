@@ -43,7 +43,8 @@ def test_stdio_negotiation_queue_tool_set_and_path_boundary(workspace):
             assert names == {'list_workflows', 'describe_workflow', 'plan_workflow',
                              'submit_workflow', 'get_workflow_status',
                              'get_workflow_result', 'cancel_workflow', 'preview_workflow_update',
-                             'update_workflow', 'rollback_workflow_update', 'recover_workflow_update'}
+                             'update_workflow', 'rollback_workflow_update', 'recover_workflow_update',
+                             'install_workflow', 'blueprint_task'}
             forbidden = await call(client, 'submit_workflow', workflow_id='ai_flow02',
                                    source=str(outside))
             assert forbidden['error']['code'] == 'PERMISSION_DENIED'

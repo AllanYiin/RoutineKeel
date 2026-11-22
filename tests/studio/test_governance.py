@@ -22,13 +22,20 @@ def verified_approval(tmp_path):
     return studio, project, build, cases, verifier, policy, approval
 
 
-def test_publish_idempotency_update_rollback_and_preserve_outputs(tmp_path):
+@pytest.mark.parametrize("nested", [False, True])
+def test_publish_idempotency_update_rollback_and_preserve_outputs(tmp_path, nested):
     studio, p, build, cases, verifier, policy, approval = verified_approval(tmp_path)
     target = tmp_path / "installed"
+    if nested:
+        (target / "workflows").mkdir(parents=True)
     releases = Releases(studio)
     first = releases.publish(p.project_id, approval["approval_id"], target, policy)
     assert releases.publish(p.project_id, approval["approval_id"], target, policy) == first
-    folder = target / first["workflow_id"]
+    folder = (
+        target / "workflows" / ("FLOW_" + first["workflow_id"])
+        if nested
+        else target / first["workflow_id"]
+    )
     (folder / "outputs").mkdir()
     (folder / "outputs/keep.txt").write_text("user result")
     payload = studio.projects.get_revision(p.project_id, build["revision_id"]).ir

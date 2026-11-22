@@ -114,7 +114,7 @@ def test_two_processes_cannot_claim_same_run(tmp_path):
         's.claim(sys.argv[2],token=str(os.getpid()),pid=os.getpid(),started_at=1.0)'
     )
     env = os.environ.copy()
-    env['PYTHONPATH'] = str(Path(__file__).resolve().parents[1] / 'routinekeel/flow_base/src')
+    env['PYTHONPATH'] = str(Path(__file__).resolve().parents[1] / 'flow_base/src')
     children = [subprocess.Popen([sys.executable, '-c', code, str(store.runtime.home), run_id],
                                  env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE) for _ in range(2)]
     errors = [child.communicate(timeout=10)[1].decode('utf-8', 'replace') for child in children]
@@ -166,7 +166,7 @@ def isolated_copy_module():
 
 def test_copy_workflow_reaches_delivered_terminal_state(tmp_path, isolated_copy_module):
     root = Path(__file__).resolve().parents[1]
-    shutil.copytree(root / 'dist/workspace/檔案複製範例', tmp_path / 'copy_flow')
+    shutil.copytree(root / 'dist/workspace/workflows/FLOW_檔案複製範例', tmp_path / 'copy_flow')
     workspace = Workspace(tmp_path)
     task = workspace.task('ai_flow02')
     workflow = task.configuration(workspace.runtime)
@@ -188,7 +188,7 @@ def test_copy_workflow_reaches_delivered_terminal_state(tmp_path, isolated_copy_
 
 def test_cancel_from_other_runtime_waits_for_handler_stop(tmp_path, monkeypatch, isolated_copy_module):
     root = Path(__file__).resolve().parents[1]
-    shutil.copytree(root / 'dist/workspace/檔案複製範例', tmp_path / 'copy_flow')
+    shutil.copytree(root / 'dist/workspace/workflows/FLOW_檔案複製範例', tmp_path / 'copy_flow')
     workspace = Workspace(tmp_path)
     task = workspace.task('ai_flow02')
     workflow = task.configuration(workspace.runtime)

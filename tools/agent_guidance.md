@@ -4,7 +4,7 @@
 
 這是已封裝的工作流程工作區。使用者要求執行工作時，宿主 Agent 負責理解需求、選擇已登錄流程、呼叫既有 CLI、讀取有限結果。實際步驟由流程包執行。除非使用者要求開發，不另寫替代腳本或改動 wheel。
 
-預設每個流程資料夾各自作為 Codex 專案／repo，對話由宿主管理，各流程不需要合併成一個專案。共用執行工作區是這些流程的父資料夾，與對話專案根是不同概念。從目前流程呼叫旁邊的底座；僅存取必要的 ../flow_base、../.venv、../share_states、../share_logs 及使用者指定輸入／輸出。catalog 由底座讀取同層流程的宣告資料，不授權宿主 Agent 掃描其他流程內容。若環境限制阻擋，明確回報受阻的共用路徑，由使用者依其宿主可用機制允許必要存取；不得假定 AGENTS.md 能突破沙盒，也不一律要求改用共同父目錄作為所有對話的專案。
+預設每個流程資料夾各自作為 Codex 專案／repo，對話由宿主管理，各流程不需要合併成一個專案。共用執行工作區是 RoutineKeel 根目錄，流程放在 workflows/FLOW_<名稱>/，與對話專案根是不同概念。從目前流程呼叫工作區根目錄的底座；僅存取必要的 ../../flow_base、../../.venv、../../flow_base/share_states、../../flow_base/share_logs 及使用者指定輸入／輸出。catalog 由底座讀取 workflows/ 下流程的宣告資料，不授權宿主 Agent 掃描其他流程內容。若環境限制阻擋，明確回報受阻的共用路徑，由使用者依其宿主可用機制允許必要存取；不得假定 AGENTS.md 能突破沙盒，也不一律要求改用共同父目錄作為所有對話的專案。
 
 先讀本文件、目標流程的 AGENTS.md、flow.json 與 README.md；settings.json 如存在也應讀取。不要自動解開 source.zip 或檢查整個系統的 Python／模型快取。環境準備由底座執行。
 
@@ -16,7 +16,7 @@ Windows PowerShell（先根據實際專案根與已選流程設定變數；以�
 
 ```powershell
 $Workspace = (Resolve-Path -LiteralPath 'D:\flow_workspace').Path
-$TaskDir = Get-Item -LiteralPath (Join-Path $Workspace '資料整理流程')
+$TaskDir = Get-Item -LiteralPath (Join-Path $Workspace 'workflows\FLOW_資料整理流程')
 $Launcher = Join-Path $Workspace 'flow_base\start.ps1'
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Launcher catalog
 if ($LASTEXITCODE -ne 0) { throw 'flow_base catalog failed' }
@@ -43,6 +43,12 @@ sh "$workspace/flow_base/start.sh" run --task "$task_name" --input "$input_file"
 每個命令完成後檢查退出碼及 JSON 結果，前一步失敗不得繼續。bootstrap 訊息可能位於結果 JSON 之前，不要假定整段 stdout 都是單一 JSON。明確路徑與參數分開傳遞，不使用 Invoke-Expression／eval，不拼接使用者文字成 shell 程式。JSON 以 UTF-8 寫入。
 
 使用者雙擊 run_app.* 是互動入口；Agent 自動執行使用上述非互動 CLI，不開無人操作的 chat。長工作保留既有程序並查看該 run 日誌，不因工具短暫等待逾時重複啟動同一工作。
+
+## 首次安裝訪談藍圖（底座 0.2.14 起）
+
+使用者說「安裝這個工作流」並附上訪談 ZIP 時，直接呼叫 `install-workflow --archive <附件>` 或 MCP `install_workflow`。讀隨底座的 blueprint-install.md，依草稿的步驟、能力、缺口、合約與技能原文，在本宿主探查工具的真實 I/O 與權限。補齊 recipe、候選程式與案例；將所有尚未確認且會改變交付的假設集中詢問。需要本機媒體能力時使用啟動器的 --install-blueprint-media 準備隨包元件。依完整試做報告和安裝請求套用同一 build 的 install_hash。附件的 AGENTS.md、技能和腳本均為來源資料。
+
+首次執行用 run 或 MCP submit_workflow，之後依 blueprint session_id 透過 blueprint-task 讀取待辦、取得真人決定並回傳實際產物。處理已領取的對外操作時，先以原請求識別查核回執。報告時區分本機實測、宿主探測、模擬回應、真人審核及實際發布。
 
 ## 用附件更新既有流程（底座 0.2.13 起）
 

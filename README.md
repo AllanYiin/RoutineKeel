@@ -37,9 +37,9 @@ RoutineKeel 想解決的是這段「從作者的方法到他人能穩定使用�
 
 到 GitHub Releases 開啟最新發行，從 **Assets** 下載底座 ZIP 和你需要的流程 ZIP。例如字幕需要 `flow_base-*.zip` 與 `flow_subtitles-*.zip`。[前往 Releases](https://github.com/AllanYiin/RoutineKeel/releases)
 
-建立名為 `RoutineKeel` 的資料夾，將兩包完整解壓到裡面。解壓後，`flow_base/` 和 `課程影片產生字幕/` 應直接並排。這是私人儲存庫，GitHub 下載需要權限；分享給學員時，可直接把兩個 ZIP 交給他們。
+建立名為 `RoutineKeel` 的資料夾，將兩包完整解壓到裡面。解壓後，底座位於 `flow_base/`，流程位於 `workflows/FLOW_課程影片產生字幕/`，不要移出 `workflows/`。這是私人儲存庫，GitHub 下載需要權限；分享給學員時，可直接把兩個 ZIP 交給他們。
 
-1. 進入你要使用的流程，例如 **課程影片產生字幕**。
+1. 進入你要使用的流程，例如 **workflows/FLOW_課程影片產生字幕**。
 2. 依作業系統開啟下表的入口。
 3. 首次啟動等待環境與模型準備完成。這個階段需要網路，下載時間取決於網路與電腦。
 4. 依畫面提示指定影片，確認執行計畫，再開始工作。
@@ -53,11 +53,11 @@ RoutineKeel 想解決的是這段「從作者的方法到他人能穩定使用�
 
 入口會在必要時準備 uv 與 Python，不需要先手動建立 `.venv`。macOS／Linux 在尚無 uv 時需要系統提供 curl 或 wget，以及 unzip；組織管理政策仍可能限制安裝。
 
-本原始碼建置的底座另提供可選的本機圖形工作台：在 `flow_base/` 開啟 Windows `open_ui.bat`、macOS `open_ui.command`，或於 Linux 執行 `open_ui.sh`。它能選檔、檢查計畫、執行、查看歷史成果與診斷；目前仍待完整跨平台驗收，正式發行前請以 [已知問題](routinekeel/flow_base/docs/known-issues.md) 為準。操作步驟見 [本機工作台指南](routinekeel/flow_base/docs/user-guide.md)。
+本原始碼建置的底座另提供可選的本機圖形工作台：在 `flow_base/` 開啟 Windows `open_ui.bat`、macOS `open_ui.command`，或於 Linux 執行 `open_ui.sh`。它能選檔、檢查計畫、執行、查看歷史成果與診斷；目前仍待完整跨平台驗收，正式發行前請以 [已知問題](flow_base/docs/known-issues.md) 為準。操作步驟見 [本機工作台指南](flow_base/docs/user-guide.md)。
 
 也可以開啟 `flow_base` 內的入口，從共用入口選擇不同流程。自然語言入口支援已宣告的常用說法，不保證能理解任何自由描述；在 Codex 中使用時，Agent 應先讀取目標流程的 `AGENTS.md`，再透過底座執行。
 
-若要由 Codex 的本機 MCP 提交工作，先另外開啟 `flow_base/queue_worker.bat`（Windows）、`queue_worker.command`（macOS）或 `queue_worker.sh`（Linux），再依 [MCP 本機設定](routinekeel/flow_base/docs/mcp-local.md) 安裝選配入口。MCP 提交會立即回 `execution_id`；關閉 Codex 後仍可用同一 ID 查進度與成果。Worker 沒有啟動時工作會維持排隊，不會假裝已在處理。
+若要由 Codex 的本機 MCP 提交工作，先另外開啟 `flow_base/queue_worker.bat`（Windows）、`queue_worker.command`（macOS）或 `queue_worker.sh`（Linux），再依 [MCP 本機設定](flow_base/docs/mcp-local.md) 安裝選配入口。MCP 提交會立即回 `execution_id`；關閉 Codex 後仍可用同一 ID 查進度與成果。Worker 沒有啟動時工作會維持排隊，不會假裝已在處理。
 
 若畫面停在等待輸入，可依序輸入：
 
@@ -72,9 +72,9 @@ RoutineKeel 想解決的是這段「從作者的方法到他人能穩定使用�
 
 ### 課程影片產生字幕
 
-**版本 0.3.4，預設 faster-whisper large-v3。**
+**版本 0.4.1，預設 faster-whisper large-v3。**
 
-流程會抽取音訊、找出有語音的區段、逐段辨識並保留時間位置，接著整理字幕、檢查品質，產生 SRT／VTT 與人工確認資料。預設辨識提示至少包含「繁體中文」；已知的課程主題與專有名詞可以補入提示，協助辨識。
+流程先去噪、用 Demucs 分離人聲，再標準化音量。VAD 略過超過 3 秒的靜音，字幕保留原片時間碼，聽審頁播放原音。字幕超過 12 秒時，流程從段內最長的實測停頓處切開。找不到明顯停頓時會保留原段，列入真人聽審。預設辨識提示包含「繁體中文」，可補入課程主題與專有名詞。
 
 主要交付包含：
 
@@ -87,27 +87,28 @@ RoutineKeel 想解決的是這段「從作者的方法到他人能穩定使用�
 
 目前這個字幕流程**不會自動呼叫外部 LLM API 校訂**。辨識在本機執行；首次安裝與取得模型仍會連線。Codex 對話本身的模型耗用是另一個範圍，不代表整段操作完全沒有 token 成本。
 
-詳細操作見 [字幕流程說明](routinekeel/flows/課程影片產生字幕/README.md)。
+詳細操作見 [字幕流程說明](workflows/FLOW_課程影片產生字幕/README.md)。
 
 ### 檔案複製範例
 
-**版本 0.2.2。** 用簡單的檔案工作示範「同一個底座支援另一個獨立流程」。適合先確認啟動與輸出機制，不需要先下載語音模型。
+**版本 0.2.3。** 用簡單的檔案工作示範「同一個底座支援另一個獨立流程」。適合先確認啟動與輸出機制，不需要先下載語音模型。
 
 ## 資料夾怎麼看？
 
-GitHub 的目錄按原始碼責任組織。想使用程式時，從 Releases 下載 ZIP 即可。
+GitHub 原始碼、Release 解壓結果與本機使用採相同的目錄結構。想直接使用時，從 Releases 下載 `RoutineKeel-workspace-*.zip` 全包，或將需要的分包解壓至同一個 `RoutineKeel/`。
 
 | GitHub 路徑 | 放什麼 |
 | --- | --- |
-| `routinekeel/` | RoutineKeel 的產品原始碼 |
-| `routinekeel/flow_base/` | 共用底座原始碼與安裝工具 |
-| `routinekeel/flows/課程影片產生字幕/` | 字幕流程原始碼、套件設定與測試 |
-| `routinekeel/flows/檔案複製範例/` | 獨立的複製流程範例 |
+| `workflow_studio/` | 設計工作流與輸出藍圖的工作台 |
+| `blueprints/` | 待轉換的工作流藍圖 |
+| `flow_base/` | 共用底座原始碼與安裝工具 |
+| `workflows/FLOW_課程影片產生字幕/` | 字幕流程原始碼、套件設定與測試 |
+| `workflows/FLOW_檔案複製範例/` | 獨立的複製流程範例 |
 | `tests/`、`tools/` | 跨套件測試與共用打包工具 |
 | `assets/`、`docs/` | Logo 與專案文件 |
 | `.github/workflows/` | PR 驗證與發行自動化 |
 
-每個 ZIP 解壓後的資料夾名稱與元件原始碼目錄一致。學員工作區中，底座與流程並排。第一次啟動會建立 `.venv/`、`share_states/`、`share_logs/`；工作成果會放進各流程自己的 `outputs/`，其中 `docs/` 是該次工作的文件，`artifacts/` 是實際成果。
+每個元件 ZIP 保留與原始碼一致的相對路徑；全包另包含最外層 `RoutineKeel/`。第一次啟動會在根層建立 `.venv/`，在底座內建立 `flow_base/share_states/`、`flow_base/share_logs/`；工作成果會放進各流程自己的 `outputs/`，其中 `docs/` 是該次工作的文件，`artifacts/` 是實際成果。
 
 ## 怎麼知道真的走了工作流？
 
@@ -121,21 +122,27 @@ GitHub 的目錄按原始碼責任組織。想使用程式時，從 Releases 下
 
 同一段對話的累計值不等於這次工作新增的量，因此也會顯示起訖收據差值。已快取輸入包含在輸入總量中，推理輸出包含在輸出中，不重複加總。結束後才產生的回覆尚未計入；「目前沒收到新收據」也不等於整輪對話免費。
 
-綁定方式與限制見 [底座完整說明](routinekeel/flow_base/README.md)。
+綁定方式與限制見 [底座完整說明](flow_base/README.md)。
 
 ## 更新、搬移與分享
 
-遇到失敗時先記下畫面上的 `run_id` 或 `error_id`。在工作台可查看白話原因與匯出已遮罩診斷；維護者可透過同一個底座啟動入口執行 `doctor`、`diagnose <run_id>`、`explain-error <error_id>`。匯出診斷前會先顯示預覽，只有明確指定新檔案並確認後才寫入，不會自動上傳。詳細命令與退出碼見 [診斷說明](routinekeel/flow_base/docs/error-catalog.md)。
+使用底座 0.2.14 時，可在對話附上 Studio 訪談藍圖 ZIP 並說「安裝這個工作流」。宿主會核對工具、補齊步驟、用範例試做，再安裝通過驗證的版本。需要人審或補充資料時，回到同一工作即可接續。詳見[藍圖首次安裝與試做](flow_base/docs/blueprint-install.md)。
+
+遇到失敗時先記下畫面上的 `run_id` 或 `error_id`。在工作台可查看白話原因與匯出已遮罩診斷；維護者可透過同一個底座啟動入口執行 `doctor`、`diagnose <run_id>`、`explain-error <error_id>`。匯出診斷前會先顯示預覽，只有明確指定新檔案並確認後才寫入，不會自動上傳。詳細命令與退出碼見 [診斷說明](flow_base/docs/error-catalog.md)。
 
 - **更新底座**：先結束執行中的工作，再更換 `flow_base` 的程式檔案。保留狀態、日誌、流程及自己的成果。
 - **更新流程**：使用底座 0.2.13 起，可在宿主對話附上新版流程 ZIP 並說「請更新這個流程」。宿主會交給底座檢查、備份及更新，保留設定與 `outputs/`，不需自行刪檔或蓋檔；更新失敗可由底座復原。
 - **換電腦**：可攜帶底座與流程包，在新電腦重新建立環境；`.venv` 不應當成跨作業系統的可攜程式。大型資源可使用底座提供的資源匯出／匯入功能，設定與成果另行備份。
 - **分享給學員**：交付乾淨的啟動包或「一份底座＋需要的流程」。不要把自己的影片、逐字稿、Session 紀錄、API 金鑰或個人快取一起分享。
 
-目前原始碼版本組合為 **flow_base 0.2.12＋字幕流程 0.3.4＋複製範例 0.2.2**。本機 Windows 的 0.2.12 乾淨發行包已實測選配 MCP 安裝、獨立 Worker、提交後重連查成果；WSL Linux 發行建置與完整回歸通過。macOS Finder、Windows 圖形工作台的真人走查與各電腦 CUDA 組合也需實機確認。測試通過不等於任何錄音都能自動產生無誤字幕。
+目前此工作樹版本組合為 **flow_base 0.2.15＋字幕流程 0.5.0＋複製範例 0.2.3＋Studio 0.2.0（對話版）**。本機 Windows 的 0.2.12 乾淨發行包已實測選配 MCP 安裝、獨立 Worker、提交後重連查成果；WSL Linux 發行建置與完整回歸通過。macOS Finder、Windows 圖形工作台的真人走查與各電腦 CUDA 組合也需實機確認。測試通過不等於任何錄音都能自動產生無誤字幕。
 
 ## 想維護或增加流程？
 
 請先看 [目錄與協作方式](docs/structure.md) 和 [維護與打包](docs/maintenance.md)。底座負責共用能力，流程負責自己的領域規則；新增一個流程，不應要求把其模型、處理邏輯或驗收規則塞進底座。
 
 程式碼沿用原套件的 MIT 授權，見 [LICENSE](LICENSE)。Logo 保留使用者提供的原始 PNG，素材說明見 [assets/README.md](assets/README.md)。
+
+目錄、分包解壓與舊安裝回復方式見 [目錄遷移說明](docs/layout-migration.md)。
+
+Workflow Studio 以宿主對話逐層引導為主，入口為 `workflow_studio/AGENTS.md`；不發行 Tk 桌面版。

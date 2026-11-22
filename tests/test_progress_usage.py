@@ -123,7 +123,7 @@ def test_ledger_automatically_registers_provider_receipts(tmp_path):
 
 def test_packaged_cli_banners_preserve_stdout_json_and_cache_usage(workspace):
     (workspace/'in.txt').write_text('test')
-    env=dict(os.environ,PYTHONPATH=str(ROOT/'routinekeel/flow_base/src'),PYTHONDONTWRITEBYTECODE='1')
+    env=dict(os.environ,PYTHONPATH=str(ROOT/'flow_base/src'),PYTHONDONTWRITEBYTECODE='1')
     args=[sys.executable,'-m','flow_base','--workspace',str(workspace),'run','--task','ai_flow02',
           '--input','in.txt','--output','out']
     for iteration in range(2):

@@ -36,11 +36,13 @@ def release(path, version='1.1.0', *, workflow_id='updatable', module='updatable
     return files
 
 
-@pytest.fixture
-def installed(tmp_path):
+@pytest.fixture(params=[False, True], ids=['legacy', 'nested'])
+def installed(tmp_path, request):
     old_zip = tmp_path / 'old.zip'
     old = release(old_zip, '1.0.0')
-    task = tmp_path / '使用者改過的流程名稱'
+    workflows = tmp_path / 'workflows' if request.param else tmp_path
+    workflows.mkdir(exist_ok=True)
+    task = workflows / '使用者改過的流程名稱'
     task.mkdir()
     for name, body in old.items():
         (task / name).write_bytes(body)
@@ -52,6 +54,14 @@ def installed(tmp_path):
         path.write_bytes(body)
     archive = tmp_path / '附件 新版.zip'
     release(archive)
+    if request.param:
+        with zipfile.ZipFile(archive) as source:
+            files = {n: source.read(n) for n in source.namelist()}
+        with zipfile.ZipFile(archive, 'w') as target:
+            target.writestr('workflows/', '')
+            target.writestr('workflows/FLOW_updatable/', '')
+            for name, body in files.items():
+                target.writestr('workflows/FLOW_updatable/' + name.split('/', 1)[1], body)
     return WorkflowService(tmp_path), task, archive, private
 
 
@@ -234,7 +244,7 @@ def write_json(path, value):
 u.atomic_json = write_json
 WorkflowService(root).update_workflow(archive, plan_hash=plan_hash)
 '''
-    env = dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parents[1] / 'routinekeel/flow_base/src'))
+    env = dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parents[1] / 'flow_base/src'))
     result = subprocess.run([sys.executable, '-c', script, str(service.workspace.root), str(archive),
                              str(task), plan['plan_hash'], crash_at], env=env, capture_output=True, timeout=20)
     assert result.returncode == 77, result.stderr
@@ -387,7 +397,8 @@ def test_update_refuses_linked_state(installed, tmp_path):
     service, _, archive, _ = installed
     target = tmp_path / 'external-state'
     target.mkdir()
-    link = tmp_path / 'share_states'
+    link = service.workspace.runtime.home
+    link.parent.mkdir(parents=True, exist_ok=True)
     try:
         link.symlink_to(target, target_is_directory=True)
     except OSError:
@@ -396,3 +407,19 @@ def test_update_refuses_linked_state(installed, tmp_path):
         service.preview_workflow_update(archive)
     assert exc.value.code == 'PERMISSION_DENIED'
     assert snapshot(target) == {}
+
+
+def test_bundled_skill_updates_and_rolls_back_with_its_manifest(installed):
+    service, task, archive, _ = installed
+    relative = 'skills/video-subtitle-creator.skill'
+    skill = task / relative
+    skill.parent.mkdir()
+    skill.write_bytes(b'old inert skill archive')
+    with zipfile.ZipFile(archive, 'a') as package:
+        manifest = next(n for n in package.namelist() if n.endswith('/flow.json'))
+        package.writestr(manifest.removesuffix('flow.json') + relative, b'new inert skill archive')
+    plan = service.preview_workflow_update(archive)
+    applied = service.update_workflow(archive, plan_hash=plan['plan_hash'])
+    assert skill.read_bytes() == b'new inert skill archive'
+    service.rollback_workflow_update(applied['update_id'])
+    assert skill.read_bytes() == b'old inert skill archive'

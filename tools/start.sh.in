@@ -2,10 +2,12 @@
 set -eu
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 FLOW_BASE_WORKSPACE=$(CDPATH= cd -- "$HERE/.." && pwd)
-FLOW_BASE_HOME="$FLOW_BASE_WORKSPACE/share_states"
+FLOW_BASE_STATE_ROOT="$FLOW_BASE_WORKSPACE"
+if [ -d "$FLOW_BASE_WORKSPACE/workflows" ]; then FLOW_BASE_STATE_ROOT="$HERE"; fi
+FLOW_BASE_HOME="$FLOW_BASE_STATE_ROOT/share_states"
 export FLOW_BASE_WORKSPACE FLOW_BASE_HOME
 FLOW_BASE_BOOTSTRAP="$FLOW_BASE_HOME/bootstrap/$(uname -s)-$(uname -m)"
-mkdir -p "$FLOW_BASE_HOME" "$FLOW_BASE_WORKSPACE/share_logs"
+mkdir -p "$FLOW_BASE_HOME" "$FLOW_BASE_STATE_ROOT/share_logs"
 export UV_CACHE_DIR="$FLOW_BASE_HOME/packages"
 export UV_PYTHON_INSTALL_DIR="$FLOW_BASE_HOME/python"
 export UV_NO_MODIFY_PATH=1 UV_NO_PROGRESS=1 UV_NO_ENV_FILE=1 UV_LINK_MODE=copy
@@ -97,6 +99,11 @@ if [ ! -f "$marker" ] || [ "$(cat "$marker")" != "$expected" ] || ! valid_runtim
   trap - EXIT HUP INT TERM
 fi
 if [ "${1:-}" = '--bootstrap-only' ]; then exit 0; fi
+if [ "${1:-}" = '--install-blueprint-media' ]; then
+  media_wheel="$HERE/@MEDIA_WHEEL@"
+  "$python" -I -c 'import hashlib,pathlib,sys; sys.exit(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest() != sys.argv[2])' "$media_wheel" '@MEDIA_SHA256@' || exit 2
+  exec "$UV" pip install --offline --no-config --no-deps --python "$python" "$media_wheel"
+fi
 if [ "${1:-}" = '--install-mcp' ]; then
   "$UV" pip install --no-config --python "$python" --no-build 'mcp==2.3.0'
   exit $?

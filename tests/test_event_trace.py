@@ -137,7 +137,7 @@ def test_two_process_writers_share_single_lock(tmp_path):
     )
     root = Path(__file__).resolve().parents[1]
     env = os.environ.copy()
-    env['PYTHONPATH'] = str(root / 'routinekeel/flow_base/src')
+    env['PYTHONPATH'] = str(root / 'flow_base/src')
     children = [subprocess.Popen([sys.executable, '-c', code, str(runtime.home), str(tmp_path / 'logs')],
                                  env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE) for _ in range(2)]
     errors = [child.communicate(timeout=20)[1].decode('utf-8', 'replace') for child in children]
@@ -147,11 +147,11 @@ def test_two_process_writers_share_single_lock(tmp_path):
 
 def test_workflow_records_before_after_and_delivery(tmp_path):
     root = Path(__file__).resolve().parents[1]
-    shutil.copytree(root / 'dist/workspace/檔案複製範例', tmp_path / 'copy_flow')
+    shutil.copytree(root / 'dist/workspace/workflows/FLOW_檔案複製範例', tmp_path / 'copy_flow')
     source = tmp_path / 'input.txt'
     source.write_text('evidence', encoding='utf-8')
     env = os.environ.copy()
-    env['PYTHONPATH'] = str(root / 'routinekeel/flow_base/src')
+    env['PYTHONPATH'] = str(root / 'flow_base/src')
     result = subprocess.run([sys.executable, '-m', 'flow_base', '--workspace', str(tmp_path),
                              'run', '--task', 'ai_flow02', '--input', str(source),
                              '--output', str(tmp_path / 'output')],
@@ -234,7 +234,7 @@ def test_failed_diagnostic_write_preserves_original_error(tmp_path, monkeypatch)
 @pytest.mark.parametrize('failure_site', ['handler', 'publish'])
 def test_failed_step_or_delivery_has_timeline(tmp_path, monkeypatch, failure_site):
     root = Path(__file__).resolve().parents[1]
-    shutil.copytree(root / 'dist/workspace/檔案複製範例', tmp_path / 'copy_flow')
+    shutil.copytree(root / 'dist/workspace/workflows/FLOW_檔案複製範例', tmp_path / 'copy_flow')
     previous = {name: sys.modules.pop(name) for name in list(sys.modules)
                 if name == 'ai_flow02' or name.startswith('ai_flow02.')}
     try:

@@ -11,7 +11,7 @@ pytestmark = pytest.mark.skipif(os.name == 'nt' or shutil.which('sh') is None,
                                 reason='POSIX sh is required')
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('flow_base_profile', ROOT/'routinekeel/flow_base/scripts/flow_base_profile.py')
+spec = importlib.util.spec_from_file_location('flow_base_profile', ROOT/'flow_base/scripts/flow_base_profile.py')
 profile = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(profile)
 

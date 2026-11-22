@@ -29,4 +29,4 @@ jobs:
       - name: Build release ZIPs
         run: python tools/release.py
       - name: Run complete source and package tests with optional MCP
-        run: uv run --locked --python 3.12 --project routinekeel/flow_base --extra mcp --group dev pytest tests routinekeel/flows --ignore=tests/studio -q --tb=short
+        run: uv run --locked --python 3.12 --project flow_base --extra mcp --group dev pytest tests workflows --ignore=tests/studio -q --tb=short

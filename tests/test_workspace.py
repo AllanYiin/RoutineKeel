@@ -19,12 +19,12 @@ ROOT = Path(__file__).resolve().parents[1]
 @pytest.fixture
 def workspace(tmp_path):
     for task, folder in {'ai_flow01': '課程影片產生字幕', 'ai_flow02': '檔案複製範例'}.items():
-        shutil.copytree(ROOT / 'dist/workspace' / folder, tmp_path / task)
+        shutil.copytree(ROOT / 'dist/workspace/workflows' / ('FLOW_' + folder), tmp_path / task)
     return tmp_path
 
 
 def cli(workspace, *args, ok=True):
-    env = dict(os.environ, PYTHONPATH=str(ROOT / 'routinekeel/flow_base/src'), PYTHONDONTWRITEBYTECODE='1')
+    env = dict(os.environ, PYTHONPATH=str(ROOT / 'flow_base/src'), PYTHONDONTWRITEBYTECODE='1')
     r = subprocess.run([sys.executable, '-m', 'flow_base', '--workspace', str(workspace), *map(str, args)],
                        env=env, capture_output=True, text=True, timeout=40)
     if ok:
@@ -205,10 +205,11 @@ def test_distributions_never_bundle_environment_or_models():
     for name in ('flow_base', 'ai_flow01', 'ai_flow02'):
         archive_name = {'ai_flow01': 'flow_subtitles', 'ai_flow02': 'flow_copy'}.get(name, name)
         folder = {'ai_flow01': '課程影片產生字幕', 'ai_flow02': '檔案複製範例'}.get(name, name)
-        project = ROOT / 'routinekeel' / folder if name == 'flow_base' else ROOT / 'routinekeel/flows' / folder
+        project = ROOT / folder if name == 'flow_base' else ROOT / 'workflows' / ('FLOW_' + folder)
         version = tomllib.loads((project/'pyproject.toml').read_text())['project']['version']
         with zipfile.ZipFile(ROOT/'dist/release'/f'{archive_name}-{version}.zip') as z:
-            assert all(n.startswith(folder+'/') for n in z.namelist())
+            folder = 'flow_base' if name == 'flow_base' else 'workflows/FLOW_' + folder
+            assert all(n.startswith(folder + '/') or n in {'workflows/', 'blueprints/'} for n in z.namelist())
             assert not any('.venv' in n.split('/') or n.endswith('model.bin') for n in z.namelist())
             assert z.testzip() is None
             assert z.getinfo(folder+'/run_app.sh').external_attr >> 16 & 0o111
@@ -229,7 +230,7 @@ def test_distributions_never_bundle_environment_or_models():
                 assert not any('.venv' in n.split('/') for n in source.namelist())
                 if name == 'flow_base':
                     assert any(n.endswith('specs/mcp-queue-v1.md') for n in source.namelist())
-    version = tomllib.loads((ROOT/'routinekeel/flow_base/pyproject.toml').read_text())['project']['version']
+    version = tomllib.loads((ROOT/'flow_base/pyproject.toml').read_text())['project']['version']
     with zipfile.ZipFile(ROOT/'dist/wheels'/f'flow_base-{version}-py3-none-any.whl') as z:
         assert {'flow_base/core/queue.py', 'flow_base/execution/queue_worker.py',
                 'flow_base/storage/migrations/v004.py'} <= set(z.namelist())

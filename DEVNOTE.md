@@ -2,49 +2,73 @@
 
 ## SNAPSHOT — 當前狀態
 
-最後更新：2026-11-17T08:35+08:00
+最後更新：2026-11-21T22:48+08:00
 交接狀態：verified
 
 ### 目標與授權範圍
 
-依 RoutineKeel 底座階段規劃及使用者核定的 MCP 佇列修訂完成 Stage 0–13、逐階段驗收並交付。
+統一 GitHub 原始碼、Release 與本機使用的目錄。依使用者最新決定，以 E 槽功能為主，字幕保留 GitHub 0.5.0；Workflow Studio 以宿主對話引導，排除 Tk Windows 桌面版。提交與推送交付分支，維持既有合併／發布 Gate；不執行付費生成或正式工作流。
 
 ### 目前進度
 
-Stage 0–12 的程式與整合 Gate 已提交並在 GitHub draft PR #3 的 Ubuntu/Windows/macOS CI 通過；Stage10 16d0fd6，Stage11 ad753e0，Stage12 候選 a0495ba，後續跨平台修正 d08c5c4/24354da。Stage13 文件候選 f69402f；最後 CI 結果與真人走查清單正在更新，PR 保持 draft、未合併未發布。原有 .idea/ 七個 staged 檔案屬使用者變更。
+原始碼改為根層 flow_base/、workflows/FLOW_*/、blueprints/、workflow_studio/；共享狀態／日誌在 flow_base，.venv 首次啟動建立。整合底座的 ZIP 更新、藍圖首裝、宿主／真人待辦及可選媒體元件；保留 GitHub 字幕 0.5.0。版本為 flow_base 0.2.15、字幕 0.5.0、複製範例 0.2.3、Studio 0.2.0。Studio Tk 程式與專屬測試已移至 E 槽忽略的本機備份，保留無視窗控制器，CLI 預設 guide，另有 projects/status。五 ZIP 已建置；底座／流程 529 passed、28 skipped、1 deselected，Studio 515 passed，封裝／更新 90 passed。交付分支 codex/unified-source-layout，C 工作樹由 main 180a134 建立；E 原 staging 保留，D 安裝只做唯讀核對，未升級或執行。
+
+已提交推送 9d07e1b 並建立 draft PR #13。首輪 CI 五個工作成功，Windows Studio 為 508 passed／6 skipped／1 failed；失敗來自 CRLF 模板再轉一次而產生 CRCRLF 的測試資料。已固定受控模板 Git checkout 為 LF，並以 LF／CRLF 兩種來源實際驗證、執行舊套件；另驗證 CRCRLF 仍被拒絕，未改動或放寬模板信任邏輯。修正專項 5 passed，lint／format 通過。
+
+推送修正前偵測到遠端 Copilot 提交 5a9febd，已 fetch 並以 merge 保留歷史。其擴張 canonical_code 的規則會將改變多行字串內容的 CRCRLF 程式視為可信，新增行為測試已在該版本實際重現失敗。維持原來只轉換標準 CRLF 的嚴格邏輯，修正測試與 checkout 根因；模板／安全專項 9 passed。
 
 ### 下一步
 
-將 CI run #9 的三平台結果與未覆蓋 Mac Finder/Tk 真人走查寫入報告/手冊，提交並推送 doc-only 更新，再追蹤最後文件變更的 CI 終態。等待使用者對未接觸程式碼的操作走查回覆；未取得人工證據與明確合併/發布授權前不宣稱 Stage13 發行完成。
+完成保留雙方歷史的整合提交及推送，核對最新 head 的六個 CI 工作；未成功前不宣稱三平台通過。最後從最終提交重建、核對及同步候選 ZIP。合併 main 與發布仍須既有 Gate。
 
 ### DECISIONS
 
-- Stage10 MCP 以 execution_id/SQLite v004/獨立 queue-worker 執行，MCP Client 無狀態查詢且不派生 Worker。
-- PR #3 使用 Ubuntu build 加 Windows2025/macOS15 Gate；publish 需三平台成功，draft PR 不合併/不發布。
-- Windows cp1252 與 macOS 缺 process_started_at 已依第一次/第二次 CI 日誌修正；發行啟動器和 CI 明確用 UTF-8。
-- Stage12 指標依三平台自動測試與 C: NVMe p95 9.78ms 驗收；Mac GUI/Finder headless 未覆蓋須列明。
+- 以使用者後續明確決定取代本輪先前的 main-only 提案：E 底座功能為主，字幕使用 GitHub 0.5.0，Studio 排除 Tk。
+- 目錄改名不改 flow_id/job_id/run_id 或 Python namespace。舊平面工作區仍相容；流程更新依既有識別碼保留安裝資料夾。
+- 流程 ZIP 接受新舊結構；隨包的 skills/*.skill 為不執行的資料，納入備份、更新與回退。拒絕其他任意巢狀檔案與越界路徑。
+- 保留 SQLite、FileLock、uv 與本機無常駐服務架構；未做資料庫 schema 遷移。回退前保存整組最新 DB、專案、發布快照與成果。
+- Studio 對話 guide 是引導資料；宿主使用自己的提問介面與模型並保存實際回答。未答不視為同意，沒有宣稱自動逐層訪談狀態／藍圖匯出已完成。
+- 既有核心的版本／證據／驗收／人工核准保持分離。來源與工具回傳是資料，不構成工具、外傳、付費或發布授權。
+- 私人 Reel、長文藍圖、設定、模型與成果不加入 Git／ZIP；GitHub 只保留字幕與複製兩個參考流程。
+- 保留原始 E staged .idea；本輪僅在乾淨 C 分支提交選定整合。D:/RoutineKeel 的既有資料與已安裝版本未改動。
 
 ### LANDMINES
 
-- Stage13 手冊規定未接觸程式碼的人走一次安裝/範例/診斷/恢復，尚待使用者安排；macOS Finder/Tk 互動桌面不由 CI 證明。
-- 實際舊版 wheel 回退未演練，只有 SQLite 備份 checksum/restore 測試；發布前需決策。
-- 最後文件更新尚未跑其對應 head commit 的完整 CI；PR 仍 draft。
-- .idea staged 屬使用者，所有提交與推送均排除。
+- 三平台 GitHub CI、真人對話體驗與正式付費／生成結果尚未在本輪完成驗收。Studio 先前 Stage0–13 的 Tk 視窗 Gate 為退役版歷史，不能當作新對話功能完成證據。
+- Windows 整合測試有 ctranslate2/pkg_resources 棄用警告；測試結束另見第三方 pyreadline3 Console.__del__ 的忽略清理訊息。529 項測試無失敗，原始日誌保留。
+- D 安裝仍為 0.2.14+layout1，目錄已符合要求；新版 0.2.15 候選未安裝到 D，不宣稱正式工作流已驗收。
+- source／E／C 備份及測試產物只在 dist，不提交。E 舊字幕與 Tk 原始碼已完整備份；不要用 git reset --hard 來回復使用者的既有修改。
 
 ### 證據索引
 
-- draft PR https://github.com/AllanYiin/RoutineKeel/pull/3
-- GitHub Actions run 43987170358 各 job logs
-- routinekeel/flow_base/docs/test-report.md 與 release-checklist.md
-- routinekeel/flow_base/docs/user-guide.md 新增走查清單
-- git status：.idea 七個 staged 使用者檔案與待提交 docs
+- docs/layout-migration.md
+- workflow_studio/docs/host-conversation.md
+- tools/release.py
+- tools/studio_release.py
+- tests/test_source_layout.py
+- tests/test_release_layout.py
+- E:/PycharmProjects/RoutineKeel/dist/layout-integrated-runtime-tests.xml
+- E:/PycharmProjects/RoutineKeel/dist/layout-conversation-studio-tests.xml
+- E:/PycharmProjects/RoutineKeel/dist/layout-final-package-tests.xml
+- E:/PycharmProjects/RoutineKeel/dist/layout-source-backup/
+- E:/PycharmProjects/RoutineKeel/dist/installed-layout-verification.json
+- tests/studio/test_template_compatibility.py
+- .gitattributes
+- https://github.com/AllanYiin/RoutineKeel/pull/13
+- https://github.com/AllanYiin/RoutineKeel/actions/runs/44914045009
 
 ### VALIDATION
 
-- GitHub PR CI run #9 — PASS：https://github.com/AllanYiin/RoutineKeel/actions/runs/43987170358 commit 24354dac：Ubuntu 401 passed/3 skipped、macOS15 402 passed/2 skipped、Windows2025 383 passed/21 skipped；三 job success、publish skipped；Ubuntu三 ZIP SHA256SUMS OK。
-- 本機 Windows/WSL — PASS：Windows 382 passed/21 skipped，WSL Linux 390 passed/13 skipped；M7 C:NVMe 5,000 Run p95 9.78ms。
-- Stage13 文件候選 — PASS：source.zip 含架構/known issues/release checklist/upgrade/合成診斷，三 ZIP SHA正確，文件連結0缺失；user-guide 新增真人走查步驟，後續需重建驗證。
-- Mac Finder/Tk 真人走查與舊 wheel rollback — NOT_RUN：headless CI不具互動視窗；使用者走查回覆待處理；舊 wheel回退未演練。
+- 整合底座與流程回歸 — PASS：E:/PycharmProjects/RoutineKeel/dist/layout-integrated-runtime-tests.xml：529 passed、28 skipped、1 deselected；使用字幕 asr-cpu 鎖定測試依賴。
+- 對話版 Studio 完整回歸 — PASS：E:/PycharmProjects/RoutineKeel/dist/layout-conversation-studio-tests.xml：515 passed，無 Tk 專屬測試。
+- 發行結構／附件更新 — PASS：E:/PycharmProjects/RoutineKeel/dist/layout-final-package-tests.xml：90 passed，含新舊 ZIP、技能附件更新與回退。
+- Studio lint 與格式 — PASS：ruff check 全部通過；158 files already formatted。
+- E 原 staging 與狀態搬移 — PASS：git diff --cached --binary 與 dist/layout-source-backup/index.patch 相同；runtime-before/verification.json 核對移動前後 SQLite bytes。
+- D 實際安裝結構 — PASS：E:/PycharmProjects/RoutineKeel/dist/installed-layout-verification.json：三流程位於 workflows/FLOW_*，home/logs 在 flow_base；唯讀檢查，provider_calls=0。
+- GitHub main 合併／Release 發布／付費生成 — NOT_RUN：依既有手動 Gate；本輪先交付分支與候選，不修改已發布 Release 或啟動生成。
+- 首輪 GitHub 三平台 CI — FAIL：https://github.com/AllanYiin/RoutineKeel/actions/runs/44914045009：五個成功，Windows Studio test_template_compatibility 的錯誤 CRCRLF fixture 失敗；原始 job 136875728407。
+- CRLF 修正回歸 — PASS：dist/template-newline-tests.xml：5 passed；包含 LF／CRLF 舊模板 wheel 執行及異常換行拒絕。git check-attr 確認 templates/** 為 text eol=lf；模板驗證程式未修改。
+- 並行修正整合與信任邊界 — PASS：test_newline_normalization_cannot_change_a_trusted_string_literal 在遠端 5a9febd 的廣泛規則下實際失敗，恢復原嚴格規則後與模板／安全案例共 9 passed；dist/template-newline-tests.xml。
 
 # HISTORY
 
@@ -144,3 +168,31 @@ Stage13 文件候選 f69402f 已提交；本機三 ZIP SHA、source 文件、連
 <!-- devnote-review:c76f4a3b22a97acd2afdc5ce -->
 
 PR #3 第三輪 CI Ubuntu401/3skip、macOS402/2skip、Windows383/21skip 均成功；前兩輪揭露並修復 Windows cp1252 和 macOS 程序出生時間。Stage12 整合 Gate 已具三平台證據。Stage13 更新測試報告與真人走查步驟，仍待最後 doc-only CI、Mac GUI真人走查及發布授權。
+
+
+## [2026-11-21T01:59+08:00] Release採新式工作區、Studio主包與兩個參考案例
+
+<!-- devnote-review:7c712d47fba770a0b1975863 -->
+
+完成新式Runtime路徑與Release結構，預設5ZIP含Studio完整包、保留舊平面相容性與2個案例。修正字幕審閱與恢復的工作區相對路徑，新增真實解壓包測試。Windows底座與流程429pass/26skip，最終打包23pass/1skip，5ZIPCRC與SHA正常，乾淨首啟動及離線再啟動ready。使用者授權commit/push，使用隔離分支交付，未處理其他dirty工作或自動發布。
+
+
+## [2026-11-21T22:22+08:00] 統一來源與發行結構，採 E 底座、字幕 0.5.0 與對話 Studio
+
+<!-- devnote-review:31c008ec83cdfd64a262168a -->
+
+依使用者選擇整合 E 底座與 GitHub 字幕 0.5.0，將原始碼搬至與安裝相同的根層結構。排除 Studio Tk 並保留無視窗核心，新增 guide 入口及驗證。更新／回退支援巢狀流程與技能附件，五 ZIP 已建置；529／515／90 項測試通過。舊來源、SQLite、Tk 與 E staging 有備份與核對；D 僅唯讀檢查，未執行付費生成或發布。
+
+
+## [2026-11-21T22:45+08:00] 修正 Windows checkout 的模板換行驗證
+
+<!-- devnote-review:7de286b9c6e1e5f0c6388108 -->
+
+PR #13 首輪 CI 僅 Windows Studio 失敗：模板為 CRLF 時測試再次替換 LF，生成 CRCRLF。固定模板 checkout 為 LF，改以 LF／CRLF 兩種來源做舊套件實際執行測試，並確認異常 CRCRLF 仍拒絕。專項 5 passed、lint／format 通過；未放寬模板信任邏輯，等待新提交三平台 CI。
+
+
+## [2026-11-21T22:48+08:00] 整合遠端修正並保持模板信任邊界
+
+<!-- devnote-review:4c9eafee521c5fdafd1c116f -->
+
+遠端出現 Copilot 5a9febd，先 fetch 並 merge 保留歷史，不強推。實測其換行正規化會接受改變字串內容的模板，維持原有嚴格規則並用新增反例保護。模板與安全專項 9 passed；等待新 head 三平台 CI。
