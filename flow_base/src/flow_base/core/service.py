@@ -75,6 +75,19 @@ class WorkflowService:
             src["graph"],_ = convert_linear(src)
         return resolve_graph(src["graph"],self.workspace.root,offline=offline)
 
+    def workflow_evolution(self, session_id, operation, payload=None):
+        from .. import evolution
+        from ..blueprints.source import require
+        require(payload is None or isinstance(payload,dict),"修訂參數須為物件")
+        params = dict(payload or {})
+        if operation == "propose":
+            return evolution.proposed(self, session_id, **params)
+        identity = params.pop("proposal_id", None)
+        state = evolution.current(evolution.root(self.workspace.runtime, identity))
+        require(state["session_id"] == session_id, "提案與工作識別碼不符")
+        if operation == "get":
+            return state
+        return evolution.change(self, identity, params.pop("expected_revision", None), operation, params)
 
     def workflow_quality(self,session_id,operation="preview",payload=None):
         from ..graph.session import GraphSession

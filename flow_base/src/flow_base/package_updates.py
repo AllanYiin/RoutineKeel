@@ -339,6 +339,11 @@ def apply_update(workspace, path, plan_hash, task_id=None):
             raise FlowError('WORKFLOW_UPDATE_CONFLICT', '附件或已安裝內容已變更；請重新預覽更新')
         if plan['status'] == 'already_current':
             return plan
+        installed_ir = safe_path(workspace,workspace.workflows_root / plan['folder'] / 'workflow.ir.json')
+        module = Manifest.model_validate_json(files['flow.json']).python_module
+        if module.startswith('rk_bp_') or 'workflow.ir.json' in files or installed_ir.is_file():
+            from .evolution import check_promotion
+            check_promotion(workspace, plan, files)
         update_id = 'update_' + uuid.uuid4().hex
         folder = safe_path(workspace, update_root(workspace) / update_id)
         target = safe_path(workspace, workspace.workflows_root / plan['folder'])

@@ -122,6 +122,10 @@ def create_server(workspace: Path | str):
         return result(lambda: service.cancel_workflow(execution_id))
 
     from .studio_tools import register
+    @server.tool()
+    def workflow_evolution(session_id: str, operation: str, payload: dict) -> dict:
+        """Propose a workflow revision from feedback, compare candidates or record a desktop decision."""
+        return result(lambda: service.workflow_evolution(session_id, operation, payload))
 
     @server.tool()
     def workflow_quality(session_id:str,operation:str="preview",payload:dict | None=None) -> dict:

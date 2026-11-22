@@ -83,6 +83,10 @@ def parser():
     c.add_argument('--intent', type=Path, required=True)
     c.add_argument('--execute', action='store_true')
     c.add_argument('--offline', action='store_true')
+    c = commands.add_parser('workflow-evolution', help='提出、比較與核准工作流修訂')
+    c.add_argument('session_id')
+    c.add_argument('operation', choices=['propose','get','prepare','export','compare','activate','reject','rollback'])
+    c.add_argument('--payload', type=Path, required=True)
     c = commands.add_parser('workflow-quality', help='預覽品質判定、保存回饋及版本化設定')
     c.add_argument('session_id')
     c.add_argument('operation', choices=['preview','feedback','history','save_profile','profiles'], nargs='?', default='preview')
@@ -402,6 +406,8 @@ def main(argv=None):
                       'execution': 'dispatch --intent intent.json --execute', 'policy': 'Select installed IDs and declared parameter_paths only; no generated code.'}
         elif command in {'doctor', 'diagnose', 'logs', 'explain-error', 'export-diagnostics'}:
             return diagnostic_command(workspace, args)
+        elif command == 'workflow-evolution':
+            result = service.workflow_evolution(args.session_id,args.operation,read_json(args.payload))
         elif command == 'workflow-quality':
             result=service.workflow_quality(args.session_id,args.operation,read_json(args.payload) if args.payload else {})
         elif command == 'resolve-blueprint':
