@@ -219,9 +219,13 @@ def verify(ws, key, resolution, cases):
     validation = {"policy_version": POLICY_VERSION, "status": "NOT_RUN"}
     try:
         if src.get("blueprint_schema_version") == 2:
+            from routinekeel_contracts.graph_trials import trial_case_gaps
+
             from ..graph.builder import build_graph
 
             plan, ir, registry, cases = build_graph(src, resolution, cases, ws.root)
+            gaps = trial_case_gaps(cases, ir["outputs"])
+            require(not gaps, "；".join(dict.fromkeys(gap["reason"] for gap in gaps)))
             capability_evidence = registry["bindings"]
             resolution = {**resolution, "bindings": capability_evidence}
             atomic_json(dest / "resolution.json", resolution)

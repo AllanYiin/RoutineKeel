@@ -12,6 +12,7 @@ import zipfile
 from pathlib import Path
 
 from filelock import FileLock
+from routinekeel_contracts.graph_trials import trial_case_gaps
 from routinekeel_contracts.graph_validator import validate_blueprint
 from routinekeel_contracts.paths import safe_relative
 from routinekeel_contracts.skill_files import check_skill_files
@@ -225,6 +226,10 @@ def prepare(
             f"流程含 {len(order)} 個節點；指定人工校閱：{reviews}。\n"
             "請檢視步驟、業務規則與驗收案例，可直接在對話確認整份設計或指出要修改的地方。"
         )
+        case_gaps = trial_case_gaps(summary["cases"], canonical["outputs"])
+        if case_gaps:
+            proposed["build_gaps"] = case_gaps
+            proposed["display_text"] += "\n已有設計案例描述，仍需補齊可執行案例才能試做。"
         proposed["proposal_id"] = digest(proposed)
         state["blueprint_proposal"] = proposed
         state["phase"] = "needs_confirmation"

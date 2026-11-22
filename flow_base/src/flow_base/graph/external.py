@@ -11,7 +11,7 @@ from ..outputs import reject_links
 from ..runtime import atomic_json, digest, read_json
 
 
-def scope_for(session_id, node_id, attempt, binding, values, configuration):
+def scope_for(session_id, node_id, attempt, binding, values, configuration, *, parameters=None):
     scope = {
         "session_id": session_id,
         "node_id": node_id,
@@ -25,6 +25,8 @@ def scope_for(session_id, node_id, attempt, binding, values, configuration):
         "arguments": values,
         "configuration_hash": digest(configuration),
     }
+    if parameters:
+        scope["parameters"] = parameters
     return scope, digest(scope)
 
 

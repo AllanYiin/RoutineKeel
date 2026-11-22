@@ -2,142 +2,49 @@
 
 ## SNAPSHOT — 當前狀態
 
-最後更新：2026-11-23T01:00+08:00
+最後更新：2026-11-23T02:10+08:00
 交接狀態：verified
 
 ### 目標與授權範圍
 
-完成 RK-NEXT Stage 0–16 本機交付，並依使用者授權按時序與主題整理本機 Git 提交。
+診斷 E:/RoutineKeel 的 Studio 字幕設計包安裝受阻，改善 Graph v2 建置預檢及 Studio 訪談效率。開發在 E:/PycharmProjects/RoutineKeel。
 
 ### 目前進度
 
-0.3.0 RC1 的實作、驗收與文件已整理為本機 Git 序列。實作收束於 ab36b4ff56f7，交接紀錄另為最後一筆。
+原 ZIP 匯入成功，隔離候選重現 19 個能力缺口及 5 個不可執行案例。開發版已支援受信宿主工具的節點參數、提前列出預檢缺口及批次保存訪談。已產出同版號的本機測試候選，E:/RoutineKeel 的既有安裝與藍圖未修改，原字幕藍圖仍未安裝。
 
 ### 下一步
 
-以同一 SHA-256 的 RC1 做最後真人走查；macOS 與遠端 CI 待驗收，遠端推送與發布另行授權。
+實作並觀測 course_subtitle 節點的本機工具，保留原時間軸、低音量清空及首版先交付規則。補齊五組可執行案例並在隔離候選試做。原 0.3.0 RC1 的真人、macOS 及遠端 CI 驗收仍依原約定。
 
 ### DECISIONS
 
-- 以 01_Technical_Spec.md 和 03_Codex_Stages.md 為準，兩份 SHA-256 已保存。
-- 採用目前 E 工作樹。隔離候選封裝，保留既有 dist/release 正式產物。
-- 桌面對話是回覆來源。使用者原文、問題與專案版本共同保存；不要求口令或獨立終端。只有重要業務判斷、指定校閱或授權點需要真人決定。
-- 依使用者指示限本機驗證；macOS 與遠端 CI 保留待驗收。
-- 非技術使用者本人在桌面對話的走查，依指定排至最後與候選包一起驗收。
-- 依使用者決定一併清理全庫既有 Ruff 診斷，清理後重新完整驗收。
-- 本機驗收候選底座與 Studio 設為 0.3.0，字幕 0.5.1、複製 0.2.4、媒體 0.1.1。候選包完整 SHA-256 為 205f36ebce995feee0c3bc9fcb83aaf7ddf50ae81ad16540f9fb2e7b73b4dc6c。
-- 提交沿用 codex/workflow-zip-updates 分支，依階段封裝快照建立主題序列，保留實際提交時間、原有分支歷史及個人 IDE 暫存內容。
+- 以原始 E:/RoutineKeel 藍圖 ZIP SHA-256 3a15c64c549f0092edeaa217dbaa655e93f9143076575d4408d3fa898785c916 重現，保留其業務規則。
+- 相互獨立的題目同一輪提問，一則真實回覆在同一版本原子保存，未作答項保留現況。
+- 節點 parameters 由受信清冊的 parameters_schema 驗證，與輸入一起綁定授權、識別碼與派送。
+- 候選建在獨立 dist 目錄。原 RC1 SHA-256 205f36ebce995feee0c3bc9fcb83aaf7ddf50ae81ad16540f9fb2e7b73b4dc6c 與正式 dist/release 產物保留。
 
 ### LANDMINES
 
-- 已產出的 RC1 是建置後按 SHA-256 驗收的本機候選。新的 Git 提交時間與套件內紀錄的建置來源時間不同。
-- 真人、macOS、遠端 CI 與正式發布仍依原先約定辦理。
+- 目標字幕工作流尚缺 19 個可執行能力及真實字幕驗收素材，FFmpeg 與 Ollama 的安裝不等於能力清冊。
+- E:/RoutineKeel/workflow_studio 缺 runtime 子資料夾與隔離環境。候選啟動器首次下載 CPython 解包受 Windows sandbox 限制，預置同版既有 CPython 後成功。
+- 無資料庫遷移。需回退時捨棄本機候選與本輪程式差異，沿用既有 RC1。保留個人 IDE 暫存。
 
 ### 證據索引
 
-- docs/specs/rk-next-baseline.md
-- dist/v122-stage0-runtime.xml
-- dist/v122-stage0-studio.xml
-- dist/v122-stage0-posix.xml
-- dist/v122-stage0-denoise.xml
-- dist/v122-stage0-candidate-layout.xml
-- dist/v122-stage1-install.xml
-- dist/v122-stage1-v1-final.xml
-- dist/v122-stage1-studio.xml
-- dist/v122-stage1-final-layout.xml
-- dist/v122-stage1-posix.xml
-- docs/specs/blueprint-graph-v2.md
-- dist/v122-stage2-contract.xml
-- dist/v122-stage2-studio.xml
-- dist/v122-stage2-graph-final.xml
-- dist/v122-stage3-final.xml
-- tests/studio/test_studio_interviews.py
-- dist/v122-stage4-facade.xml
-- dist/v122-stage4-mcp.xml
-- dist/v122-stage4-cold-start.json
-- dist/v122-stage4-runtime-full.xml
-- dist/v122-stage4-regression-fixes.xml
-- dist/v122-stage4-coverage.json
-- dist/v122-stage4-chat-facade.xml
-- dist/v122-stage4-chat-mcp.xml
-- dist/v122-review-points.xml
-- dist/v122-stage2-v21.xml
-- dist/v122-stage5-export-final.xml
-- dist/v122-stage5-import.xml
-- workflow_studio/src/workflow_studio/conversation/blueprints.py
-- blueprints/README.md
-- dist/v122-stage6-final.xml
-- dist/v122-stage6-registry.xml
-- dist/v122-stage6-final-observation.xml
-- dist/v122-stage7-builder-final.xml
-- dist/v122-stage7-canonical.xml
-- dist/v122-stage7-compat-final.xml
-- dist/v122-stage7-legacy.xml
-- dist/v122-stage8-scheduler.xml
-- dist/v122-blueprint-boundary.xml
-- tests/test_graph_scheduler.py
-- dist/v122-stage9-graph.xml
-- dist/v122-stage9-branches.xml
-- dist/v122-stage9-composite.xml
-- dist/v122-stage10-receipts.xml
+- dist/candidate-rk-next-studio-install-diagnostics/windows-cli-smoke.json
+- dist/candidate-rk-next-studio-install-diagnostics/release/SHA256SUMS
+- workflow_studio/docs/host-conversation.md
+- flow_base/docs/blueprint-install.md
 - tests/test_graph_review_external.py
-- dist/v122-stage10-confirmed.xml
-- dist/v122-stage10-scope-final.xml
-- dist/v122-stage10-profile.xml
-- dist/v122-stage11-all.xml
-- dist/v122-stage11-completion.xml
-- dist/v122-stage11-llm.xml
-- tests/test_graph_iterations.py
-- dist/v122-stage12-verified.xml
-- dist/v122-stage12-review-final.xml
-- dist/v122-stage12-final.xml
-- tests/test_quality_feedback.py
-- flow_base/docs/graph-quality.md
-- dist/v122-stage13-evolution-final.xml
-- dist/v122-stage13-verified-updates.xml
-- dist/v122-stage13-studio.xml
-- flow_base/docs/workflow-evolution.md
-- dist/v122-stage14-verified.xml
-- flow_base/src/flow_base/core/agent.py
-- docs/test-report-next.md
-- dist/v122-stage15-ruff-final.json
-- dist/v122-stage15-golden.xml
-- dist/v122-stage15-runtime-coverage.json
-- dist/v122-stage15-studio-windows-coverage.json
-- dist/v122-stage15-cold-mcp.json
-- docs/specs/README.md
-- dist/v122-stage16-all-cases.json
-- dist/v122-stage16-delivery-proof.json
-- dist/v122-stage16-package-accept.json
-- dist/candidate-rk-next-0.3.0-rc1/ACCEPTANCE.md
-- git log --first-parent --reverse ad8dbcb9f141..HEAD
-- git show --stat ab36b4ff56f7
+- tests/studio/test_studio_interviews.py
 
 ### VALIDATION
 
-- Windows 底座與工作流 — PASS：531 passed；28 個條件 skip 另由 WSL 21 passed 和 demucs-cpu 7 passed 補齊。
-- Studio 完整套件 — PASS：519 passed in 852.04s；Ruff check 與 158 個檔案 format 通過。
-- 隔離封裝、資料庫與來源契約 — PASS：5 ZIP，APSM strict Valid: YES；候選布局 13 passed、基線及資料庫 17 passed。
-- Stage 1 安裝、Studio、發行與啟動器 — PASS：80、19、30、15、21 個相關測例分組通過；另在拋棄式發行環境由 start_studio.ps1 --prepare-only 確認兩個實際環境可運作。
-- Stage 2 Graph、v1、Studio IR — PASS：31 項 Graph/v1/安裝回歸、26 項 Studio IR；最終固定排序後的 15 項 Graph 專項全部通過。
-- Stage 3 訪談與專案回歸 — PASS：41 passed in 17.01s；v14 備份唯讀驗證，回復至空目錄，工作區中未遷移個人資料。
-- Stage 4 對話、MCP、冷啟動 — PASS：對話 18 passed；MCP 6 passed；候選 ZIP 15 passed；包內 Runtime 透過 Studio 啟動器的隔離環境跨程序建立及續編。
-- 完整回歸與補測逐案覆蓋 — PASS：修復後 552 passed、30 條件略過由 WSL 23 與音訊 7 全部補驗；Studio 全套 529 passed。當時逐案覆蓋 583/583、530/530。
-- 桌面對話與關鍵校閱 — PASS：新版對話專項 19 passed、實際 MCP 6 passed；四步流程無校閱 0 次、交付前校閱 1 次。
-- Stage 5 匯出、匯入與回歸 — PASS：匯出／訪談／來源安全 24 passed；v1 安裝、Graph 與 MCP 33 passed。含另一程序使用真實底座 importer 比對。
-- Stage 6 可用性與權限 — PASS：能力／v1安裝／MCP 34 passed，Studio registry 23 passed，最新能力與診斷專項 12 passed。實際 tools/list 無副作用。
-- Stage 7 正式安裝路線 — PASS：Builder、舊安裝及套件更新 93 passed；Studio 編譯、發布及回復 36 passed；追加 canonical 與相容性組分別 17、24 passed。
-- Stage 8 DAG 與藍圖執行邊界 — PASS：Scheduler、Builder 及 v1 工作回歸 25 passed。原始設計 ZIP 與候選 wheel、正式工作區無安裝的專項 2 passed。
-- Stage 9 分支與匯合 — PASS：Graph 分支、Scheduler、Builder 與契約 30 passed；追加回修分支專項 5 passed；既有 Composite Branch 6 passed。
-- Stage 10 對外操作與回執 — PASS：修正隔離計畫的清冊傳遞後，19 項 Graph／v1／回復測試全過；最後實際候選、核准與回執專項 5 passed。重用設定檔仍須同意新一輪對外操作，1 passed。
-- Stage 11 有界迭代 — PASS：最終迭代專項 17 passed；迭代／圖契約／排程組 36 passed，既有 LLM 與 Composite Branch 11 passed。
-- Stage 12 品質、原子交付、舊資料與回饋 — PASS：品質／遷移／交付／Builder 67 passed；MCP、真人校閱及回執 32 passed；最後品質專項 6 passed。
-- Stage 13 版本比較及回滾 — PASS：演進 4、底座更新與 MCP 83、Studio 既有回歸 104、模型串流 29、設定及品質 7 通過，全部無跳過。候選 wheel 的四個 evolution 模組逐檔符合工作樹。
-- Stage 14 Agent、MCP、CLI 與 Service — PASS：v122-stage14-verified.xml 22 passed，無跳過。
-- Stage 15 靜態與初驗 — PASS：全庫 Ruff、Studio CI lint/format、初驗 E2E/故障 11、WSL POSIX 23、demucs-cpu 7。完整功能測試另行重跑。
-- Stage 15 整合與補測總驗收 — PASS：Runtime 656/656，Studio 534/534，Windows 的 13 項 Studio 回放重測全過；Linux Studio 528 pass/6 skip 已另以 Windows 補跑。
-- Stage 16 候選包與回退 — PASS：106 項底座、31 項 Studio 發行回歸全過；五 ZIP、六 wheel、66 份原始碼文件／52 份包內文件，冷啟動、stdio 重連與實際升降版通過。
-- 本機提交分組與候選交付 — PASS：分組後的產品及測試檔案對應原工作樹 Git blob；核對 268 份歷史 Python 檔案修訂語法，全庫 Ruff 及候選交付 3 項測試本輪重跑通過。RC1 全套測例沿用既有驗收紀錄。
+- 底座、MCP、Studio 整合與安裝回歸 — PASS：63 passed。另將宿主參數試做測例擴至正式安裝，在臨時測試工作區重跑 1 passed。
+- Studio 專項與候選封裝 — PASS：Studio 31 passed。ROUTINEKEEL_TEST_RELEASE_DIR 指向新候選的封裝測試 15 passed。
+- 實際安裝包與原始字幕藍圖 — PASS：包內雙隔離環境建立成功。包內 CLI 匯入原始 ZIP，預檢 19 個能力、5 個案例受阻，兩筆回答一次保存，未答仍未知。
+- 目標字幕藍圖正式安裝及真實影片端到端 — BLOCKED：缺少本機工具實作及可執行案例，E:/RoutineKeel 維持原狀。
 
 # HISTORY
 
@@ -643,3 +550,10 @@ Windows 及 WSL 實測逐一核對 1,190 個唯一測例，補驗逾時與所有
 <!-- devnote-review:149dc347e10aaa25a281f0a0 -->
 
 以 ad8dbcb9f141 為原分支起點，保留 a14b9afd7ab2 的工作區重整歷史，按已保存的階段原始碼、功能依賴與驗收文件分組，共 13 筆整合與實作提交，交接另立一筆。比對入庫原始碼與工作樹、重驗 Ruff 及 3 項候選交付測試。7 個原有暫存 IDE 檔案另留暫存區。
+
+
+## [2026-11-23T02:10+08:00] Studio 批次訪談與字幕藍圖預檢
+
+<!-- devnote-review:a476a6927c9dd479d6c642cd -->
+
+從既有 E:/RoutineKeel 安裝取得原始 ZIP 與對話證據。修復宿主節點參數支援與批次訪談，補建置預檢及可執行案例檢查。候選可匯入原 ZIP 並清楚診斷剩餘缺口。原設計聊天 7 輪合計約 16 分 53 秒，68 次命令合計約 1 分 37 秒。

@@ -87,6 +87,10 @@ class WorkflowService:
         if "graph" not in src:
             from ..graph.source import convert_linear
             src["graph"],_ = convert_linear(src)
+        if src.get("blueprint_schema_version") == 2:
+            from ..graph.builder import preflight_graph
+
+            return preflight_graph(src["graph"], self.workspace.root, offline=offline)
         return resolve_graph(src["graph"],self.workspace.root,offline=offline)
 
     def workflow_evolution(self, session_id, operation, payload=None):

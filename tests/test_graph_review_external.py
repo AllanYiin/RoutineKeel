@@ -8,10 +8,12 @@ from test_graph_builder import data_graph
 from test_graph_scheduler import setup
 
 
-def external_job(root, catalog):
+def external_job(root, catalog, *, parameters=None, schema=None):
     graph = data_graph()
     send = graph["nodes"][1]
     send.update(capability="test-sink", side_effect="external", permissions=["send"])
+    if parameters is not None:
+        send["parameters"] = parameters
     graph.update(nodes=[send], outputs={"receipt": "artifact://copy/result"})
     data = json.loads(catalog.read_bytes())
     port = {"type": "string", "required": True}
@@ -22,6 +24,8 @@ def external_job(root, catalog):
         permissions=["send"],
         resources={"cost_micro_usd": 0},
     )
+    if schema is not None:
+        data["tools"]["test-sink"]["parameters_schema"] = schema
     catalog.write_text(json.dumps(data))
     rt, plan, bindings = setup(root, graph)
     view = GraphSession.begin(rt, plan, {"inputs": {"text": "fixture only"}}, root, bindings)
@@ -100,6 +104,48 @@ def test_decline_never_dispatches_and_stale_reply_cannot_reverse_it(tmp_path, de
         session.interact("authorize", approval(view))
 
 
+def test_tool_parameters_are_validated_and_bound_to_authorization_and_dispatch(
+    tmp_path, desktop_test_catalog
+):
+    params = {"keep_timeline": True}
+    schema = {
+        "type": "object", "properties": {"keep_timeline": {"type": "boolean"}},
+        "required": ["keep_timeline"], "additionalProperties": False,
+    }
+    session, view = external_job(tmp_path, desktop_test_catalog, parameters=params, schema=schema)
+    assert view["pending"]["scope"]["parameters"] == params
+    with pytest.raises(FlowError):
+        session.interact("authorize", {**approval(view), "payload_hash": "changed"})
+    approved = session.interact("authorize", approval(view))
+    result = session.interact("claim", {
+        "task_id": approved["pending"]["id"],
+        "revision": approved["revision"],
+        "request_id": "claim",
+    })
+    assert result["dispatch"]["arguments"] == {"source": "fixture only"}
+    assert result["dispatch"]["parameters"] == params
+
+
+@pytest.mark.parametrize("schema", [None, {"type": "object", "maxProperties": 0},
+                                  {"type": "object", "$ref": "https://example.invalid/schema"}])
+def test_parameters_need_a_matching_local_schema(tmp_path, desktop_test_catalog, schema):
+    from flow_base.graph.capabilities import resolve_graph
+
+    graph = data_graph()
+    node = graph["nodes"][1]
+    node.update(capability="test-sink", side_effect="external", permissions=["send"],
+                parameters={"keep_timeline": True})
+    record = json.loads(desktop_test_catalog.read_bytes())
+    port = {"type": "string", "required": True}
+    record["tools"]["test-sink"].update(
+        inputs={"source": port}, outputs={"result": port}, parameters_schema=schema
+    )
+    desktop_test_catalog.write_text(json.dumps(record))
+    resolved = resolve_graph(graph, tmp_path, offline=True)
+    assert resolved["status"] == "blocked"
+    assert resolved["gaps"][0]["code"] == "CAPABILITY_UNAVAILABLE"
+
+
 def test_v1_actor_field_alone_cannot_grant_a_later_external_action(tmp_path, desktop_test_catalog):
     from test_blueprint_install import apply, candidate
 
@@ -129,7 +175,10 @@ def test_trial_external_receipts_remain_inside_test_environment(tmp_path, deskto
 
     graph = data_graph()
     node = graph["nodes"][1]
-    node.update(capability="test-sink", side_effect="external", permissions=["send"])
+    node.update(
+        capability="test-sink", side_effect="external", permissions=["send"],
+        parameters={"keep_timeline": True},
+    )
     graph.update(nodes=[node], outputs={"receipt": "artifact://copy/result"})
     graph["quality_contract"]["golden_cases"] = [
         {
@@ -144,10 +193,18 @@ def test_trial_external_receipts_remain_inside_test_environment(tmp_path, deskto
     catalog = json.loads(desktop_test_catalog.read_bytes())
     port = {"type": "string", "required": True}
     catalog["tools"]["test-sink"].update(
-        inputs={"source": port}, outputs={"result": port}, network=True
+        inputs={"source": port}, outputs={"result": port}, network=True,
+        parameters_schema={
+            "type": "object", "properties": {"keep_timeline": {"const": True}},
+            "required": ["keep_timeline"], "additionalProperties": False,
+        },
     )
     desktop_test_catalog.write_text(json.dumps(catalog))
     service, key, resolution = import_graph(tmp_path, graph)
     record = service.install_workflow(draft_id=key, resolution=resolution)
     assert record["status"] == "verified" and record["evidence"]["provider_calls"] == 0
+    installed = service.install_workflow(
+        draft_id=key, build_id=record["build_id"], install_hash=record["install_hash"]
+    )
+    assert installed["status"] == "installed"
     assert not (desktop_test_catalog.parent / "receipts").exists()

@@ -116,6 +116,9 @@ def test_desktop_design_export_and_builder_use_same_graph_and_receipt(tmp_path):
             "design": {"rules": "保留原文"},
         },
     )
+    assert proposal["build_preflight"] == {
+        "status": "ready", "capability_gaps": [], "build_gaps": []
+    }
     exported = studio_request(
         tmp_path,
         "export_blueprint",
@@ -137,3 +140,25 @@ def test_desktop_design_export_and_builder_use_same_graph_and_receipt(tmp_path):
     )
     source = svc.install_workflow(draft_id=draft["draft_id"])["source"]
     assert build["builder_receipt"]["graph_hash"] == fingerprint(source["graph"])
+
+
+def test_preflight_reports_both_unbound_tools_and_description_only_trials(tmp_path):
+    graph = data_graph()
+    graph["nodes"][0].update(capability="unregistered", parameters={"keep_timeline": True})
+    graph["quality_contract"]["golden_cases"] = ["保留來源時間軸"]
+    service, key, _ = import_graph(tmp_path, graph)
+    report = service.resolve_blueprint_capabilities(key)
+    assert report["build_status"] == "blocked"
+    assert [gap["node"] for gap in report["gaps"]] == ["upper"]
+    assert [(gap["code"], gap["case"]) for gap in report["build_gaps"]] == [
+        ("TRIAL_CASE_NOT_EXECUTABLE", 1)
+    ]
+
+    graph["nodes"][0].update(capability="text.upper", parameters={})
+    service, key, resolution = import_graph(tmp_path, graph)
+    assert service.resolve_blueprint_capabilities(key)["status"] == "ready"
+    with pytest.raises(FlowError) as error:
+        service.install_workflow(draft_id=key, resolution=resolution)
+    assert "inputs" in error.value.details["reason"]
+    build = service.install_workflow(draft_id=key)["builds"][0]
+    assert build["status"] == "blocked" and build["validation"]["status"] == "NOT_RUN"

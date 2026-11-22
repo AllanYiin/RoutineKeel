@@ -245,6 +245,7 @@ class GraphSession(Session):
         if kind in {"authorize_external", "host", "external"}:
             from .external import scope_for
 
+            parameters = node.get("parameters")
             scope, scope_hash = scope_for(
                 self.id,
                 node["id"],
@@ -252,11 +253,12 @@ class GraphSession(Session):
                 state["bindings"][node["id"]],
                 values,
                 state["config"],
+                parameters=parameters,
             )
             task.update(
                 scope=scope,
                 scope_hash=scope_hash,
-                payload_hash=digest(values),
+                payload_hash=digest([values, parameters]) if parameters else digest(values),
                 idempotency_key=digest([self.id, node["id"], record["attempt"], scope_hash]),
                 claim_required=kind in {"external", "host"},
                 claimed=False,
@@ -304,7 +306,9 @@ class GraphSession(Session):
         record.update(
             status="running",
             attempt=record["attempt"] + (0 if loop_node and "loop" in record else 1),
-            inputs_hash=digest([values, tested]),
+            inputs_hash=digest([values, tested, node["parameters"]])
+            if node.get("parameters")
+            else digest([values, tested]),
         )
         self.checkpoint(
             state, key, "running", attempt=record["attempt"], inputs_hash=record["inputs_hash"]
@@ -708,6 +712,11 @@ class GraphSession(Session):
                 "dispatch": {
                     "tool": task["scope"]["tool"],
                     "arguments": task["inputs"],
+                    **(
+                        {"parameters": task["scope"]["parameters"]}
+                        if "parameters" in task["scope"]
+                        else {}
+                    ),
                     "idempotency_key": task["idempotency_key"],
                     "scope_hash": task["scope_hash"],
                 },

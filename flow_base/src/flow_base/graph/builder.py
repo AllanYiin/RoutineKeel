@@ -1,10 +1,27 @@
 """Build a plan from validated graph symbols and independently resolved contracts."""
 
+from routinekeel_contracts.graph_trials import trial_case_gaps
 from routinekeel_contracts.graph_validator import validate_blueprint
 
 from ..blueprints.source import require
 from ..runtime import FlowError, digest
 from .capabilities import resolve_graph
+
+
+def preflight_graph(graph, workspace, *, offline=False):
+    resolved = resolve_graph(graph, workspace, offline=offline)
+    cases = graph["quality_contract"].get("golden_cases")
+    build_gaps = trial_case_gaps(cases, graph["outputs"])
+    build_gaps.extend(
+        {"code": "GRAPH_UNSUPPORTED", "node": key, "reason": "Graph Builder 尚未支援此原生能力。"}
+        for key, binding in resolved["bindings"].items()
+        if binding["provider"] == "native"
+    )
+    return {
+        **resolved,
+        "build_status": "blocked" if resolved["gaps"] or build_gaps else "ready",
+        "build_gaps": build_gaps,
+    }
 
 
 def build_graph(source, requested, cases, workspace):
@@ -39,8 +56,6 @@ def compile_plan_tree(graph, source_hash, workspace, resolved):
         for n in graph["nodes"]
     ):
         raise FlowError("GRAPH_UNSUPPORTED", "此執行版本尚不支援所選控制節點或工具。")
-    if any(n.get("parameters") for n in graph["nodes"]):
-        raise FlowError("GRAPH_UNSUPPORTED", "內建純資料工具只接受已宣告的輸入埠。")
     bindings = resolved["bindings"]
     dependencies = {}
     _, order = validate_blueprint(graph, dependencies=dependencies)

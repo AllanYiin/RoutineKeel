@@ -7,6 +7,10 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import SchemaError
+from referencing import Registry
+from referencing.exceptions import Unresolvable
 from routinekeel_contracts.graph import ForEach, GraphPort, Repeat, Task
 from routinekeel_contracts.graph_validator import compatible, validate_blueprint
 
@@ -86,6 +90,7 @@ def plan_probe_catalog(workspace, task_id, destination):
         "network",
         "inputs",
         "outputs",
+        "parameters_schema",
         "resources",
         "kind",
         "distribution",
@@ -165,6 +170,8 @@ def resolve_task(node, workspace, *, offline=False):
     if node.side_effect == "unresolved":
         unavailable("請先釐清此能力的副作用。")
     if node.capability in BUILTINS:
+        if node.parameters:
+            raise FlowError("GRAPH_UNSUPPORTED", "此內建工具只接受已宣告的輸入埠。")
         if node.capability_version != "1" or node.permissions or node.side_effect != "none":
             unavailable("內建工具版本、權限或副作用宣告不符。")
         if len(node.inputs) != 1 or len(node.outputs) != 1:
@@ -215,6 +222,18 @@ def resolve_task(node, workspace, *, offline=False):
             )
         }
         description.update(provider="desktop_host", tool=node.capability)
+        schema = record.get("parameters_schema")
+        if node.parameters or schema is not None:
+            if not isinstance(schema, dict) or schema.get("type") != "object":
+                unavailable("工具未宣告節點參數契約。")
+            try:
+                Draft202012Validator.check_schema(schema)
+                valid = Draft202012Validator(schema, registry=Registry()).is_valid(node.parameters)
+            except (SchemaError, Unresolvable, ValueError, TypeError, RecursionError):
+                unavailable("宿主的節點參數契約無效。")
+            if not valid:
+                unavailable("節點參數與宿主工具契約不符。")
+            description["parameters_schema"] = schema
         if record.get("kind") == "native":
             from ..blueprints.recipe import local_operations
 

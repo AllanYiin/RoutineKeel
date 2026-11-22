@@ -260,6 +260,34 @@ class Interviews:
         confidence=None,
         user_reply=None,
     ):
+        data = self.answer_data(
+            expected_revision,
+            request_id,
+            domain,
+            value,
+            status=status,
+            evidence_refs=evidence_refs,
+            impact=impact,
+            confidence=confidence,
+            user_reply=user_reply,
+        )
+        return self._save_answers(
+            project_id, expected_revision, request_id, data, [(data, user_reply)]
+        )
+
+    @staticmethod
+    def answer_data(
+        expected_revision,
+        request_id,
+        domain,
+        value,
+        *,
+        status="inferred",
+        evidence_refs=(),
+        impact="business",
+        confidence=None,
+        user_reply=None,
+    ):
         if domain not in DOMAINS or status not in {"inferred", "defaulted", "blocked", "confirmed"}:
             reject("訪談領域或回答狀態無效。")
         if (
@@ -314,28 +342,32 @@ class Interviews:
         }
         if user_reply is not None and user_reply.user_text is not None:
             data.update(origin="desktop_conversation", user_text=user_reply.user_text)
+        return data
 
+    def _save_answers(self, project_id, expected_revision, request_id, parameters, answers):
         def edit(db, state):
-            if status == "confirmed" and state["session_id"] != user_reply.session_id:
-                raise StudioError("USER_CONFIRMATION_REQUIRED", "回覆屬於其他訪談。")
             if state["phase"] == "paused":
                 raise StudioError("INTERVIEW_PAUSED", "請先恢復訪談。")
             items = state["coverage"]
-            old = items[domain]
-            if old["revision"] and (
-                old["value"] != value or old["status"] == "confirmed" and status != "confirmed"
-            ):
-                invalidate(db, state, domain, expected_revision + 1)
-            items[domain] = {**data, "revision": expected_revision + 1}
-            if domain in {"goal", "success"}:
-                goal = self.projects.get(project_id).goal
-                goal["description" if domain == "goal" else "success_criteria"] = value
-                db.execute(
-                    "UPDATE studio_projects SET goal_json=? WHERE project_id=?",
-                    (canonical_json(goal), project_id),
-                )
-            if domain == "cases" and status == "confirmed":
-                state["stale_cases"] = []
+            for data, user_reply in answers:
+                domain, status, value = data["domain"], data["status"], data["value"]
+                if status == "confirmed" and state["session_id"] != user_reply.session_id:
+                    raise StudioError("USER_CONFIRMATION_REQUIRED", "回覆屬於其他訪談。")
+                old = items[domain]
+                if old["revision"] and (
+                    old["value"] != value or old["status"] == "confirmed" and status != "confirmed"
+                ):
+                    invalidate(db, state, domain, expected_revision + 1)
+                items[domain] = {**data, "revision": expected_revision + 1}
+                if domain in {"goal", "success"}:
+                    goal = self.projects.get(project_id).goal
+                    goal["description" if domain == "goal" else "success_criteria"] = value
+                    db.execute(
+                        "UPDATE studio_projects SET goal_json=? WHERE project_id=?",
+                        (canonical_json(goal), project_id),
+                    )
+                if domain == "cases" and status == "confirmed":
+                    state["stale_cases"] = []
             state["phase"] = (
                 "ready_to_export"
                 if all(
@@ -348,7 +380,7 @@ class Interviews:
                 else "needs_confirmation"
             )
 
-        return self._change(project_id, expected_revision, request_id, data, edit)
+        return self._change(project_id, expected_revision, request_id, parameters, edit)
 
     def pause(self, project_id, expected_revision, request_id, *, resume=False):
         def edit(db, state):

@@ -1,6 +1,6 @@
 # Workflow Studio：對話內工作流設計
 
-在 Codex／Claude Code 對話讀取本目錄 AGENTS.md，從一句任務開始，由宿主逐層草擬、反問、修正與確認。
+在 Codex／Claude Code 對話讀取本目錄 AGENTS.md，從一句任務開始。宿主可合併相關問題，讓使用者一次修正並確認設計草案。
 本版本保留專案、來源、版本、合約、編譯及驗證核心，排除 Tk 桌面版及其啟動器。
 
 操作見 [對話內引導](docs/host-conversation.md)。CLI 預設 `guide`，另有 `projects`、`status`；不開原生視窗、不自動呼叫模型。

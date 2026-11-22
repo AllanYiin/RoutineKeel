@@ -94,6 +94,31 @@ def next_question(state, domain=None):
     }
 
 
+def next_questions(state, domains=None):
+    first = next_question(state)
+    if "question_id" not in first:
+        return {**first, "questions": []}
+    if domains is None:
+        priorities = ("inputs", "outputs", "rules", "review", "preferences", *DOMAINS)
+        domains = [
+            key
+            for key in dict.fromkeys(priorities)
+            if state["coverage"][key]["status"] in {"unknown", "inferred"}
+        ][:5] or [first["domain"]]
+    if (
+        not isinstance(domains, list)
+        or not domains
+        or any(not isinstance(k, str) or k not in DOMAINS for k in domains)
+        or len(set(domains)) != len(domains)
+    ):
+        raise StudioError("INPUT_INVALID", "請提供不同的訪談領域。")
+    return {
+        **{key: first[key] for key in ("project_id", "session_id", "revision", "phase", "counts")},
+        "questions": [next_question(state, key) for key in domains],
+        "next_actions": ["reply_batch", "pause", "status"],
+    }
+
+
 def stream_text(deltas):
     """Forward genuine host/provider deltas; aborted streams have no completion event."""
     for index, text in enumerate(deltas):
@@ -101,6 +126,55 @@ def stream_text(deltas):
             raise StudioError("INPUT_INVALID", "串流事件須提供文字片段。")
         yield {"event": "delta", "sequence": index, "text": text}
     yield {"event": "completed"}
+
+
+def check_user_text(user_text):
+    if not isinstance(user_text, str) or not user_text.strip() or len(user_text) > 65536:
+        raise StudioError("INPUT_INVALID", "需要使用者在對話中實際送出的回覆文字。")
+
+
+def reply_state(studio, project_id, expected_revision):
+    state = studio.interviews.get(project_id)
+    if state["revision"] != expected_revision:
+        # A retry must resolve against the same displayed proposal.
+        rows = studio.interviews.history(project_id)
+        previous = next((s for s in reversed(rows) if s["revision"] <= expected_revision), None)
+        if previous is None:
+            raise StudioError("REVISION_CONFLICT", "請重新取得目前的問題。")
+        state = {**previous, "revision": expected_revision}
+    return state
+
+
+def chat_answer(
+    state, request_id, user_text, ref, domain, question_id, response_kind="answer", answer_text=None
+):
+    if response_kind not in {"answer", "accept_proposal", "decline", "defer"}:
+        raise StudioError("INPUT_INVALID", "無法辨識這次回覆的用途。")
+    question = next_question(state, domain)
+    if not question_id or question.get("question_id") != question_id:
+        raise StudioError("REVISION_CONFLICT", "回覆所對應的問題或草稿已變更。")
+    if answer_text is None:
+        answer_text = user_text
+    if not isinstance(answer_text, str) or not answer_text.strip() or answer_text not in user_text:
+        raise StudioError("INPUT_INVALID", "答案須引用使用者回覆中的原文。")
+    if response_kind in {"decline", "defer"}:
+        return {"value": answer_text, "status": "blocked", "evidence_refs": [ref]}
+    value = (
+        question["suggested_answer"]
+        if response_kind == "accept_proposal"
+        else ([answer_text] if domain == "success" else answer_text)
+    )
+    reply = UserReply(
+        value, ref, state["session_id"], domain, state["revision"], request_id, user_text
+    )
+    return {"value": value, "status": "confirmed", "user_reply": reply}
+
+
+def message_reference(message_ref, request_id):
+    ref = message_ref if message_ref is not None else f"chat-reply/{request_id}"
+    if not isinstance(ref, str) or not ref.strip():
+        raise StudioError("INPUT_INVALID", "對話訊息參照無效。")
+    return ref
 
 
 def record_chat_reply(
@@ -116,51 +190,53 @@ def record_chat_reply(
     message_ref=None,
 ):
     """Trust the desktop host to relay a distinct user turn, retaining its actual words."""
-    if not isinstance(user_text, str) or not user_text.strip() or len(user_text) > 65536:
-        raise StudioError("INPUT_INVALID", "需要使用者在對話中實際送出的回覆文字。")
-    if response_kind not in {"answer", "accept_proposal", "decline", "defer"}:
-        raise StudioError("INPUT_INVALID", "無法辨識這次回覆的用途。")
+    check_user_text(user_text)
+    ref = message_reference(message_ref, request_id)
     with studio.repository.transaction():
-        state = studio.interviews.get(project_id)
-        if state["revision"] != expected_revision:
-            # A retry must resolve against the same displayed proposal.
-            rows = studio.interviews.history(project_id)
-            previous = next((s for s in reversed(rows) if s["revision"] <= expected_revision), None)
-            if previous is None:
-                raise StudioError("REVISION_CONFLICT", "請重新取得目前的問題。")
-            state = {**previous, "revision": expected_revision}
-        question = next_question(state, domain)
-        if not question_id or question.get("question_id") != question_id:
-            raise StudioError("REVISION_CONFLICT", "回覆所對應的問題或草稿已變更。")
-        ref = message_ref or "chat-reply/" + request_id
-        if not isinstance(ref, str) or not ref.strip():
-            raise StudioError("INPUT_INVALID", "對話訊息參照無效。")
-        if response_kind in {"decline", "defer"}:
-            return studio.interviews.answer(
-                project_id,
-                expected_revision,
-                request_id,
-                domain,
-                user_text,
-                status="blocked",
-                evidence_refs=[ref],
-            )
-        value = (
-            question["suggested_answer"]
-            if response_kind == "accept_proposal"
-            else ([user_text] if domain == "success" else user_text)
-        )
-        reply = UserReply(
-            value, ref, state["session_id"], domain, expected_revision, request_id, user_text
-        )
-        return studio.interviews.answer(
+        state = reply_state(studio, project_id, expected_revision)
+        answer = chat_answer(state, request_id, user_text, ref, domain, question_id, response_kind)
+        return studio.interviews.answer(project_id, expected_revision, request_id, domain, **answer)
+
+
+def record_chat_replies(
+    studio, project_id, expected_revision, request_id, user_text, replies, *, message_ref=None
+):
+    check_user_text(user_text)
+    ref = message_reference(message_ref, request_id)
+    if not isinstance(replies, list) or not 1 <= len(replies) <= len(DOMAINS):
+        raise StudioError("INPUT_INVALID", "請提供本次實際回答的問題。")
+    by_domain = {}
+    for reply in replies:
+        if (
+            not isinstance(reply, dict)
+            or set(reply) - {"domain", "question_id", "answer_text", "response_kind"}
+            or not isinstance(reply.get("domain"), str)
+            or reply["domain"] not in DOMAINS
+            or reply["domain"] in by_domain
+            or not reply.get("question_id")
+        ):
+            raise StudioError("INPUT_INVALID", "每個領域須有唯一且有效的問題識別碼。")
+        by_domain[reply["domain"]] = reply
+    with studio.repository.transaction():
+        state = reply_state(studio, project_id, expected_revision)
+        answers = []
+        for domain in DOMAINS:
+            if domain not in by_domain:
+                continue
+            answer = chat_answer(state, request_id, user_text, ref, **by_domain[domain])
+            data = studio.interviews.answer_data(expected_revision, request_id, domain, **answer)
+            answers.append((data, answer.get("user_reply")))
+        return studio.interviews._save_answers(
             project_id,
             expected_revision,
             request_id,
-            domain,
-            value,
-            status="confirmed",
-            user_reply=reply,
+            {
+                "action": "reply_batch",
+                "user_text": user_text,
+                "message_ref": ref,
+                "replies": [by_domain[key] for key in DOMAINS if key in by_domain],
+            },
+            answers,
         )
 
 
@@ -254,9 +330,15 @@ def dispatch(studio, workspace, action, params):
         question = next_question(studio.interviews.get(pid), **p)
         question["project_name"] = studio.projects.get(pid).name
         return question
+    if action == "next_batch":
+        questions = next_questions(studio.interviews.get(pid), **p)
+        questions["project_name"] = studio.projects.get(pid).name
+        return questions
     rev = p.pop("expected_revision")
     if action == "reply":
         return record_chat_reply(studio, pid, rev, **p)
+    if action == "reply_batch":
+        return record_chat_replies(studio, pid, rev, **p)
     if action == "start":
         return studio.interviews.start(pid, rev)
     if action in {"archive", "restore", "update"}:

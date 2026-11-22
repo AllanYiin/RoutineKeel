@@ -65,7 +65,17 @@ def studio_request(workspace, operation, params):
         if not response["ok"]:
             raise FlowError(response["error"]["code"], response["error"]["message"])
         if proc.returncode == 0:
-            return response["result"]
+            result = response["result"]
+            if operation == "prepare_blueprint":
+                from .graph.builder import preflight_graph
+
+                readiness = preflight_graph(result["graph"], workspace)
+                result["build_preflight"] = {
+                    "status": readiness["build_status"],
+                    "capability_gaps": readiness["gaps"],
+                    "build_gaps": readiness["build_gaps"],
+                }
+            return result
     except (ValueError, KeyError, TypeError):
         pass
     raise FlowError("STUDIO_UNAVAILABLE", "Studio 未能回報結果，請檢查本機安裝。")

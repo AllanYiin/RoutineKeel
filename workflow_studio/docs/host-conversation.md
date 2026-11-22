@@ -6,12 +6,11 @@
 宿主負責草擬、提問及呈現修正。RK-NEXT 的 Studio 專案保存來源、回答與版本，供下次對話續編。
 不開啟 Tk 或其他獨立視窗，不要求設計期 API 金鑰。
 
-引導順序：一句任務 → 釐清 → 步驟骨架 → 輸入輸出 → 工具清冊 → 檢核清冊 → 審核方式 → 任務設定檔 → 藍圖包。
+先從一句任務擬定目標、輸入、交付、處理骨架及驗收，將彼此獨立的必要決策集中在同一輪。使用者已說明的要求直接帶入草案。只有答案確實會改變後續選項時才追問，最後用一份摘要確認設計。
 
-每層先由宿主提出有依據的草案，再請作者修正與確認。問題只涵蓋當前必要決策；工具回傳 JSON 不代表使用者已回答。
 使用宿主可用的提問介面，也接受直接文字修正、中途插話、取消與恢復。未回答不能視為同意。
-第 3 層須包含本次製作重點與方向提醒；第 7 層區分每次輸入、設定一次、Agent 當下判斷並記錄理由。
-技能須整份保存並標示對應步驟；未知工具能力保留為缺口，安裝時才綁定當地可用工具。
+草案包含本次製作重點與方向提醒，並區分每次輸入、設定一次，以及由 Agent 當下判斷的項目與理由。
+技能須整份保存並標示對應步驟。先檢查候選能力是否有本機可用的工具、版本、輸入輸出、節點參數及權限契約。發現缺口時，在確認設計前明列受阻節點。安裝時再重新核對。
 
 藍圖是設計資料，不代表可執行成品或已核准安裝。宿主整理藍圖、合約、依賴、技能及缺口後，
 依底座的 `install-workflow` 介面另行試做與安裝；付費、外傳、發布與真人審核沿用各自的授權要求。
@@ -31,12 +30,14 @@ uv run --project workflow_studio python -m workflow_studio --workspace <RoutineK
 
 ## RK-NEXT 訪談
 
-宿主透過 `studio_create_project`、`studio_next_question`、`studio_submit_answer` 與 `studio_get_project` 進行訪談。模型產生提問、建議或附件摘要時，在對話中隨生成逐段顯示。顯示未確認草稿、來源、修改方法及待決項目；略過或拒絕的問題保留為缺口。若已有 Studio 專案，使用 `studio_start_interview` 並提供目前專案版本。
+宿主透過 `studio_create_project`、`studio_next_questions` 與 `studio_get_project` 進行訪談。可指定本輪要問的領域，使用者可在同一則訊息回答多項。模型產生提問、建議或附件摘要時，在對話中隨生成逐段顯示。若已有 Studio 專案，使用 `studio_start_interview` 並提供目前專案版本。
 
-使用者在目前桌面對話直接回答即可。宿主先顯示問題及建議，等下一則實際使用者訊息，再用 `studio_record_reply` 送回原文、question_id、expected_revision 與本次 request_id。若使用者明確採用已顯示的草稿，使用 accept_proposal；拒絕與稍後處理分別以 decline、defer 保存。模型產生的建議走 studio_submit_answer。此設計以桌面宿主作為對話來源，保留訊息參照及原文供追溯。
+宿主取得實際使用者訊息後，以 `studio_record_replies` 提交整則原文、同一個 `expected_revision`、`request_id`，以及已回答的 `replies`。每個回答附 `domain`、`question_id`，可用 `answer_text` 指定屬於該題的逐字片段。明確採用已顯示的草案時使用 `accept_proposal`，拒絕與稍後處理分別用 `decline`、`defer` 保存。每批回答原子保存於同一版。單題介面仍可使用，模型建議也可集中放進藍圖摘要。
+
+透過底座預覽藍圖時，`build_preflight` 會列出當前宿主的能力缺口及不可執行的案例。文字描述可保留在設計包，建置驗收案例須提供 `inputs`、`expected` 及必要的素材或校閱回覆。預檢通過後，仍須在臨時工作區試做。
 
 工作流設計只在影響結果的重要決定提問。執行中只有藍圖指定的人工作業、關鍵校閱或需授權的動作才等待使用者，其餘步驟在自動契約檢查後繼續。
 
-Studio CLI 支援 `interview create|next|reply|answer|revise|skip|reject|pause|resume|get|history|preview`，參數透過 `--payload` 傳入；底座 CLI 使用相同操作名。另有 `interview stream` 可逐行接收含 text 的 JSON 文字增量，立即輸出 delta，正常收束時才輸出 completed。此入口不會保存回答。
+Studio CLI 支援 `interview next_batch|reply_batch` 及既有單題操作，參數透過 `--payload` 傳入。底座 CLI 使用相同操作名。另有 `interview stream` 可逐行接收含 text 的 JSON 文字增量，立即輸出 delta，正常收束時才輸出 completed。此入口不會保存回答。
 
-完整發行包以 Studio 啟動器的 `--prepare-only` 建立隔離環境。開發工作樹可執行 `uv sync --locked --project workflow_studio --group dev`。另裝的 Studio 可用本機設定 `ROUTINEKEEL_STUDIO_PYTHON` 指向已信任的絕對 Python 路徑。工作區路徑僅用於資料。
+完整發行包以 Studio 啟動器的 `--prepare-only` 建立隔離環境。若缺少 `workflow_studio/runtime/`，先核對完整發行包再開始訪談。開發工作樹可執行 `uv sync --locked --project workflow_studio --group dev`。另裝的 Studio 可用本機設定 `ROUTINEKEEL_STUDIO_PYTHON` 指向已信任的絕對 Python 路徑。工作區路徑僅用於資料。

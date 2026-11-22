@@ -45,6 +45,23 @@ def test_real_stdio_interview_resumes_and_keeps_host_answers_unconfirmed(tmp_pat
             reopened = (await call(client,'studio_get_project',project_id=state['project_id']))['result']
             assert reopened == saved and reopened['coverage']['goal']['origin'] == 'desktop_conversation'
             assert reopened['coverage']['goal']['value'] == '整理每週的銷售報表'
+            batch = (await call(client, "studio_next_questions", project_id=state["project_id"],
+                                domains=["inputs", "outputs", "review"]))["result"]
+            answers = {"inputs": "銷售 CSV", "outputs": "週報 PDF"}
+            submitted = (await call(
+                client, "studio_record_replies", project_id=state["project_id"],
+                expected_revision=batch["revision"], request_id="chat-3",
+                user_text="輸入銷售 CSV，交付週報 PDF",
+                replies=[
+                    {"domain": q["domain"], "question_id": q["question_id"],
+                     "answer_text": answers[q["domain"]]}
+                    for q in batch["questions"] if q["domain"] in answers
+                ],
+            ))["result"]
+            assert submitted["revision"] == batch["revision"] + 1
+            assert submitted["coverage"]["inputs"]["value"] == "銷售 CSV"
+            assert submitted["coverage"]["outputs"]["value"] == "週報 PDF"
+            assert submitted["coverage"]["review"]["status"] == "unknown"
     asyncio.run(exercise())
 
 
@@ -73,6 +90,7 @@ def test_stdio_negotiation_queue_tool_set_and_path_boundary(workspace):
                              'studio_next_question', 'studio_submit_answer', 'studio_pause_interview',
                              'studio_resume_interview', 'studio_preview_source', 'studio_start_interview',
                              'studio_record_reply', 'studio_preview_blueprint', 'studio_export_blueprint',
+                             'studio_next_questions', 'studio_record_replies',
                              'resolve_blueprint_capabilities','workflow_quality','workflow_evolution','agent_workflow'}
             forbidden = await call(client, 'submit_workflow', workflow_id='ai_flow02',
                                    source=str(outside))

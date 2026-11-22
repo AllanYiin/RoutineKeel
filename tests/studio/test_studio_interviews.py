@@ -139,6 +139,38 @@ def test_concurrent_replies_have_one_winner_and_database_keeps_all_committed_ver
         assert versions[1]["coverage"]["rules"]["status"] == "confirmed"
 
 
+def test_batch_reply_validates_all_questions_and_replays_at_one_revision(tmp_path):
+    from workflow_studio.conversation.facade import next_questions, record_chat_replies
+
+    with StudioService.open_workspace(tmp_path) as studio:
+        s = studio.interviews.create("字幕", "轉字幕")
+        pid = s["project_id"]
+        questions = next_questions(s, ["outputs", "goal"])["questions"]
+        text = "保留英文術語，交付繁體 SRT"
+        replies = [
+            {"domain": q["domain"], "question_id": q["question_id"], "answer_text": quoted}
+            for q, quoted in zip(questions, ("交付繁體 SRT", "保留英文術語"), strict=True)
+        ]
+        with pytest.raises(StudioError, match="原文"):
+            record_chat_replies(
+                studio,
+                pid,
+                s["revision"],
+                "batch",
+                text,
+                [replies[0], {**replies[1], "answer_text": "杜撰的需求"}],
+            )
+        assert studio.interviews.get(pid) == s
+        saved = record_chat_replies(studio, pid, s["revision"], "batch", text, replies)
+        assert saved["revision"] == s["revision"] + 1
+        assert saved["coverage"]["outputs"]["status"] == "confirmed"
+        assert saved["coverage"]["outputs"]["user_text"] == text
+        assert saved["coverage"]["review"]["status"] == "unknown"
+        assert record_chat_replies(studio, pid, s["revision"], "batch", text, replies) == saved
+        with pytest.raises(StudioError, match="已有更新"):
+            record_chat_replies(studio, pid, s["revision"], "later", text, replies)
+
+
 def test_v14_project_upgrades_and_backup_restores_in_empty_directory(tmp_path, monkeypatch):
     previous = tmp_path / "old"
     with monkeypatch.context() as m:

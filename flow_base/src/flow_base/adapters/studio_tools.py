@@ -48,6 +48,11 @@ def register(server, workspace, result):
         return call("next", project_id=project_id, domain=domain)
 
     @server.tool()
+    def studio_next_questions(project_id: str, domains: list[str] | None = None) -> dict:
+        """Fetch related questions at one revision to present together in the conversation."""
+        return call("next_batch", project_id=project_id, domains=domains)
+
+    @server.tool()
     def studio_record_reply(
         project_id: str,
         expected_revision: int,
@@ -95,6 +100,29 @@ def register(server, workspace, result):
             confidence=confidence,
             status=status,
             impact=impact,
+        )
+
+    @server.tool()
+    def studio_record_replies(
+        project_id: str,
+        expected_revision: int,
+        request_id: str,
+        user_text: str,
+        replies: list[dict],
+        message_ref: str | None = None,
+    ) -> dict:
+        """Save one user's message across answered questions.
+
+        Each reply has domain, question_id and optionally answer_text or response_kind.
+        """
+        return call(
+            "reply_batch",
+            project_id=project_id,
+            expected_revision=expected_revision,
+            request_id=request_id,
+            user_text=user_text,
+            replies=replies,
+            message_ref=message_ref,
         )
 
     @server.tool()
