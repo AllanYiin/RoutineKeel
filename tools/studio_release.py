@@ -40,8 +40,8 @@ def public_document(text, roots):
     return re.sub(r"(?<![A-Za-z0-9_])[A-Za-z]:[/\\][^\s`\"'<>|)]+", "{local-path}", text)
 
 
-def verify_wheel_sources(wheel, root, component, tracked, private_roots):
-    module = component.name
+def verify_wheel_sources(wheel, root, component, tracked, private_roots, module=None):
+    module = module or component.name
     prefix = (component / "src").relative_to(root).as_posix() + "/"
     expected = {
         name.removeprefix(prefix) for name in tracked if name.startswith(prefix + module + "/")
@@ -136,6 +136,13 @@ exit /b %STUDIO_EXIT%
     }
 
 
+def build_contract_wheel(base, wheels, run):
+    contracts = base / "components/workflow_contracts"
+    version = tomllib.loads((contracts / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+    run(["uv", "build", "--wheel", "--out-dir", str(wheels)], cwd=contracts)
+    return wheels / f"routinekeel_contracts-{version}-py3-none-any.whl"
+
+
 def build_studio(project, staging, *, root, base, run, write_bootstrap):
     studio_version = tomllib.loads((project / "pyproject.toml").read_text(encoding="utf-8"))[
         "project"
@@ -151,9 +158,11 @@ def build_studio(project, staging, *, root, base, run, write_bootstrap):
     dest = staging / "workspace/workflow_studio"
     runtime = dest / "runtime"
     runtime.mkdir(parents=True)
+    contracts_wheel = build_contract_wheel(base, wheels, run)
+    shutil.copyfile(contracts_wheel, runtime / contracts_wheel.name)
     shutil.copyfile(studio_wheel, dest / studio_wheel.name)
     shutil.copyfile(base_wheel, runtime / base_wheel.name)
-    write_bootstrap(runtime, base_wheel, base_version)
+    write_bootstrap(runtime, base_wheel, base_version, contracts_wheel=contracts_wheel)
     shutil.copyfile(project / "scripts/studio_bootstrap.py", dest / "studio_bootstrap.py")
     shutil.copyfile(root / "LICENSE", dest / "LICENSE")
     (dest / "assets").mkdir()
@@ -165,6 +174,8 @@ def build_studio(project, staging, *, root, base, run, write_bootstrap):
             "--locked",
             "--no-dev",
             "--no-emit-project",
+            "--no-emit-package",
+            "routinekeel-contracts",
             "--no-header",
             "--no-annotate",
             "--quiet",
@@ -211,6 +222,7 @@ def build_studio(project, staging, *, root, base, run, write_bootstrap):
                 "--",
                 "workflow_studio",
                 "flow_base/src",
+                "flow_base/components/workflow_contracts",
                 "flow_base/pyproject.toml",
                 "flow_base/uv.lock",
                 "flow_base/README.md",
@@ -224,6 +236,7 @@ def build_studio(project, staging, *, root, base, run, write_bootstrap):
     tracked = set(filter(None, source_names))
     verify_wheel_sources(studio_wheel, root, project, tracked, roots)
     verify_wheel_sources(base_wheel, root, base, tracked, roots)
+    verify_wheel_sources(contracts_wheel, root, base / "components/workflow_contracts", tracked, roots, "routinekeel_contracts")
     source_files = {}
     private_parts = {
         "specs",
@@ -314,6 +327,7 @@ SHA-256 用來檢查完整性，不等於發行者的數位簽章。
         "studio_version": studio_version,
         "runtime_version": base_version,
         "studio_wheel": studio_wheel.name,
+        "contracts_wheel": "runtime/" + contracts_wheel.name,
         "source_commit": commit,
         "source_dirty": source_dirty,
         "files": files,

@@ -1,0 +1,13 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "routinekeel-contracts"
+version = "1.0.0"
+description = "RoutineKeel workflow IR and package verification contracts"
+requires-python = ">=3.11,<3.14"
+dependencies = ["pydantic==2.14.3"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/routinekeel_contracts"]

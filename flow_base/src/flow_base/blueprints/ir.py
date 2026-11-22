@@ -1,25 +1,27 @@
 """Emit Studio WorkflowIR 1.0 and tool signatures for the host-assisted lowering."""
 
 from ..runtime import digest
-from importlib.util import find_spec
+
+POLICY_VERSION = "blueprint-ir-record/1"
 
 
 def check_with_studio(ir, registry, package):
-    """Use the design-time validators too when Studio is present in the install environment."""
-    spec = find_spec("workflow_studio")
-    # A src-layout repository directory can be a namespace on cwd's sys.path;
-    # it is not an installed Studio distribution with validators.
-    if spec is None or spec.origin is None:
-        return "not_installed"
-    from workflow_studio.compiler.package import verify_package
-    from workflow_studio.ir.models import ToolSignature
-    from workflow_studio.ir.validator import validate_ir
-
-    validate_ir(
-        ir, {k: ToolSignature.model_validate(v) for k, v in registry["tools"].items()}
-    )
-    verify_package(package)
-    return "passed"
+    """Report mandatory checks for both trial and promotion without importing the Studio UI."""
+    try:
+        from routinekeel_contracts.errors import StudioError
+        from routinekeel_contracts.models import ToolSignature
+        from routinekeel_contracts.package import verify_package
+        from routinekeel_contracts.validator import validate_ir
+    except ImportError:
+        return {"policy_version": POLICY_VERSION, "status": "NOT_RUN", "reason": "缺少必要的契約驗證器"}
+    try:
+        validate_ir(ir, {k: ToolSignature.model_validate(v) for k, v in registry["tools"].items()})
+        verify_package(package)
+    except StudioError as exc:
+        return {"policy_version": POLICY_VERSION, "status": "FAIL", "reason": exc.code}
+    except Exception as exc:
+        return {"policy_version": POLICY_VERSION, "status": "FAIL", "reason": type(exc).__name__}
+    return {"policy_version": POLICY_VERSION, "status": "PASS"}
 
 
 def studio_ir(source, plan):

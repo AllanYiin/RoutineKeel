@@ -24,7 +24,7 @@ from ..package_updates import (
 from ..runtime import atomic_bytes, atomic_json, digest, read_json, sha256
 from ..workspace import Manifest
 from .recipe import compile_plan, local_operations
-from .ir import studio_ir, check_with_studio
+from .ir import POLICY_VERSION, studio_ir, check_with_studio
 from .source import inspect_blueprint, require
 from .wheel import write_wheel
 from .adapter import ADAPTER_SOURCE
@@ -187,6 +187,7 @@ def verify(ws, key, resolution, cases):
     reject_links(dest)
     dest.mkdir(parents=True)
     atomic_json(dest / "resolution.json", resolution)
+    validation = {"policy_version": POLICY_VERSION, "status": "NOT_RUN"}
     try:
         plan = compile_plan(src, resolution)
         skill_index = {row["id"]: row for row in src["skills"]["skills"]}
@@ -219,7 +220,8 @@ def verify(ws, key, resolution, cases):
             task.mkdir()
             for n, body in members.items():
                 (task / n).write_bytes(body)
-            studio_status = check_with_studio(ir, registry, task)
+            validation = check_with_studio(ir, registry, task)
+            require(validation["status"] == "PASS", validation.get("reason", "必要驗證未通過"))
             atomic_json(
                 trial / "share_states/blueprint_bindings" / (digest(plan) + ".json"),
                 resolution["bindings"],
@@ -243,7 +245,7 @@ def verify(ws, key, resolution, cases):
             )
             require((trial / "result.json").is_file(), "隔離試做未回報結果")
             evidence = read_json(trial / "result.json")
-            evidence["studio_ir_and_record"] = studio_status
+            evidence["studio_ir_and_record"] = "passed"
             require(
                 proc.returncode == 0 and evidence.get("passed"),
                 "候選包驗證失敗：" + evidence.get("error", ""),
@@ -251,6 +253,7 @@ def verify(ws, key, resolution, cases):
             shutil.copytree(trial / "evidence", dest / "trials")
         record = {
             "status": "verified",
+            "validation": validation,
             "workflow_id": task.name,
             "draft_id": key,
             "build_id": build,
@@ -266,7 +269,7 @@ def verify(ws, key, resolution, cases):
     except Exception as exc:
         atomic_json(
             dest / "verification.json",
-            {"status": "blocked", "build_id": build, "reason": str(exc)[:1500]},
+            {"status": "blocked", "validation": validation, "build_id": build, "reason": str(exc)[:1500]},
         )
         from ..runtime import FlowError
 
@@ -290,6 +293,7 @@ def install(ws, key, build, expected):
         record = read_json(dest / "verification.json")
         require(
             record.get("status") == "verified"
+            and record.get("validation") == {"status": "PASS", "policy_version": POLICY_VERSION}
             and expected
             and record.get("install_hash") == expected
             and digest({k: v for k, v in record.items() if k != "install_hash"})
@@ -301,6 +305,14 @@ def install(ws, key, build, expected):
             record["archive_sha256"] == h and record["workflow_id"] == manifest.id,
             "候選包已變更",
         )
+        with tempfile.TemporaryDirectory(prefix="rk-install-check-") as temp:
+            package = Path(temp)
+            for name, body in files.items():
+                (package / name).write_bytes(body)
+            with zipfile.ZipFile(io.BytesIO(files[manifest.package])) as wheel:
+                registry = json.loads(wheel.read(manifest.python_module + "/tool-signatures.json"))
+            validation = check_with_studio(json.loads(files["workflow.ir.json"]), registry, package)
+            require(validation == record["validation"], validation.get("reason", "安裝前必要驗證未通過"))
         bindings = read_json(dest / "resolution.json")["bindings"]
         require(
             digest(bindings) == record["bindings_hash"]

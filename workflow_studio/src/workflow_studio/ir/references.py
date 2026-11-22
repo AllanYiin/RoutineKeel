@@ -1,21 +1,5 @@
-import re
-from dataclasses import dataclass
+"""Compatibility exports for the shared workflow contract."""
 
-from ..contracts import StudioError
+from routinekeel_contracts.references import IDENTIFIER, REFERENCE, Reference, parse_reference
 
-IDENTIFIER = r"[a-z][a-z0-9_-]{0,63}"
-REFERENCE = re.compile(rf"^(input|artifact|output|secret)://({IDENTIFIER})(?:/({IDENTIFIER}))?$")
-
-
-@dataclass(frozen=True)
-class Reference:
-    scheme: str
-    owner: str
-    port: str | None
-
-
-def parse_reference(value: str) -> Reference:
-    match = REFERENCE.fullmatch(value)
-    if not match or (match[1] == "artifact") != (match[3] is not None):
-        raise StudioError("IR_SCHEMA_INVALID", f"不合法的邏輯引用：{value}")
-    return Reference(*match.groups())
+__all__ = ["IDENTIFIER", "REFERENCE", "Reference", "parse_reference"]

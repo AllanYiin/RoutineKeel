@@ -81,7 +81,7 @@ def discover_projects():
     return projects
 
 
-def write_bootstrap(dest, wheel, version, media_wheel=None):
+def write_bootstrap(dest, wheel, version, media_wheel=None, *, contracts_wheel):
     assets = json.loads((ROOT / 'tools/uv-assets.json').read_text(encoding='utf-8'))
 
     def asset(suffix):
@@ -103,6 +103,7 @@ def write_bootstrap(dest, wheel, version, media_wheel=None):
         template = (ROOT / 'tools' / f'{name}.in').read_text(encoding='utf-8')
         body = template.replace('@WHEEL@', wheel.name).replace('@WHEEL_HASH@', sha(wheel))
         body = body.replace('@VERSION@', version)
+        body = body.replace('@CONTRACTS_WHEEL@', contracts_wheel.name).replace('@CONTRACTS_SHA256@', sha(contracts_wheel))
         body = body.replace('@MEDIA_WHEEL@', media_wheel.name if media_wheel else '')
         body = body.replace('@MEDIA_SHA256@', sha(media_wheel) if media_wheel else '')
         body = body.replace('@UV_SH_CASES@', '\n'.join(sh_cases)).replace('@UV_PS_CASES@', '\n'.join(ps_cases))
@@ -154,11 +155,14 @@ def build_project(path, staging):
     write_package_guide(dest, path)
     if path == BASE:
         # Optional local media operations are a separate, offline-installable distribution.
+        from studio_release import build_contract_wheel
+        contracts_wheel = build_contract_wheel(BASE, wheels, run)
+        shutil.copyfile(contracts_wheel, dest / contracts_wheel.name)
         media = BASE / 'components/blueprint_media'
         run(['uv', 'build', '--wheel', '--out-dir', str(wheels)], cwd=media)
         media_wheel = wheels / f'routinekeel_blueprint_media-{project_info(media)[1]}-py3-none-any.whl'
         shutil.copyfile(media_wheel, dest / media_wheel.name)
-        write_bootstrap(dest, wheel, version, media_wheel)
+        write_bootstrap(dest, wheel, version, media_wheel, contracts_wheel=contracts_wheel)
         (dest / 'blueprint-tools.json').write_text(json.dumps({
             'media': {'wheel':media_wheel.name, 'sha256':sha(media_wheel),
                      'operations':['audio.timeline','subtitle.srt','video.compose']}

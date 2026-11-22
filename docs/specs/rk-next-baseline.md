@@ -46,3 +46,9 @@ uv run --locked --project workflow_studio --group dev ruff format --check --conf
 | Studio 全套 | Windows 519 passed、0 skipped、0 failed，852.04 秒。報告 `dist/v122-stage0-studio.xml`。 |
 
 依測例名稱比對，底座及工作流收集的 559 例都在至少一個適用環境通過，Studio 另有 519 例通過。Stage 0 的基線與回復條件已驗收，後續階段另立測試證據。
+
+## Stage 1 必要驗證
+
+底座與 Studio 分別安裝隨包提供的 `routinekeel-contracts` wheel，共用同一份 IR 語意及 RECORD 驗證。兩個環境仍各自啟動。試做與安裝均執行必要驗證，未取得目前政策的 PASS 收據須回到草稿重驗。原有已安裝流程可繼續執行。程式與驗收入口見 `flow_base/components/workflow_contracts/`、`blueprints/ir.py`、`blueprints/installer.py`、`tests/test_blueprint_install.py` 與 `tests/test_release_layout.py`。
+
+Windows 安裝及更新測試 80 passed，v1 與媒體等專項 19 passed，Studio 契約／Verifier／相容及封裝專項 30 passed，候選 ZIP 布局及載入 15 passed，WSL 啟動器 21 passed。報告分別為 `dist/v122-stage1-{install,v1-final,studio,final-layout,posix}.xml`。Ruff 166 個檔案通過。候選包實際執行 `start_studio.ps1 --prepare-only`，建立兩個獨立環境、完成依賴檢查。此階段沒有 schema 遷移；回退使用前版發行包運行舊流程，暫停新安裝直到有具備必要驗證的版本。

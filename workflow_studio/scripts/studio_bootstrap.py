@@ -49,7 +49,12 @@ def verify_bundle(root):
         path = owned(root, root / name)
         if not path.is_file() or digest(path) != expected:
             raise ValueError("Studio package integrity check failed: " + name)
-    for name in (bundle["studio_wheel"], "studio-requirements.txt", "studio_bootstrap.py"):
+    for name in (
+        bundle["studio_wheel"],
+        bundle["contracts_wheel"],
+        "studio-requirements.txt",
+        "studio_bootstrap.py",
+    ):
         if name not in bundle["files"]:
             raise ValueError("Required installer file is not covered by the manifest")
     return bundle
@@ -155,6 +160,7 @@ def prepare(root, bundle):
     marker = owned(root, state / "studio-environment.json")
     expected = {
         "wheel": bundle["files"][bundle["studio_wheel"]],
+        "contracts": bundle["files"][bundle["contracts_wheel"]],
         "requirements": bundle["files"]["studio-requirements.txt"],
         "root": str(root),
         "platform": platform.system(),
@@ -214,6 +220,7 @@ def prepare(root, bundle):
                     str(python),
                     "--no-deps",
                     str(root / bundle["studio_wheel"]),
+                    str(root / bundle["contracts_wheel"]),
                 ],
                 [uv, "pip", "check", "--no-config", "--python", str(python)],
             ]

@@ -1,10 +1,5 @@
-"""Stable, non-sensitive errors shared by Studio interfaces."""
+"""Compatibility exports for the shared workflow contract."""
 
+from routinekeel_contracts.errors import StudioError
 
-class StudioError(Exception):
-    def __init__(self, code: str, message: str):
-        super().__init__(message)
-        self.code = code
-
-    def as_response(self) -> dict:
-        return {"ok": False, "error": {"code": self.code, "message": str(self)}}
+__all__ = ["StudioError"]
