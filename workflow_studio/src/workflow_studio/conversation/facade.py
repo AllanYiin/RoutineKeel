@@ -4,7 +4,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from ..contracts import StudioError
-from .interviews import DOMAINS
+from .interviews import DOMAINS, UserReply, digest
 
 QUESTIONS = {
     "goal": "希望這個工作流幫你完成什麼？",
@@ -44,6 +44,12 @@ def next_question(state, domain=None):
             "text": "訪談已保存；恢復後可以繼續。",
             "next_actions": ["resume" if state["phase"] == "paused" else "restore"],
         }
+    if domain is None and state["phase"] == "exported":
+        return {
+            **result,
+            "text": "已匯出已確認的藍圖，可檢視交付或開始下一版修訂。",
+            "next_actions": ["get_blueprint", "revise"],
+        }
     if domain is None:
         pending = [
             key
@@ -74,17 +80,17 @@ def next_question(state, domain=None):
         "suggested_answer": item["value"],
         "evidence_refs": item["evidence_refs"],
         "origin": item["origin"],
-        "local_confirmation": {
-            "operation": "confirm",
-            "payload": {
-                "project_id": state["project_id"],
+        "question_id": digest(
+            {
+                "session": state["session_id"],
+                "revision": state["revision"],
                 "domain": domain,
-                "expected_revision": state["revision"],
-            },
-        },
+                "proposal": item["value"],
+            }
+        ),
         "free_text": True,
         "how_to_reply": "直接輸入你的規則；也可以指定前一題修正、暫停或先保留缺口。",
-        "next_actions": ["answer", "revise", "skip", "pause", "status"],
+        "next_actions": ["reply", "revise", "skip", "pause", "status"],
     }
 
 
@@ -95,6 +101,67 @@ def stream_text(deltas):
             raise StudioError("INPUT_INVALID", "串流事件須提供文字片段。")
         yield {"event": "delta", "sequence": index, "text": text}
     yield {"event": "completed"}
+
+
+def record_chat_reply(
+    studio,
+    project_id,
+    expected_revision,
+    request_id,
+    domain,
+    question_id,
+    user_text,
+    *,
+    response_kind="answer",
+    message_ref=None,
+):
+    """Trust the desktop host to relay a distinct user turn, retaining its actual words."""
+    if not isinstance(user_text, str) or not user_text.strip() or len(user_text) > 65536:
+        raise StudioError("INPUT_INVALID", "需要使用者在對話中實際送出的回覆文字。")
+    if response_kind not in {"answer", "accept_proposal", "decline", "defer"}:
+        raise StudioError("INPUT_INVALID", "無法辨識這次回覆的用途。")
+    with studio.repository.transaction():
+        state = studio.interviews.get(project_id)
+        if state["revision"] != expected_revision:
+            # A retry must resolve against the same displayed proposal.
+            rows = studio.interviews.history(project_id)
+            previous = next((s for s in reversed(rows) if s["revision"] <= expected_revision), None)
+            if previous is None:
+                raise StudioError("REVISION_CONFLICT", "請重新取得目前的問題。")
+            state = {**previous, "revision": expected_revision}
+        question = next_question(state, domain)
+        if not question_id or question.get("question_id") != question_id:
+            raise StudioError("REVISION_CONFLICT", "回覆所對應的問題或草稿已變更。")
+        ref = message_ref or "chat-reply/" + request_id
+        if not isinstance(ref, str) or not ref.strip():
+            raise StudioError("INPUT_INVALID", "對話訊息參照無效。")
+        if response_kind in {"decline", "defer"}:
+            return studio.interviews.answer(
+                project_id,
+                expected_revision,
+                request_id,
+                domain,
+                user_text,
+                status="blocked",
+                evidence_refs=[ref],
+            )
+        value = (
+            question["suggested_answer"]
+            if response_kind == "accept_proposal"
+            else ([user_text] if domain == "success" else user_text)
+        )
+        reply = UserReply(
+            value, ref, state["session_id"], domain, expected_revision, request_id, user_text
+        )
+        return studio.interviews.answer(
+            project_id,
+            expected_revision,
+            request_id,
+            domain,
+            value,
+            status="confirmed",
+            user_reply=reply,
+        )
 
 
 def preview(workspace, relative):
@@ -152,6 +219,18 @@ def dispatch(studio, workspace, action, params):
     pid = p.pop("project_id")
     if action == "source":
         return studio.sources.get(pid, p["source_id"]).manifest
+    if action in {"prepare_blueprint", "export_blueprint", "get_blueprint"}:
+        from . import blueprints
+
+        if action == "prepare_blueprint":
+            return blueprints.prepare(studio, pid, **p)
+        if action == "export_blueprint":
+            return blueprints.export(studio, workspace, pid, **p)
+        for state in reversed(studio.interviews.history(pid)):
+            revision = state.get("blueprint_revision")
+            if revision and revision["sha256"] == p["sha256"]:
+                return blueprints.deliver(studio, workspace, revision, pid)
+        raise StudioError("REVISION_NOT_FOUND", "找不到此專案的藍圖版本。")
     if action == "attach":
         src = studio.sources.import_path(pid, p["expected_revision"], p["path"])
         return {"source_id": src.source_id, "version": src.version, "preview": src.manifest}
@@ -176,6 +255,8 @@ def dispatch(studio, workspace, action, params):
         question["project_name"] = studio.projects.get(pid).name
         return question
     rev = p.pop("expected_revision")
+    if action == "reply":
+        return record_chat_reply(studio, pid, rev, **p)
     if action == "start":
         return studio.interviews.start(pid, rev)
     if action in {"archive", "restore", "update"}:
@@ -186,7 +267,9 @@ def dispatch(studio, workspace, action, params):
         return studio.interviews.pause(pid, rev, request, resume=action == "resume")
     if action in {"answer", "revise", "skip", "reject"}:
         if "user_reply" in p or p.get("status") == "confirmed":
-            raise StudioError("USER_CONFIRMATION_REQUIRED", "請由可信使用者回覆入口確認此版本。")
+            raise StudioError(
+                "USER_CONFIRMATION_REQUIRED", "請在桌面對話顯示問題後，轉交使用者的實際回覆。"
+            )
         if action in {"skip", "reject"}:
             p.update(status="blocked", value=p.get("value") or "待使用者補充")
         return studio.interviews.answer(pid, rev, request, **p)

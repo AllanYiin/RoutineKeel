@@ -33,8 +33,6 @@ def studio_python():
 
 
 def studio_request(workspace, operation, params):
-    if operation == "confirm":
-        raise FlowError("USER_CONFIRMATION_REQUIRED", "請在本機互動終端確認。")
     args = [
         str(studio_python()),
         "-I",
@@ -73,7 +71,7 @@ def studio_request(workspace, operation, params):
     raise FlowError("STUDIO_UNAVAILABLE", "Studio 未能回報結果，請檢查本機安裝。")
 
 
-def studio_terminal(workspace, params, *, operation="confirm"):
+def studio_terminal(workspace, params, *, operation="stream"):
     args = [
         str(studio_python()),
         "-I",

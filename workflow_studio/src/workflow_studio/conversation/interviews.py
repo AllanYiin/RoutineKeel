@@ -40,6 +40,7 @@ class UserReply:
     domain: str
     revision: int
     request_id: str
+    user_text: str | None = None
 
 
 def digest(payload):
@@ -311,6 +312,8 @@ class Interviews:
             "evidence_refs": refs,
             "confidence": confidence,
         }
+        if user_reply is not None and user_reply.user_text is not None:
+            data.update(origin="desktop_conversation", user_text=user_reply.user_text)
 
         def edit(db, state):
             if status == "confirmed" and state["session_id"] != user_reply.session_id:

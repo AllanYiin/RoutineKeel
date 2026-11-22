@@ -48,6 +48,30 @@ def register(server, workspace, result):
         return call("next", project_id=project_id, domain=domain)
 
     @server.tool()
+    def studio_record_reply(
+        project_id: str,
+        expected_revision: int,
+        request_id: str,
+        domain: str,
+        question_id: str,
+        user_text: str,
+        response_kind: str = "answer",
+        message_ref: str | None = None,
+    ) -> dict:
+        """After the desktop user answers, relay their actual words for this displayed question."""
+        return call(
+            "reply",
+            project_id=project_id,
+            expected_revision=expected_revision,
+            request_id=request_id,
+            domain=domain,
+            question_id=question_id,
+            user_text=user_text,
+            response_kind=response_kind,
+            message_ref=message_ref,
+        )
+
+    @server.tool()
     def studio_submit_answer(
         project_id: str,
         expected_revision: int,
@@ -59,7 +83,7 @@ def register(server, workspace, result):
         status: str = "inferred",
         impact: str = "business",
     ) -> dict:
-        """Save a proposal or unresolved gap. User confirmation requires the local text CLI."""
+        """Save a host proposal or unresolved gap. Record the user's next turn via studio_record_reply."""
         return call(
             "answer",
             project_id=project_id,
@@ -89,6 +113,46 @@ def register(server, workspace, result):
             project_id=project_id,
             expected_revision=expected_revision,
             request_id=request_id,
+        )
+
+    @server.tool()
+    def studio_preview_blueprint(
+        project_id: str,
+        expected_revision: int,
+        request_id: str,
+        graph: dict,
+        design: dict,
+        skills: list[dict] | None = None,
+    ) -> dict:
+        """Prepare the design summary and key review points for display in the conversation."""
+        return call(
+            "prepare_blueprint",
+            project_id=project_id,
+            expected_revision=expected_revision,
+            request_id=request_id,
+            graph=graph,
+            design=design,
+            skills=skills or [],
+        )
+
+    @server.tool()
+    def studio_export_blueprint(
+        project_id: str,
+        expected_revision: int,
+        request_id: str,
+        proposal_id: str,
+        decision: str,
+        user_text: str,
+    ) -> dict:
+        """Record the desktop user's actual response to the displayed design proposal."""
+        return call(
+            "export_blueprint",
+            project_id=project_id,
+            expected_revision=expected_revision,
+            request_id=request_id,
+            proposal_id=proposal_id,
+            decision=decision,
+            user_text=user_text,
         )
 
     @server.tool()

@@ -23,7 +23,6 @@ def main(argv=None):
     elif args.command == "interview":
         from .contracts import StudioError
         from .conversation.facade import dispatch, stream_text
-        from .conversation.terminal import confirm_in_terminal
 
         try:
             if args.operation == "stream":
@@ -38,11 +37,7 @@ def main(argv=None):
             if not isinstance(params, dict):
                 raise ValueError("object required")
             with StudioService.open_workspace(args.workspace) as studio:
-                result = (
-                    confirm_in_terminal(studio, **params)
-                    if args.operation == "confirm"
-                    else dispatch(studio, args.workspace, args.operation, params)
-                )
+                result = dispatch(studio, args.workspace, args.operation, params)
             response = {"ok": True, "result": result}
         except StudioError as exc:
             response = exc.as_response()
