@@ -7,6 +7,16 @@ import subprocess
 from pydantic import ValidationError
 
 STANDARD = {
+    'GRAPH_UNSUPPORTED': ('configuration', 'error', '流程圖使用未支援的功能', '目前底座無法建置這項流程圖宣告。',
+                          ['保留藍圖草稿並檢查節點種類。', '使用支援該版本的底座重新驗證。'], 'after_fix', ['blueprint_schema_version']),
+    'GRAPH_INVALID': ('configuration', 'error', '流程圖驗證失敗', '流程圖的型別、依賴或路徑無法成立。',
+                      ['查看錯誤指出的來源或匯合節點。', '修訂草稿並重新驗證。'], 'after_fix', ['validation_issue']),
+    'STUDIO_UNAVAILABLE': ('environment', 'error', '訪談服務無法啟動', '未收到本機 Studio 的有效回覆。',
+                           ['用發行包的 Studio 啟動器準備環境。', '確認本機 Studio Python 路徑及版本。'], 'after_fix', ['studio_environment']),
+    'STUDIO_TIMEOUT': ('execution', 'error', '訪談服務回覆逾時', '目前無法確認訪談操作是否已經保存。',
+                       ['先重新讀取專案狀態。', '必要時重送相同請求識別碼。'], 'after_fix', ['request_id']),
+    'USER_CONFIRMATION_REQUIRED': ('permission', 'warning', '等待使用者確認', '此項決定需要使用者在可信本機文字終端確認。',
+                                   ['查看問題、回答與專案版本。', '在可信終端完成或取消此次確認。'], 'after_fix', ['project_id', 'revision']),
     'INPUT_NOT_FOUND': ('input', 'error', '找不到輸入', '指定的檔案、流程或執行紀錄不存在。',
                         ['確認名稱與路徑後重新選取。', '若專案曾搬移，從目前工作區重新開啟。'], 'after_fix', ['requested_identity']),
     'INVALID_CONFIGURATION': ('configuration', 'error', '設定需要修正', '設定或輸入參數未通過檢查。',

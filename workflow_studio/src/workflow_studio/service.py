@@ -25,6 +25,12 @@ class StudioService:
         return ProjectService(self.repository)
 
     @property
+    def interviews(self):
+        from .conversation.interviews import Interviews
+
+        return Interviews(self)
+
+    @property
     def sources(self):
         from .ingestion.service import SourceService
 

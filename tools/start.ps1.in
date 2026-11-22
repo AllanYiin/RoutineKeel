@@ -192,7 +192,9 @@ if (($LauncherArgs.Count -eq 1) -and ($LauncherArgs[0] -eq '--bootstrap-only')) 
     exit 0
 }
 if ($LauncherArgs.Count -eq 0) { $LauncherArgs = @('chat') }
-$Interactive = ($LauncherArgs -contains 'chat') -or (($LauncherArgs -contains 'launch') -and
+$StudioIndex = [Array]::IndexOf($LauncherArgs, 'studio')
+$StudioConfirmation = $StudioIndex -ge 0 -and $StudioIndex + 1 -lt $LauncherArgs.Count -and $LauncherArgs[$StudioIndex + 1] -eq 'confirm'
+$Interactive = $StudioConfirmation -or ($LauncherArgs -contains 'chat') -or (($LauncherArgs -contains 'launch') -and
     ($LauncherArgs -notcontains '--prepare-only') -and ($LauncherArgs -notcontains '--action'))
 $LaunchPhase = 'command'
 Set-FlowLaunchState 'running'

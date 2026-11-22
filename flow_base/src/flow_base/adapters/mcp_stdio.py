@@ -121,6 +121,8 @@ def create_server(workspace: Path | str):
         """Cancel queued work or request cooperative stop for an active Run."""
         return result(lambda: service.cancel_workflow(execution_id))
 
+    from .studio_tools import register
+    register(server, service.workspace.root, result)
     return server
 
 

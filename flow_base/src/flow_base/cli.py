@@ -25,6 +25,9 @@ def parser():
     commands.add_parser('list', help='列出同層含 flow.json 的流程，不載入任務程式')
     commands.add_parser('ui', help='開啟本機圖形工作台；無圖形環境時仍可用 CLI')
     commands.add_parser('mcp-stdio', help='啟動可選的本機 MCP stdio 工具入口')
+    c = commands.add_parser('studio', help='對話訪談與可信本機文字確認')
+    c.add_argument('operation')
+    c.add_argument('--payload', default='{}', help='操作參數 JSON')
     c = commands.add_parser('queue-worker', help='另外啟動本機任務佇列 Worker；不由 MCP 派生')
     c.add_argument('--once', action='store_true', help='處理一件工作後退出；沒有工作時立即退出')
     c.add_argument('--poll-interval', type=float, default=0.5)
@@ -354,6 +357,16 @@ def main(argv=None):
         getattr(args, 'input', None), getattr(args, 'output', None), getattr(args, 'archive', None)])
     try:
         command = args.command or ('chat' if sys.stdin.isatty() else 'list')
+        if command == 'studio':
+            from .studio import studio_request, studio_terminal
+            params = json.loads(args.payload)
+            if not isinstance(params,dict):
+                raise ValueError('訪談請求須為 JSON 物件')
+            if args.operation in {'confirm','stream'}:
+                return studio_terminal(workspace.root, params, operation=args.operation)
+            send = studio_request(workspace.root, args.operation, params)
+            print(json.dumps({'ok':True, 'result':send},ensure_ascii=False))
+            return 0
         if command == 'ui':
             try:
                 from .ui.app import run_ui
