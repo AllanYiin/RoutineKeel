@@ -5,7 +5,7 @@ import json
 from pydantic import BaseModel, ConfigDict, Field
 from typing import Literal
 
-from .source import require, validate_value
+from .source import require, review_roles, validate_value
 from .program import run_program, validate_program
 
 
@@ -143,8 +143,7 @@ def compile_plan(source, resolution):
         check_schema(contract["schema"])
         contracts[key] = contract
     points = source["definition"]["review"]["points"]
-    after = {p["after_step"]: p for p in points if not p.get("is_step")}
-    human = {p["is_step"] for p in points if p.get("is_step")}
+    after, human = review_roles(points)
     available = set(source["inputs"])
     steps = []
     operations = local_operations()

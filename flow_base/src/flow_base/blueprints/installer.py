@@ -21,7 +21,7 @@ from ..package_updates import (
     ensure_no_pending,
     _idle,
 )
-from ..runtime import atomic_bytes, atomic_json, digest, read_json, sha256
+from ..runtime import FlowError, atomic_bytes, atomic_json, digest, read_json, sha256
 from ..workspace import Manifest
 from .recipe import compile_plan, local_operations
 from .ir import POLICY_VERSION, studio_ir, check_with_studio
@@ -69,6 +69,15 @@ def import_source(ws, path):
                 wheel.read(manifest.python_module + "/conversion.json")
             )
     src, files = inspect_blueprint(raw)
+    if "graph" not in src:
+        try:
+            from ..graph.source import convert_linear
+
+            src["graph"], src["graph_order"] = convert_linear(src)
+        except ImportError:
+            src["findings"].append({"kind": "graph_conversion", "code": "VALIDATOR_UNAVAILABLE"})
+        except FlowError as exc:
+            src["findings"].append({"kind": "graph_conversion", "code": exc.code, "reason": str(exc)})
     folder = draft_dir(ws, src["source_hash"])
     with package_lock(ws):
         atomic_bytes(folder / "source.zip", raw)
@@ -81,6 +90,7 @@ def import_source(ws, path):
         "workflow_id": src["manifest"]["id"],
         "version": src["manifest"]["version"],
         "steps": src["steps"],
+        "blueprint_schema_version": src.get("blueprint_schema_version", 1),
         "dependencies": src["dependencies"],
         "gaps": src["gaps"],
         "review": src["definition"]["review"],
@@ -189,6 +199,8 @@ def verify(ws, key, resolution, cases):
     atomic_json(dest / "resolution.json", resolution)
     validation = {"policy_version": POLICY_VERSION, "status": "NOT_RUN"}
     try:
+        if src.get("blueprint_schema_version") == 2:
+            raise FlowError("GRAPH_UNSUPPORTED", "此版本可匯入 Graph v2；需由 Graph Builder 建置")
         plan = compile_plan(src, resolution)
         skill_index = {row["id"]: row for row in src["skills"]["skills"]}
         for node in plan["steps"]:
@@ -271,8 +283,8 @@ def verify(ws, key, resolution, cases):
             dest / "verification.json",
             {"status": "blocked", "validation": validation, "build_id": build, "reason": str(exc)[:1500]},
         )
-        from ..runtime import FlowError
-
+        if isinstance(exc, FlowError) and exc.code == "GRAPH_UNSUPPORTED":
+            raise
         raise FlowError(
             "INVALID_CONFIGURATION",
             "草稿已保存；請修訂後再試做",

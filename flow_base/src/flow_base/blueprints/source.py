@@ -42,6 +42,11 @@ def indexed(rows, field="id"):
     return result
 
 
+def review_roles(points):
+    return ({p["after_step"]: p for p in points if not p.get("is_step")},
+            {p["is_step"] for p in points if p.get("is_step")})
+
+
 def check_schema(schema):
     def walk(value):
         if isinstance(value, dict):
@@ -91,8 +96,15 @@ def inspect_blueprint(raw):
                 if not info.is_dir():
                     require(len(parts) >= 2, "藍圖需要單一外層目錄")
                     files["/".join(parts[1:])] = archive.read(info)
+            require(len(roots) == 1, "藍圖需要單一外層目錄")
+            if "blueprint.json" in files:
+                from ..graph.source import graph_source
+
+                require(files.keys() == {"blueprint.json"}, "Graph v2 包含未宣告成員")
+                payload = load_json(files["blueprint.json"].decode("utf-8-sig"))
+                return graph_source(payload, raw), files
             require(
-                len(roots) == 1 and all(n in files for n in REQUIRED),
+                all(n in files for n in REQUIRED),
                 "藍圖缺少宣告或含多個根目錄",
             )
         docs = {name: load_json(files[name].decode("utf-8-sig")) for name in REQUIRED}
