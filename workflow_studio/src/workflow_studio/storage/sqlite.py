@@ -98,6 +98,8 @@ class SQLiteRepository:
                 }
             if SCHEMA_VERSION >= 17:
                 required.add("studio_pattern_extractions")
+            if SCHEMA_VERSION >= 18:
+                required |= {"studio_pattern_improvements", "studio_pattern_improvement_revisions"}
             actual = {
                 row[0]
                 for row in self.connection.execute(

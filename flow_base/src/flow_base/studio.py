@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from routinekeel_contracts.domain_assets import content_hash
+
 from .execution.process import worker_environment
 from .runtime import FlowError
 
@@ -33,12 +35,34 @@ def studio_python():
 
 
 def studio_request(workspace, operation, params):
+    evidence_environment = {}
     if operation == "extract_pattern":
         from .graph.installed import installed_graph
 
         if "source" in params or not isinstance(params.get("workflow_ref"), str):
             raise FlowError("INVALID_CONFIGURATION", "擷取請指定已安裝的 workflow_id@version。")
         params = {**params, "source": installed_graph(workspace, params["workflow_ref"])}
+    if operation in {"propose_pattern_improvement", "compare_pattern_improvement"}:
+        from .evolution import patterns
+
+        if "evidence" in params or "report" in params:
+            raise FlowError("INVALID_CONFIGURATION", "Pattern 改善證據由本機 Runtime 取得。")
+        params = dict(params)
+        if operation == "propose_pattern_improvement":
+            params["evidence"] = patterns.observe(
+                workspace, params["source_ref"], params.pop("feedback_ids")
+            )
+        else:
+            state = studio_request(
+                workspace, "get_pattern_improvement", {"proposal_id": params["proposal_id"]}
+            )
+            if params["expected_revision"] != state["revision"]:
+                raise FlowError("REVISION_CONFLICT", "改善提案版本已改變。")
+            params["report"] = patterns.compare(
+                workspace, state, params.pop("candidate_drafts"), params.pop("negative_cases"),
+                params.pop("limits", {}),
+            )
+        evidence_environment["ROUTINEKEEL_STUDIO_EVIDENCE_SHA256"] = content_hash(params)
     args = [
         str(studio_python()),
         "-I",
@@ -62,7 +86,7 @@ def studio_request(workspace, operation, params):
             encoding="utf-8",
             capture_output=True,
             timeout=350 if operation == "qualify_pattern" else 45,
-            env=worker_environment(), check=False,
+            env=worker_environment() | evidence_environment, check=False,
         )
     except subprocess.TimeoutExpired as exc:
         raise FlowError(

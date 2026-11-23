@@ -379,6 +379,9 @@ class PackRegistry:
             qualification = item["qualification_hash"]
             if decision.action == "approve":
                 qualification_hash = decision.evidence_hash
+                from ..patterns.evolution import require_regression
+
+                require_regression(db, decision.ref, item["content_hash"], qualification_hash)
                 trial = db.execute(
                     """SELECT report FROM studio_pattern_trials WHERE pattern_ref=?
                     AND pattern_hash=? AND report_hash=? AND status='PASS'""",

@@ -1,7 +1,7 @@
 """Ordered, transactional Studio schema migrations."""
 
 APPLICATION_ID = 0x53545544  # STUD; rejects accidentally selected Runtime databases.
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 
 V001 = (
     """CREATE TABLE studio_projects (
@@ -284,6 +284,20 @@ V017 = (
 )
 
 
+V018 = (
+    """CREATE TABLE studio_pattern_improvements (
+        id TEXT PRIMARY KEY, source_ref TEXT NOT NULL, target_ref TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL)""",
+    """CREATE TABLE studio_pattern_improvement_revisions (
+        proposal_id TEXT NOT NULL REFERENCES studio_pattern_improvements(id),
+        revision INTEGER NOT NULL, body BLOB NOT NULL, PRIMARY KEY(proposal_id,revision))""",
+    """CREATE TRIGGER immutable_pattern_improvement BEFORE UPDATE ON studio_pattern_improvement_revisions
+        BEGIN SELECT RAISE(ABORT,'immutable improvement revision'); END""",
+    """CREATE TRIGGER retain_pattern_improvement BEFORE DELETE ON studio_pattern_improvement_revisions
+        BEGIN SELECT RAISE(ABORT,'retain improvement history'); END""",
+)
+
+
 MIGRATIONS = {
     1: V001,
     2: V002,
@@ -302,4 +316,5 @@ MIGRATIONS = {
     15: V015,
     16: V016,
     17: V017,
+    18: V018,
 }

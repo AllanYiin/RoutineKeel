@@ -160,6 +160,48 @@ def register(server, workspace, result):
         )
 
     @server.tool()
+    def studio_propose_pattern_improvement(
+        source_ref: str,
+        target_ref: str,
+        request_id: str,
+        feedback_ids: list[str],
+    ) -> dict:
+        """Tie a candidate Pattern version to observed Runtime feedback and dependents."""
+        return call(
+            "propose_pattern_improvement",
+            source_ref=source_ref,
+            target_ref=target_ref,
+            request_id=request_id,
+            feedback_ids=feedback_ids,
+        )
+
+    @server.tool()
+    def studio_get_pattern_improvement(proposal_id: str) -> dict:
+        return call("get_pattern_improvement", proposal_id=proposal_id)
+
+    @server.tool()
+    def studio_compare_pattern_improvement(
+        proposal_id: str,
+        expected_revision: int,
+        source_trial: str,
+        target_trial: str,
+        candidate_drafts: dict[str, str],
+        negative_cases: dict[str, list[dict]],
+        limits: dict[str, int] | None = None,
+    ) -> dict:
+        """Re-run every currently installed dependent in the existing isolated Builder."""
+        return call(
+            "compare_pattern_improvement",
+            proposal_id=proposal_id,
+            expected_revision=expected_revision,
+            source_trial=source_trial,
+            target_trial=target_trial,
+            candidate_drafts=candidate_drafts,
+            negative_cases=negative_cases,
+            limits=limits or {},
+        )
+
+    @server.tool()
     def studio_generalize_patterns(
         pattern_refs: list[str],
         pattern_id: str,

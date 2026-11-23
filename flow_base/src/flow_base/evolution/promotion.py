@@ -59,6 +59,10 @@ def grant_path(workspace, archive_hash):
 def check_promotion(workspace, plan, files):
     live = workspace.task(plan["workflow_id"], read_only=True)
     installed_ir = live.folder / "workflow.ir.json"
+    if "workflow.ir.json" in files:
+        ir = json.loads(files["workflow.ir.json"])
+        require("pattern_rehearsal" not in ir.get("provenance", {}),
+                "Pattern 回歸候選僅供試做，不可直接套用。")
 
     def is_graph(body):
         return isinstance(body, dict) and body.get("blueprint_schema_version") == 2

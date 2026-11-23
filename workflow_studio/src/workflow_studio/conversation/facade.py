@@ -319,6 +319,19 @@ def dispatch(studio, workspace, action, params, *, runtime_python=None):
             "configure_patterns": trigger.configure,
         }[action]
         return handler(studio, **p)
+    if action in {
+        "propose_pattern_improvement",
+        "compare_pattern_improvement",
+        "get_pattern_improvement",
+    }:
+        from ..patterns import evolution
+
+        if action == "get_pattern_improvement":
+            return evolution.get(studio, **p)
+        evolution.require_runtime_evidence(p)
+        if action == "propose_pattern_improvement":
+            return evolution.propose(studio, **p)
+        return evolution.record_comparison(studio, **p)
     pid = p.pop("project_id")
     if action == "compose_pattern":
         from ..patterns.composer import compose_project
