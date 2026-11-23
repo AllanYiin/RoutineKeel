@@ -356,11 +356,64 @@ def test_reviewed_tool_location_must_match_runtime_binding(
     )
     resumed = studio_request(tmp_path, "get", {"project_id": draft["project_id"]})
     assert resumed["blueprint_proposal"]["build_preflight"] == final["build_preflight"]
-    assert "目前無法建置候選工作流" in resumed["blueprint_proposal"]["display_text"]
+    assert "請照常校閱和匯出已確認的藍圖" in resumed["blueprint_proposal"]["display_text"]
     exported = approve(tmp_path, final)
     service = WorkflowService(tmp_path)
     key = service.install_workflow(archive=exported["path"])["draft_id"]
     assert service.resolve_blueprint_capabilities(key)["status"] == "blocked"
+
+
+def test_step_contracts_can_be_confirmed_before_host_tool_binding(
+    tmp_path, workflow_design_review, desktop_test_catalog
+):
+    graph = data_graph()
+    graph["nodes"][1].update(capability="test-sink", side_effect="external", permissions=["send"])
+    graph["quality_contract"]["success_criteria"] = ["送交文字並取得回執"]
+    graph["quality_contract"]["golden_cases"][0]["replies"] = [
+        {"step": "copy", "kind": "authorize_external"},
+        {"step": "copy", "kind": "external", "outputs": {"result": "ok"}},
+    ]
+    catalog = json.loads(desktop_test_catalog.read_bytes())
+    tool = catalog["tools"]["test-sink"]
+    port = {"type": "string", "required": True}
+    tool.update(inputs={"source": port}, outputs={"result": port}, available=False)
+    desktop_test_catalog.write_text(json.dumps(catalog))
+
+    draft = sketch(tmp_path, graph)
+    assert draft["build_preflight"]["status"] == "blocked"
+    assert not draft["build_preflight"]["blocks_blueprint_export"]
+    checklist = json.loads(draft["review_sections"]["process"]["display_text"])["逐步輸入輸出合約"]
+    assert checklist["copy"]["輸入"]["source"] == {
+        "source": "input://text", "port": {**port, "format": None, "items": None},
+    }
+    assert checklist["copy"]["輸出"]["result"]["用途"] == ["工作流交付 / original", "upper / source"]
+    review = workflow_design_review(draft)
+    review["tool_locations"]["copy"] = "deferred"
+    final = finish(tmp_path, draft, review)
+    assert final["design_review"]["tools"]["copy"]["location_deferred"]
+    checklist = json.loads(final["review_sections"]["process"]["display_text"])["逐步輸入輸出合約"]
+    assert checklist["copy"]["完成條件"] == review["step_decisions"]["copy"]["completion"]
+    exported = approve(tmp_path, final)
+    service = WorkflowService(tmp_path)
+    key = service.install_workflow(archive=exported["path"])["draft_id"]
+    blocked = service.resolve_blueprint_capabilities(key)
+    assert blocked["build_status"] == "blocked"
+    with pytest.raises(FlowError, match="草稿已保存"):
+        service.install_workflow(draft_id=key, resolution={"capability_fingerprint": blocked["fingerprint"]})
+    assert not service.workspace.discover(read_only=True)
+
+    tool["available"] = True
+    desktop_test_catalog.write_text(json.dumps(catalog))
+    ready = service.resolve_blueprint_capabilities(key)
+    assert ready["build_status"] == "ready"
+    assert ready["bindings"]["copy"]["tool"] == "test-sink"
+    verified = service.install_workflow(
+        draft_id=key, resolution={"capability_fingerprint": ready["fingerprint"]}
+    )
+    assert verified["status"] == "verified" and verified["evidence"]["provider_calls"] == 0
+    assert service.install_workflow(
+        draft_id=key, build_id=verified["build_id"], install_hash=verified["install_hash"]
+    )["status"] == "installed"
 
 
 def test_deferred_decision_survives_prefill_and_requires_a_current_user_reply(

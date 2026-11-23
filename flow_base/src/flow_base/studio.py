@@ -54,14 +54,18 @@ def design_preflight(proposal, workspace):
     readiness = preflight_graph(graph, workspace)
     result = {
         "status": readiness["build_status"],
+        "blocks_blueprint_export": False,
         "capability_gaps": readiness["gaps"],
         "build_gaps": readiness["build_gaps"],
     }
-    lines = ["\n\n### 候選工作流建置預檢"]
+    lines = ["\n\n### 建置階段預檢（目前環境）"]
     if result["status"] == "ready":
         lines.append("預檢通過。候選套件建置後，仍須載入臨時工作區實跑驗收案例。")
     else:
-        lines.append("目前無法建置候選工作流。請在設計校閱時一併呈現下列缺口。")
+        lines.append(
+            "目前環境的建置預檢有待處理項目。請照常校閱和匯出已確認的藍圖，"
+            "再於目標工作區解析工具或補齊建置案例，通過後才能試做候選包。"
+        )
         for gap in (*result["capability_gaps"], *result["build_gaps"]):
             context = gap.get("node") or (f"案例 {gap['case']}" if "case" in gap else "建置")
             lines.append(f"- {context}｜{gap['reason']}")
