@@ -2,49 +2,45 @@
 
 ## SNAPSHOT — 當前狀態
 
-最後更新：2026-11-23T02:10+08:00
+最後更新：2026-11-23T08:27+08:00
 交接狀態：verified
 
 ### 目標與授權範圍
 
-診斷 E:/RoutineKeel 的 Studio 字幕設計包安裝受阻，改善 Graph v2 建置預檢及 Studio 訪談效率。開發在 E:/PycharmProjects/RoutineKeel。
+依 RoutineKeel_Spec_v1.3.0.zip 執行 Stage 17–26，完成本機實作、回歸及可驗證的發行候選。
 
 ### 目前進度
 
-原 ZIP 匯入成功，隔離候選重現 19 個能力缺口及 5 個不可執行案例。開發版已支援受信宿主工具的節點參數、提前列出預檢缺口及批次保存訪談。已產出同版號的本機測試候選，E:/RoutineKeel 的既有安裝與藍圖未修改，原字幕藍圖仍未安裝。
+Stage 17–26 已實作並依規格驗收本機交付。已完成實際 MCP stdio 來源與本機 CSV Adapter 目標的跨環境流程，另有兩條工作流的升級回歸、Text／Data 參考 Pack 及獨立發行候選。
 
 ### 下一步
 
-實作並觀測 course_subtitle 節點的本機工具，保留原時間軸、低音量清空及首版先交付規則。補齊五組可執行案例並在隔離候選試做。原 0.3.0 RC1 的真人、macOS 及遠端 CI 驗收仍依原約定。
+本機交付驗收已完成。正式發布、遠端 CI、macOS 實測與真人走查留待另行授權或安排。
 
 ### DECISIONS
 
-- 以原始 E:/RoutineKeel 藍圖 ZIP SHA-256 3a15c64c549f0092edeaa217dbaa655e93f9143076575d4408d3fa898785c916 重現，保留其業務規則。
-- 相互獨立的題目同一輪提問，一則真實回覆在同一版本原子保存，未作答項保留現況。
-- 節點 parameters 由受信清冊的 parameters_schema 驗證，與輸入一起綁定授權、識別碼與派送。
-- 候選建在獨立 dist 目錄。原 RC1 SHA-256 205f36ebce995feee0c3bc9fcb83aaf7ddf50ae81ad16540f9fb2e7b73b4dc6c 與正式 dist/release 產物保留。
+- 共同 Graph Validator 和唯一 Builder 已延伸至 Pattern 合成、資格鎖定和回歸試做。
+- 來源與目標的工具觀測分開。環境鎖綁定版本、權限及實測收據；有變更須重新資格檢查。
+- 跨環境測例使用本機 MCP stdio 測試伺服器、實際 CSV Adapter 與模擬人審。開發與測試在獨立工作區，既有七個 IDE 暫存仍在原狀態。
 
 ### LANDMINES
 
-- 目標字幕工作流尚缺 19 個可執行能力及真實字幕驗收素材，FFmpeg 與 Ollama 的安裝不等於能力清冊。
-- E:/RoutineKeel/workflow_studio 缺 runtime 子資料夾與隔離環境。候選啟動器首次下載 CPython 解包受 Windows sandbox 限制，預置同版既有 CPython 後成功。
-- 無資料庫遷移。需回退時捨棄本機候選與本輪程式差異，沿用既有 RC1。保留個人 IDE 暫存。
+- macOS、遠端 CI、真人走查及真實第三方模型品質為 NOT_RUN。正式發行仍需人審。
+- 底座 schema v006、Studio schema 18。回復時先保存當期資料，使用各自的遷移前備份與前版工作流在空目錄還原。
 
 ### 證據索引
 
-- dist/candidate-rk-next-studio-install-diagnostics/windows-cli-smoke.json
-- dist/candidate-rk-next-studio-install-diagnostics/release/SHA256SUMS
-- workflow_studio/docs/host-conversation.md
-- flow_base/docs/blueprint-install.md
-- tests/test_graph_review_external.py
-- tests/studio/test_studio_interviews.py
+- docs/development/stage-26-report.md
+- dist/v130-stage26-coverage.json
+- dist/v130-stage26-verified-e2e.json
+- dist/candidate-v130-verified/release/SHA256SUMS
+- dist/candidate-v130-verified/domain-packs/SHA256SUMS
 
 ### VALIDATION
 
-- 底座、MCP、Studio 整合與安裝回歸 — PASS：63 passed。另將宿主參數試做測例擴至正式安裝，在臨時測試工作區重跑 1 passed。
-- Studio 專項與候選封裝 — PASS：Studio 31 passed。ROUTINEKEEL_TEST_RELEASE_DIR 指向新候選的封裝測試 15 passed。
-- 實際安裝包與原始字幕藍圖 — PASS：包內雙隔離環境建立成功。包內 CLI 匯入原始 ZIP，預檢 19 個能力、5 個案例受阻，兩筆回答一次保存，未答仍未知。
-- 目標字幕藍圖正式安裝及真實影片端到端 — BLOCKED：缺少本機工具實作及可執行案例，E:/RoutineKeel 維持原狀。
+- Windows 與 WSL 跨環境端到端 — PASS：實際 stdio、隔離 Builder、資格與安裝、本機 CSV、品質回饋及候選改版。最終 ZIP 內兩隔離環境重跑亦通過。
+- 最終收集逐案驗收 — PASS：底座及工作流 710/710、Studio 566/566 有實際 PASS。兩項初跑失敗補修／同版重跑後均通過，POSIX 及音訊條件分別補測。
+- 發行候選校驗 — PASS：五個標準 ZIP、兩個參考 Pack ZIP 與本機 Adapter wheel 共八項 SHA-256 核對無誤。
 
 # HISTORY
 
@@ -557,3 +553,17 @@ Windows 及 WSL 實測逐一核對 1,190 個唯一測例，補驗逾時與所有
 <!-- devnote-review:a476a6927c9dd479d6c642cd -->
 
 從既有 E:/RoutineKeel 安裝取得原始 ZIP 與對話證據。修復宿主節點參數支援與批次訪談，補建置預檢及可執行案例檢查。候選可匯入原 ZIP 並清楚診斷剩餘缺口。原設計聊天 7 輪合計約 16 分 53 秒，68 次命令合計約 1 分 37 秒。
+
+
+## [2026-11-23T07:03+08:00] v1.3.0 資產契約與 Registry
+
+<!-- devnote-review:520898f32a0e4a0da3e30feb -->
+
+核對規格與合併基線，完成 Stage 17 可攜資產契約及 Stage 18 Registry。修復 Windows NUL 的核准入口辨識後重跑，實測停用後的舊工作流與 Studio v15 遷移還原。
+
+
+## [2026-11-23T08:27+08:00] 完成 v1.3.0 Stage 17–26 本機候選與驗收
+
+<!-- devnote-review:c4db6082762b6ce79029696f -->
+
+依規格完成擷取、資格、推薦、合成、環境鎖與安全演進。Windows、WSL 與音訊選配環境逐案補測。冷啟動最終候選並重播跨環境流程，八個發行資產指紋核對一致。macOS 與正式發行待另行授權。

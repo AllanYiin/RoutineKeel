@@ -1,5 +1,16 @@
 # Workflow Compiler & Studio 階段清單
 
+RK-NEXT v1.3.0 的 [Stage 17 資產契約](../docs/development/stage-17-report.md)及
+[Stage 18 Registry](../docs/development/stage-18-report.md)已通過 Windows 專項。
+[Stage 19 子圖擷取](../docs/development/stage-19-report.md)已由已安裝工作流實際驗證。
+[Stage 20 獨立試做](../docs/development/stage-20-report.md)已完成 Windows 專項。
+[Stage 21 設計期推薦](../docs/development/stage-21-report.md)通過 40 組固定案例。
+[Stage 22 圖形合成](../docs/development/stage-22-report.md)已通過既有 Builder 與品質 Gate。
+[Stage 23 能力解析](../docs/development/stage-23-report.md)已驗證本機替換仍需資格。
+[Stage 24 資格鎖定](../docs/development/stage-24-report.md)已實跑本機安裝與宿主斷線 fixture。
+[Stage 25 影響與演進](../docs/development/stage-25-report.md)已重播兩個受影響工作流。
+[Stage 26 跨環境與封裝](../docs/development/stage-26-report.md)已完成本機候選與回歸。正式發布及 macOS 實測另依驗收範圍。
+
 RK-NEXT Stage 1 已將 IR、參照、埠合約與 wheel 驗證抽到共用套件。原 Studio 匯入名稱保留，底座與 Studio 的安裝環境隔離。驗收見根目錄 `docs/specs/rk-next-baseline.md`。
 
 RK-NEXT Stage 2 的 Graph v2 格式與具名交付已完成靜態驗證。Stage 3 以 Studio schema 15 保存同一專案的訪談快照、來源、確認與失效事件。跨程序重開、並發衝突及 v14 備份還原均有測試。對話宿主介接由 Stage 4 負責。

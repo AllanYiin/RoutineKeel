@@ -257,7 +257,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--project', help='Optional component folder name or Python package name')
     parser.add_argument('--candidate', help='Build in a new named directory below dist, preserving other package sets')
+    parser.add_argument('--reference-packs', action='store_true', help='Build optional domain packs with a named candidate')
     args = parser.parse_args()
+    if args.reference_packs and (not args.candidate or args.project):
+        parser.error('--reference-packs requires a named complete candidate')
     # The default distribution centers on Studio/runtime plus two existing examples.
     projects = ([STUDIO] if args.project in {'studio', 'workflow_studio', 'workflow-studio'}
                 else discover_projects())
@@ -302,13 +305,20 @@ def main():
             ''.join(f"{item['sha256']}  {item['file']}\n" for item in reports), encoding='utf-8')
         (staging / 'release/versions.json').write_text(
             json.dumps(reports, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+        if args.reference_packs:
+            from reference_packs import build_reference_packs
+
+            build_reference_packs(ROOT, staging / 'domain-packs', run)
         destination = DIST
         if candidate is not None:
             # Expose all three directories together only after verification succeeds.
             destination = staging / 'candidate'
             destination.mkdir()
         # Default builds replace old package sets; named candidates start empty.
-        for name in ('release', 'workspace', 'wheels'):
+        directory_names = ('release', 'workspace', 'wheels')
+        if args.reference_packs:
+            directory_names += ('domain-packs',)
+        for name in directory_names:
             target = destination / name
             if (target.is_symlink() or (hasattr(target, 'is_junction') and target.is_junction())
                     or target.resolve().parent != destination.resolve()):
