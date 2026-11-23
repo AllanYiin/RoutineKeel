@@ -12,6 +12,12 @@ class Catalog:
     def __init__(self, repository):
         self.repository = repository
 
+    @property
+    def packs(self):
+        from .packs import PackRegistry
+
+        return PackRegistry(self)
+
     @staticmethod
     def _reviewer(actor, reason, *, required=False):
         if not required and actor is None and reason is None:

@@ -11,7 +11,10 @@ def main(argv=None):
     parser.add_argument("--workspace", type=Path, default=Path.cwd())
     parser.add_argument("--runtime-python", type=Path)
     parser.add_argument(
-        "command", choices=("guide", "projects", "status", "interview"), nargs="?", default="guide"
+        "command",
+        choices=("guide", "projects", "status", "interview", "pack"),
+        nargs="?",
+        default="guide",
     )
     parser.add_argument("operation", nargs="?")
     parser.add_argument("--payload", default=None, help="JSON 請求，或使用 - 從 stdin 讀取")
@@ -20,12 +23,12 @@ def main(argv=None):
         from .conversation.guide import guide
 
         print(json.dumps({"ok": True, "result": guide()}, ensure_ascii=False))
-    elif args.command == "interview":
+    elif args.command in {"interview", "pack"}:
         from .contracts import StudioError
         from .conversation.facade import dispatch, stream_text
 
         try:
-            if args.operation == "stream":
+            if args.command == "interview" and args.operation == "stream":
                 deltas = (json.loads(line)["text"] for line in sys.stdin)
                 for event in stream_text(deltas):
                     print(json.dumps(event, ensure_ascii=False), flush=True)
@@ -37,11 +40,24 @@ def main(argv=None):
             if not isinstance(params, dict):
                 raise ValueError("object required")
             with StudioService.open_workspace(args.workspace) as studio:
-                result = dispatch(studio, args.workspace, args.operation, params)
+                if args.command == "pack":
+                    from .registry.pack_cli import dispatch as pack_dispatch
+
+                    result = pack_dispatch(
+                        studio, args.operation, params, runtime_python=args.runtime_python
+                    )
+                else:
+                    result = dispatch(
+                        studio,
+                        args.workspace,
+                        args.operation,
+                        params,
+                        runtime_python=args.runtime_python,
+                    )
             response = {"ok": True, "result": result}
         except StudioError as exc:
             response = exc.as_response()
-        except (ValueError, TypeError, KeyError, OSError):
+        except (ValueError, TypeError, KeyError, OSError, EOFError):
             response = {
                 "ok": False,
                 "error": {"code": "INPUT_INVALID", "message": "請核對操作參數及附件路徑。"},

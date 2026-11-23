@@ -84,6 +84,20 @@ class SQLiteRepository:
                 required |= {"studio_release_reconciliations"}
             if SCHEMA_VERSION >= 15:
                 required |= {"studio_interviews", "studio_interview_revisions"}
+            if SCHEMA_VERSION >= 16:
+                required |= {
+                    "studio_domain_packs",
+                    "studio_domain_assets",
+                    "studio_pack_members",
+                    "studio_pack_dependencies",
+                    "studio_pattern_records",
+                    "studio_pattern_trials",
+                    "studio_pattern_requirements",
+                    "studio_pattern_pins",
+                    "studio_domain_events",
+                }
+            if SCHEMA_VERSION >= 17:
+                required.add("studio_pattern_extractions")
             actual = {
                 row[0]
                 for row in self.connection.execute(

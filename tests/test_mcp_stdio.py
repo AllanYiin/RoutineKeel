@@ -91,6 +91,12 @@ def test_stdio_negotiation_queue_tool_set_and_path_boundary(workspace):
                              'studio_resume_interview', 'studio_preview_source', 'studio_start_interview',
                              'studio_record_reply', 'studio_preview_blueprint', 'studio_export_blueprint',
                              'studio_next_questions', 'studio_record_replies',
+                             'studio_extract_pattern', 'studio_get_pattern_extraction',
+                             'studio_export_pattern_extraction',
+                             'studio_qualify_pattern', 'studio_get_pattern_trial',
+                             'studio_generalize_patterns',
+                             'studio_recommend_patterns', 'studio_decide_pattern',
+                             'studio_inspect_pattern', 'studio_configure_patterns',
                              'resolve_blueprint_capabilities','workflow_quality','workflow_evolution','agent_workflow'}
             forbidden = await call(client, 'submit_workflow', workflow_id='ai_flow02',
                                    source=str(outside))

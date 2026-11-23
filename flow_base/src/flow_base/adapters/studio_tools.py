@@ -20,6 +20,136 @@ def register(server, workspace, result):
         return call("get", project_id=project_id)
 
     @server.tool()
+    def studio_extract_pattern(
+        project_id: str,
+        workflow_ref: str,
+        selected_nodes: list[str],
+        purpose: str,
+        pattern_id: str,
+        expected_revision: int,
+        request_id: str,
+        capability_map: dict | None = None,
+        portable_parameters: dict[str, list[str]] | None = None,
+        version: str = "1.0.0",
+    ) -> dict:
+        """Draft an inert Pattern from the checked installed workflow version."""
+        return call(
+            "extract_pattern",
+            project_id=project_id,
+            workflow_ref=workflow_ref,
+            selected_nodes=selected_nodes,
+            purpose=purpose,
+            pattern_id=pattern_id,
+            expected_revision=expected_revision,
+            request_id=request_id,
+            version=version,
+            capability_map=capability_map or {},
+            portable_parameters=portable_parameters or {},
+        )
+
+    @server.tool()
+    def studio_get_pattern_extraction(project_id: str, extraction_id: str) -> dict:
+        return call("get_extraction", project_id=project_id, extraction_id=extraction_id)
+
+    @server.tool()
+    def studio_export_pattern_extraction(project_id: str, extraction_id: str) -> dict:
+        """Write a sanitised draft ZIP inside the local workspace."""
+        return call("export_extraction", project_id=project_id, extraction_id=extraction_id)
+
+    @server.tool()
+    def studio_qualify_pattern(pack_ref: str, pattern_ref: str) -> dict:
+        """Replay a version's reviewed test suite in the isolated Builder."""
+        return call("qualify_pattern", pack_ref=pack_ref, pattern_ref=pattern_ref)
+
+    @server.tool()
+    def studio_get_pattern_trial(pattern_ref: str, qualification_hash: str) -> dict:
+        return call(
+            "get_pattern_trial", pattern_ref=pattern_ref, qualification_hash=qualification_hash
+        )
+
+    @server.tool()
+    def studio_recommend_patterns(
+        project_id: str,
+        expected_revision: int,
+        request_id: str,
+        context: dict,
+        top_k: int = 5,
+    ) -> dict:
+        """Find applicable Pattern candidates for the current design revision."""
+        return call(
+            "recommend_patterns",
+            project_id=project_id,
+            expected_revision=expected_revision,
+            request_id=request_id,
+            context=context,
+            top_k=top_k,
+        )
+
+    @server.tool()
+    def studio_decide_pattern(
+        project_id: str,
+        expected_revision: int,
+        request_id: str,
+        recommendation_id: str,
+        decision: str,
+        user_text: str,
+        message_ref: str | None = None,
+    ) -> dict:
+        """Relay the user's actual response to a displayed Pattern recommendation."""
+        return call(
+            "decide_pattern",
+            project_id=project_id,
+            expected_revision=expected_revision,
+            request_id=request_id,
+            recommendation_id=recommendation_id,
+            decision=decision,
+            user_text=user_text,
+            message_ref=message_ref,
+        )
+
+    @server.tool()
+    def studio_inspect_pattern(pattern_ref: str, level: str, project_id: str | None = None) -> dict:
+        return call("inspect_pattern", pattern_ref=pattern_ref, level=level, project_id=project_id)
+
+    @server.tool()
+    def studio_configure_patterns(
+        project_id: str,
+        expected_revision: int,
+        request_id: str,
+        enabled: bool,
+    ) -> dict:
+        """Enable or disable design-stage recommendations for this interview."""
+        return call(
+            "configure_patterns",
+            project_id=project_id,
+            expected_revision=expected_revision,
+            request_id=request_id,
+            enabled=enabled,
+        )
+
+    @server.tool()
+    def studio_generalize_patterns(
+        pattern_refs: list[str],
+        pattern_id: str,
+        version: str,
+        variant: int | None = None,
+        title: str | None = None,
+        profile: dict | None = None,
+        profile_mappings: dict[str, str] | None = None,
+    ) -> dict:
+        """Compare source contracts and return an inert common draft or explicit variant."""
+        return call(
+            "generalize_patterns",
+            pattern_refs=pattern_refs,
+            pattern_id=pattern_id,
+            version=version,
+            variant=variant,
+            title=title,
+            profile=profile,
+            profile_mappings=profile_mappings,
+        )
+
+    @server.tool()
     def studio_update_project(
         project_id: str, expected_revision: int, name: str | None = None, goal: dict | None = None
     ) -> dict:

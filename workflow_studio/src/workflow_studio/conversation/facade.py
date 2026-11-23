@@ -283,7 +283,7 @@ def preview(workspace, relative):
         }
 
 
-def dispatch(studio, workspace, action, params):
+def dispatch(studio, workspace, action, params, *, runtime_python=None):
     """Ordinary transport data can propose an answer, never attest its author."""
     p = dict(params)
     if action == "create":
@@ -292,13 +292,50 @@ def dispatch(studio, workspace, action, params):
         return [asdict(project) for project in studio.projects.list(**p)]
     if action == "preview":
         return preview(workspace, **p)
+    if action == "qualify_pattern":
+        from ..patterns.qualification import qualify
+
+        return qualify(studio, **p, runtime_python=runtime_python)
+    if action == "get_pattern_trial":
+        return studio.tools.packs.trial(**p)
+    if action == "generalize_patterns":
+        from ..patterns.generalizer import generalize
+
+        refs = p.pop("pattern_refs")
+        if not isinstance(refs, list) or not 2 <= len(refs) <= 20:
+            raise StudioError("INPUT_INVALID", "請提供 2–20 個來源 Pattern 版本。")
+        sources = [
+            studio.tools.packs.get_asset("pattern", ref).model.model_dump(mode="json")
+            for ref in refs
+        ]
+        return generalize(sources, **p)
+    if action in {"recommend_patterns", "decide_pattern", "inspect_pattern", "configure_patterns"}:
+        from ..patterns import trigger
+
+        handler = {
+            "recommend_patterns": trigger.propose,
+            "decide_pattern": trigger.decide,
+            "inspect_pattern": trigger.inspect,
+            "configure_patterns": trigger.configure,
+        }[action]
+        return handler(studio, **p)
     pid = p.pop("project_id")
+    if action in {"extract_pattern", "get_extraction", "export_extraction"}:
+        from ..patterns import extractor
+
+        if action == "extract_pattern":
+            return extractor.save_extraction(studio, pid, p.pop("source"), p)
+        if action == "get_extraction":
+            return extractor.get_extraction(studio, pid, p["extraction_id"])
+        return extractor.export_extraction(studio, workspace, pid, p["extraction_id"])
     if action == "source":
         return studio.sources.get(pid, p["source_id"]).manifest
     if action in {"prepare_blueprint", "export_blueprint", "get_blueprint"}:
         from . import blueprints
 
         if action == "prepare_blueprint":
+            if {"_pattern_compositions", "_pattern_rehearsal"} & p.keys():
+                raise StudioError("INPUT_INVALID", "請透過已確認的 Pattern 合成入口建立來源證據。")
             return blueprints.prepare(studio, pid, **p)
         if action == "export_blueprint":
             return blueprints.export(studio, workspace, pid, **p)

@@ -33,6 +33,12 @@ def studio_python():
 
 
 def studio_request(workspace, operation, params):
+    if operation == "extract_pattern":
+        from .graph.installed import installed_graph
+
+        if "source" in params or not isinstance(params.get("workflow_ref"), str):
+            raise FlowError("INVALID_CONFIGURATION", "擷取請指定已安裝的 workflow_id@version。")
+        params = {**params, "source": installed_graph(workspace, params["workflow_ref"])}
     args = [
         str(studio_python()),
         "-I",
@@ -42,6 +48,8 @@ def studio_request(workspace, operation, params):
         "workflow_studio",
         "--workspace",
         str(workspace),
+        "--runtime-python",
+        sys.executable,
         "interview",
         operation,
         "--payload",
@@ -53,7 +61,7 @@ def studio_request(workspace, operation, params):
             input=json.dumps(params),
             encoding="utf-8",
             capture_output=True,
-            timeout=45,
+            timeout=350 if operation == "qualify_pattern" else 45,
             env=worker_environment(), check=False,
         )
     except subprocess.TimeoutExpired as exc:
