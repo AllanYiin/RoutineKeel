@@ -38,6 +38,9 @@ def approved(proposal):
         "proposal_id": proposal["proposal_id"],
         "decision": "approve",
         "user_text": "同意這份設計",
+        "shown_sections": {
+            key: item["sha256"] for key, item in proposal["review_sections"].items()
+        },
         **({"review_hash": proposal["review_hash"]} if "review_hash" in proposal else {}),
     }
 
@@ -53,6 +56,10 @@ def finalize(studio, root, proposal, review):
             "request_id": "finalize",
             "draft_id": proposal["proposal_id"],
             "review": review,
+            "draft_reply": "初稿可進入定稿",
+            "shown_sections": {
+                key: item["sha256"] for key, item in proposal["review_sections"].items()
+            },
         },
     )
 
@@ -116,12 +123,8 @@ def test_real_importer_round_trip_immutable_export_and_reopen(tmp_path, workflow
     )
     payload = tmp_path / "message.json"
     payload.write_text(json.dumps({"inputs": {"message": "a", "needs_review": True}}))
-    waiting = runtime.run_workflow_sync({"task": "routing", "source": payload})[
-        "blueprint"
-    ]
-    assert waiting["pending"]["skill_documents"] == {
-        "review": {"SKILL.md": "請只在交付時校閱"}
-    }
+    waiting = runtime.run_workflow_sync({"task": "routing", "source": payload})["blueprint"]
+    assert waiting["pending"]["skill_documents"] == {"review": {"SKILL.md": "請只在交付時校閱"}}
 
 
 def test_declined_stale_incomplete_or_private_design_never_delivered(
@@ -152,9 +155,8 @@ def test_declined_stale_incomplete_or_private_design_never_delivered(
             expected_revision=studio.projects.get(state["project_id"]).version, request_id="private"
         )
         params["design"]["rules"] = {"password": "private-fixture"}
-        p = dispatch(studio, tmp_path, "prepare_blueprint", params)
         with pytest.raises(StudioError, match="認證"):
-            finalize(studio, tmp_path, p, workflow_design_review(p))
+            dispatch(studio, tmp_path, "prepare_blueprint", params)
         assert not (tmp_path / "blueprints").exists()
 
 

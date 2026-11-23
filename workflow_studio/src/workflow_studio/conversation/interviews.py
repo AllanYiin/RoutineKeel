@@ -57,7 +57,7 @@ def invalidate(db, state, domain, revision):
         if affected.intersection(parents):
             affected.add(key)
             item = state["coverage"][key]
-            if item["status"] != "unknown":
+            if item["status"] not in {"unknown", "blocked"}:
                 item.update(status="blocked", origin="upstream_changed", revision=revision)
     if affected.intersection({"goal", "inputs", "outputs", "rules", "capabilities", "preferences"}):
         for decision in state.get("pattern_decisions", {}).values():
@@ -304,7 +304,7 @@ class Interviews:
             type(confidence) not in (int, float) or not 0 <= confidence <= 1
         ):
             reject("信心值須在 0 到 1 之間。")
-        if status == "confirmed":
+        if status == "confirmed" or user_reply is not None:
             if (
                 not isinstance(user_reply, UserReply)
                 or not user_reply.evidence_ref.strip()
@@ -326,10 +326,14 @@ class Interviews:
             reject("推論須附信心值與來源。")
         if domain == "goal" and not isinstance(value, str):
             reject("工作目標需要文字。")
-        if domain == "success" and not (
-            isinstance(value, list)
-            and value
-            and all(isinstance(s, str) and s.strip() for s in value)
+        if (
+            domain == "success"
+            and status != "blocked"
+            and not (
+                isinstance(value, list)
+                and value
+                and all(isinstance(s, str) and s.strip() for s in value)
+            )
         ):
             reject("成功條件需要逐項文字。")
         if domain != "preferences" and impact == "low":
@@ -355,15 +359,23 @@ class Interviews:
             items = state["coverage"]
             for data, user_reply in answers:
                 domain, status, value = data["domain"], data["status"], data["value"]
-                if status == "confirmed" and state["session_id"] != user_reply.session_id:
+                if user_reply is not None and state["session_id"] != user_reply.session_id:
                     raise StudioError("USER_CONFIRMATION_REQUIRED", "回覆屬於其他訪談。")
                 old = items[domain]
+                if user_reply is None and (
+                    old["status"] == "confirmed"
+                    or old["status"] == "blocked"
+                    and "user_text" in old
+                ):
+                    raise StudioError(
+                        "USER_CONFIRMATION_REQUIRED", "這項已有使用者決定，請轉交新的實際回覆。"
+                    )
                 if old["revision"] and (
                     old["value"] != value or old["status"] == "confirmed" and status != "confirmed"
                 ):
                     invalidate(db, state, domain, expected_revision + 1)
                 items[domain] = {**data, "revision": expected_revision + 1}
-                if domain in {"goal", "success"}:
+                if domain in {"goal", "success"} and status != "blocked":
                     goal = self.projects.get(project_id).goal
                     goal["description" if domain == "goal" else "success_criteria"] = value
                     db.execute(

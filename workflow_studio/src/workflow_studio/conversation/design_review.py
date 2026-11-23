@@ -22,6 +22,7 @@ _THRESHOLD = re.compile(
     r"threshold|tolerance|cutoff|minimum|maximum|timeout|^min_|^max_|^limit", re.I
 )
 _LOCI = {"local_runtime", "host_mediated", "external_service"}
+PRESENTATION_VERSION = 2
 
 
 class ResearchSource(Contract):
@@ -81,7 +82,7 @@ def _diagram(model, *, final):
                 lines.append(f"  {labels[path]} -. 檢核未通過 .-> rk_stop")
             if any(rule.get("tolerate") for rule in review.get("machine", [])):
                 lines.append(f'  {labels[path]} -. 容許偏差 .-> rk_note["保存待修與校閱事項"]')
-            for parent in dependencies[node.id]:
+            for parent in sorted(dependencies[node.id]):
                 route = routes.get((parent, node.id))
                 link = f"-->|{route}|" if route else "-->"
                 lines.append(f"  {labels[prefix + parent]} {link} {labels[path]}")
@@ -243,12 +244,156 @@ def draft_presentation(graph):
     model, _ = validate_blueprint(graph)
     steps, variables, tools = inventory(model)
     return {
+        "presentation_version": PRESENTATION_VERSION,
         "diagram": _diagram(model, final=False),
         "steps": steps,
         "variables": variables,
         "tools": tools,
         "research_requests": research_requests(variables),
         "next_questions": ["確認內嵌技能及工具配置", "校閱術語及變數", "確認關鍵檢核與交付方式"],
+    }
+
+
+def review_sections(proposal):
+    graph = proposal["graph"]
+    decisions = proposal["decisions"]
+    draft = proposal["draft_design"]
+    final = proposal.get("design_review")
+    groups = {
+        "scope": (
+            "目標、輸入與交付",
+            {
+                "工作流": graph["workflow"],
+                "參與者": decisions["actors"],
+                "每次輸入": graph["inputs"],
+                "具名交付": graph["outputs"],
+                "使用偏好與設定": decisions["preferences"],
+            },
+        ),
+        "process": (
+            "工作步驟、分支與復原",
+            {
+                "所有步驟與資料契約": graph["nodes"],
+                "人工校閱": decisions["review"],
+                "失敗或中斷後的處理": decisions["recovery"],
+                **(
+                    {
+                        "每步用途與完成條件": {
+                            path: step["decision"] for path, step in final["steps"].items()
+                        }
+                    }
+                    if final
+                    else {}
+                ),
+            },
+        ),
+        "implementation": (
+            "技能、工具與變數",
+            {
+                "技能來源": proposal["skill_sources"],
+                "內嵌檔案": list(proposal["skill_files"]),
+                "採用的 Pattern 與能力綁定": graph["provenance"].get("pattern_compositions", []),
+                "工具配置及權限": (final or draft)["tools"],
+                "變數清冊": (final or draft)["variables"],
+                **(
+                    {"技能與步驟對應": final["skills"], "術語對照": final["glossary"]}
+                    if final
+                    else {"待研究的建議值": draft["research_requests"]}
+                ),
+            },
+        ),
+        "acceptance": (
+            "業務規則、檢查與驗收",
+            {
+                "業務規則": decisions["rules"],
+                "品質契約及驗收案例": graph["quality_contract"],
+                "工作流改版策略": decisions["evolution"],
+                "資源與費用": decisions["budget"],
+                "預檢列出的案例缺口": proposal.get("build_gaps", []),
+                "其他仍待答覆的項目": proposal["open_design_domains"],
+            },
+        ),
+    }
+    stage = "final" if final else "draft"
+    return {
+        key: {
+            "title": title,
+            "display_text": json.dumps(values, ensure_ascii=False, indent=2),
+            "sha256": digest(
+                {
+                    "stage": stage,
+                    "project_id": proposal["project_id"],
+                    "revision": proposal["revision"],
+                    "section": key,
+                    "values": values,
+                }
+            ),
+        }
+        for key, (title, values) in groups.items()
+    }
+
+
+def review_text(proposal):
+    final = proposal.get("design_review")
+    diagram = final["final_diagram"] if final else proposal["draft_design"]["diagram"]
+    reply = "確認定稿並匯出" if final else "初稿可進入定稿"
+    lines = ["待校閱的設計提案", f"```mermaid\n{diagram}\n```"]
+    if proposal["confirmed"]:
+        lines += [
+            "### 已答覆的訪談需求",
+            json.dumps(proposal["confirmed"], ensure_ascii=False, indent=2),
+        ]
+    for section in proposal["review_sections"].values():
+        lines += ["### " + section["title"], section["display_text"]]
+    lines.append(
+        "請逐組校閱以上所有預填內容。想調整時，直接說明要刪減、修改或稍後決定的項目。"
+        f"若全數同意，回覆「{reply}」。未答覆的項目仍待校閱。"
+    )
+    return "\n\n".join(lines)
+
+
+def require_shown_sections(proposal, shown_sections):
+    sections = proposal.get("review_sections")
+    if not sections:
+        fail("這份設計缺少預填校閱清單，請重新預覽初稿。")
+    expected = {key: item["sha256"] for key, item in sections.items()}
+    if shown_sections != expected:
+        supplied = shown_sections if isinstance(shown_sections, dict) else {}
+        missing = [
+            item["title"] for key, item in sections.items() if supplied.get(key) != expected[key]
+        ]
+        if missing:
+            fail("請先在對話顯示並請使用者確認本版所有預填內容，缺少：" + "、".join(missing))
+        fail("預填校閱清單含其他章節，請重新取得本版清單。")
+
+
+def design_progress(state):
+    proposal = state.get("blueprint_proposal")
+    if state["phase"] in {"paused", "archived", "deleted", "exported"}:
+        return None
+    if not proposal or (
+        proposal.get("revision") != state["revision"]
+        or proposal.get("draft_design", {}).get("presentation_version") != PRESENTATION_VERSION
+    ):
+        return {
+            "stage": "draft_stale" if proposal else "draft_required",
+            "next_action": "prepare_blueprint",
+        }
+    if proposal.get("status") == "ready_for_confirmation":
+        if not proposal.get("draft_confirmation"):
+            return {"stage": "draft_stale", "next_action": "prepare_blueprint"}
+        return {
+            "stage": "final_review_required",
+            "next_action": "export_blueprint",
+            "proposal_id": proposal["proposal_id"],
+            "review_hash": proposal["review_hash"],
+        }
+    open_domains = proposal.get("open_design_domains", [])
+    return {
+        "stage": "decisions_required" if open_domains else "draft_review_required",
+        "next_action": "reply_batch" if open_domains else "finalize_workflow_design",
+        "proposal_id": proposal["proposal_id"],
+        "open_design_domains": open_domains,
     }
 
 
@@ -393,13 +538,23 @@ def final_presentation(repository, proposal, review):
     return composed, presentation, digest(presentation)
 
 
-def finalize(studio, project_id, expected_revision, request_id, draft_id, review):
+def finalize(
+    studio,
+    project_id,
+    expected_revision,
+    request_id,
+    draft_id,
+    review,
+    draft_reply=None,
+    shown_sections=None,
+):
     def edit(_db, state):
         current = state.get("blueprint_proposal", {})
         if (
             current.get("proposal_id") != draft_id
             or current.get("revision") != expected_revision
             or current.get("status") != "design_review_required"
+            or current.get("draft_design", {}).get("presentation_version") != PRESENTATION_VERSION
         ):
             fail("請先展示最新的工作流初稿，定稿須對應同一版本。")
         if state["phase"] == "paused":
@@ -409,26 +564,33 @@ def finalize(studio, project_id, expected_revision, request_id, draft_id, review
         for name, label in (("rules", "業務規則"), ("success", "成功條件"), ("cases", "驗收案例")):
             if not current["decisions"].get(name):
                 fail("定稿缺少" + label + "，請先補入初稿。")
+        reply = (
+            draft_reply.strip().rstrip("。！.!").strip().casefold()
+            if isinstance(draft_reply, str)
+            else ""
+        )
+        if reply not in {"初稿可進入定稿", "確認初稿", "同意進入定稿", "approve draft"}:
+            fail("請先在對話展示同一版初稿，並轉交使用者明確同意進入定稿的實際回覆。")
+        require_shown_sections(current, shown_sections)
         graph, presentation, proof = final_presentation(studio.repository, current, review)
         final = {
             **current,
             "status": "ready_for_confirmation",
             "draft_id": draft_id,
+            "draft_confirmation": {
+                "draft_id": draft_id,
+                "revision": expected_revision,
+                "user_text": draft_reply,
+                "shown_sections": shown_sections,
+            },
             "graph": graph,
             "design_review": presentation,
             "review_hash": proof,
             "revision": expected_revision + 1,
         }
         final.pop("proposal_id")
-        details = {
-            key: value for key, value in presentation.items() if not key.endswith("_diagram")
-        }
-        final["display_text"] = (
-            "請檢視完整定稿並確認。\n\n```mermaid\n"
-            + presentation["final_diagram"]
-            + "\n```\n\n"
-            + json.dumps(details, ensure_ascii=False, indent=2)
-        )
+        final["review_sections"] = review_sections(final)
+        final["display_text"] = review_text(final)
         final["proposal_id"] = digest(final)
         state["blueprint_proposal"] = final
         state["phase"] = "needs_confirmation"
@@ -440,7 +602,7 @@ def finalize(studio, project_id, expected_revision, request_id, draft_id, review
         project_id,
         expected_revision,
         request_id,
-        ["finalize_workflow_design", draft_id, review],
+        ["finalize_workflow_design", draft_id, review, draft_reply, shown_sections],
         edit,
     )
     return updated["blueprint_proposal"]

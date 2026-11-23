@@ -31,7 +31,11 @@ def sketch(workspace, graph):
     )
 
 
-def finish(workspace, draft, configuration, request_id="finalize"):
+def section_hashes(proposal):
+    return {key: section["sha256"] for key, section in proposal["review_sections"].items()}
+
+
+def finish(workspace, draft, configuration, request_id="finalize", **overrides):
     return studio_request(
         workspace,
         "finalize_workflow_design",
@@ -41,6 +45,9 @@ def finish(workspace, draft, configuration, request_id="finalize"):
             "request_id": request_id,
             "draft_id": draft["proposal_id"],
             "review": configuration,
+            "draft_reply": "初稿可進入定稿",
+            "shown_sections": section_hashes(draft),
+            **overrides,
         },
     )
 
@@ -57,6 +64,7 @@ def approve(workspace, proposal, **overrides):
             "user_text": "同意定稿並匯出",
             "decision": "approve",
             "review_hash": proposal.get("review_hash"),
+            "shown_sections": section_hashes(proposal),
             **overrides,
         },
     )
@@ -92,9 +100,22 @@ def test_final_review_requires_complete_researched_inventory_and_exact_confirmat
     assert "parameter/upper/temperature" in {
         request["variable"] for request in draft["draft_design"]["research_requests"]
     }
+    pid = draft["project_id"]
+    resumed = studio_request(tmp_path, "next_batch", {"project_id": pid})
+    assert resumed["design_progress"]["stage"] == "draft_review_required"
+    assert resumed["questions"] == []
+    assert "待校閱的設計提案" in resumed["text"]
+    assert "保持來源內容" in resumed["text"]
     with pytest.raises(FlowError, match="完整定稿"):
         approve(tmp_path, draft, request_id="early")
     review = workflow_design_review(draft)
+    for index, reply in enumerate((None, "先不要定稿", "確認定稿並匯出")):
+        with pytest.raises(FlowError, match="初稿.*實際回覆"):
+            finish(tmp_path, draft, review, request_id=f"no-draft-review-{index}", draft_reply=reply)
+    omitted = section_hashes(draft)
+    del omitted["implementation"]
+    with pytest.raises(FlowError, match="技能、工具與變數"):
+        finish(tmp_path, draft, review, request_id="omitted-section", shown_sections=omitted)
     record = review["variables"]["parameter/upper/temperature"].pop("research")
     with pytest.raises(FlowError, match="網路研究紀錄"):
         finish(tmp_path, draft, review, request_id="missing-research")
@@ -115,6 +136,14 @@ def test_final_review_requires_complete_researched_inventory_and_exact_confirmat
     review["variables"]["parameter/upper/temperature"]["kind"] = "adjustable"
     review["glossary"] = {"temperature": "取樣溫度"}
     final = finish(tmp_path, draft, review)
+    assert final["draft_confirmation"] == {
+        "draft_id": draft["proposal_id"], "revision": draft["revision"],
+        "user_text": "初稿可進入定稿",
+        "shown_sections": section_hashes(draft),
+    }
+    resumed = studio_request(tmp_path, "next_batch", {"project_id": pid})
+    assert resumed["design_progress"]["stage"] == "final_review_required"
+    assert resumed["questions"] == [] and resumed["next_actions"][0] == "export_blueprint"
     shown = final["design_review"]
     assert "底座 · 檢核輸入" in shown["final_diagram"]
     assert "底座 · 檢核與交付輸出" in shown["final_diagram"]
@@ -122,6 +151,12 @@ def test_final_review_requires_complete_researched_inventory_and_exact_confirmat
     assert shown["tools"]["upper"]["parameters"]["temperature"] == 0.2
     assert shown["glossary"] == review["glossary"]
     assert shown["variables"]["parameter/upper/temperature"]["research"] == record
+    assert "取樣溫度" in final["review_sections"]["implementation"]["display_text"]
+    assert "若全數同意，回覆「確認定稿並匯出」" in final["display_text"]
+    with pytest.raises(FlowError, match="所有預填內容"):
+        approve(tmp_path, final, shown_sections=None, request_id="without-sections")
+    with pytest.raises(FlowError, match="所有預填內容"):
+        approve(tmp_path, final, shown_sections=section_hashes(draft), request_id="draft-sections")
     assert finish(tmp_path, draft, review) == final
     with pytest.raises(FlowError, match="定稿指紋"):
         approve(tmp_path, final, review_hash="another", request_id="wrong-design")
@@ -129,6 +164,8 @@ def test_final_review_requires_complete_researched_inventory_and_exact_confirmat
         approve(tmp_path, final, user_text="先不要匯出", request_id="negative-reply")
     with pytest.raises(FlowError, match="明確核准"):
         approve(tmp_path, final, user_text="我還在看", request_id="pending-reply")
+    with pytest.raises(FlowError, match="明確核准"):
+        approve(tmp_path, final, user_text="初稿可進入定稿", request_id="draft-reply-is-not-export")
     assert not (tmp_path / "blueprints").exists()
     exported = approve(tmp_path, final)
     with ZipFile(exported["path"]) as archive:
@@ -317,7 +354,58 @@ def test_reviewed_tool_location_must_match_runtime_binding(
     assert any(
         row["node"] == "copy" for row in final["build_preflight"]["capability_gaps"]
     )
+    resumed = studio_request(tmp_path, "get", {"project_id": draft["project_id"]})
+    assert resumed["blueprint_proposal"]["build_preflight"] == final["build_preflight"]
+    assert "目前無法建置候選工作流" in resumed["blueprint_proposal"]["display_text"]
     exported = approve(tmp_path, final)
     service = WorkflowService(tmp_path)
     key = service.install_workflow(archive=exported["path"])["draft_id"]
     assert service.resolve_blueprint_capabilities(key)["status"] == "blocked"
+
+
+def test_deferred_decision_survives_prefill_and_requires_a_current_user_reply(
+    tmp_path, workflow_design_review,
+):
+    graph = data_graph()
+    graph["quality_contract"]["success_criteria"] = ["保留原始文字"]
+    draft = sketch(tmp_path, graph)
+    pid = draft["project_id"]
+
+    def studio(operation, **params):
+        return studio_request(tmp_path, operation, {"project_id": pid, **params})
+
+    question = studio("next", domain="rules")
+    assert question["suggested_answer"] == "保持來源內容"
+    deferred = studio(
+        "reply", expected_revision=draft["revision"], request_id="defer", domain="rules",
+        question_id=question["question_id"], user_text="業務規則先留待討論。", response_kind="defer",
+    )
+    assert deferred["coverage"]["rules"]["user_text"] == "業務規則先留待討論。"
+    assert studio("get")["design_progress"]["stage"] == "draft_stale"
+    with pytest.raises(FlowError, match="已有更新"):
+        finish(tmp_path, draft, workflow_design_review(draft))
+    with pytest.raises(FlowError, match="新的實際回覆"):
+        studio(
+            "answer", expected_revision=deferred["revision"], request_id="guess", domain="rules",
+            value="保持來源內容", status="inferred", confidence=0.9, evidence_refs=["assistant"],
+        )
+    preview = {
+        "graph": graph, "design": {"rules": "保持來源內容"},
+        "expected_revision": deferred["revision"], "request_id": "new-draft",
+    }
+    second = studio("prepare_blueprint", **preview)
+    assert second["open_design_domains"] == ["rules"]
+    next_step = studio("next_batch")
+    assert next_step["design_progress"]["stage"] == "decisions_required"
+    assert [question["domain"] for question in next_step["questions"]] == ["rules"]
+    with pytest.raises(FlowError, match="缺少決策.*rules"):
+        finish(tmp_path, second, workflow_design_review(second))
+    decided = studio(
+        "reply", expected_revision=second["revision"], request_id="answer-rules", domain="rules",
+        question_id=next_step["questions"][0]["question_id"], user_text="保持來源內容",
+    )
+    current = studio("prepare_blueprint", **{
+        **preview, "expected_revision": decided["revision"], "request_id": "reviewed-draft",
+    })
+    assert current["open_design_domains"] == []
+    assert finish(tmp_path, current, workflow_design_review(current))["draft_id"] == current["proposal_id"]

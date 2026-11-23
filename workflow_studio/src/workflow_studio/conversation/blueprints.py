@@ -183,7 +183,7 @@ def prepare(
         }
         open_domains = []
         for key, item in state["coverage"].items():
-            if item["status"] == "blocked" and key not in design:
+            if item["status"] == "blocked":
                 open_domains.append(key)
             if key in design:
                 if item["status"] == "confirmed" and item["value"] != design[key]:
@@ -242,26 +242,17 @@ def prepare(
             "open_design_domains": open_domains,
         }
         check_skill_files({"provenance": {"skill_files": proposed["skill_files"]}}, files)
-        reviews = "、".join(item["step"] for item in summary["review"]) or "無"
-        proposed["display_text"] = (
-            f"{model.workflow.goal}\n具名交付：{'、'.join(model.outputs)}\n"
-            f"流程含 {len(order)} 個節點；指定人工校閱：{reviews}。\n"
-            "請檢視步驟、業務規則與驗收案例，可直接在對話確認整份設計或指出要修改的地方。"
-        )
         case_gaps = trial_case_gaps(summary["cases"], canonical["outputs"])
         if case_gaps:
             proposed["build_gaps"] = case_gaps
-            proposed["display_text"] += "\n已有設計案例描述，仍需補齊可執行案例才能試做。"
-        from .design_review import draft_presentation
+        from .design_review import draft_presentation, review_sections, review_text
 
+        check_portable(canonical)
+        check_portable(visible_design(summary))
         proposed["draft_design"] = draft_presentation(canonical)
         proposed["status"] = "design_review_required"
-        proposed["display_text"] = (
-            "先展示工作流初稿，討論步驟、輸入輸出與分支。完成技能、工具、術語、"
-            "變數與檢核決策後，再產生完整定稿。\n\n```mermaid\n"
-            + proposed["draft_design"]["diagram"]
-            + "\n```"
-        )
+        proposed["review_sections"] = review_sections(proposed)
+        proposed["display_text"] = review_text(proposed)
         proposed["proposal_id"] = digest(proposed)
         state["blueprint_proposal"] = proposed
         state["phase"] = "needs_confirmation"
@@ -350,6 +341,7 @@ def export(
     user_text,
     decision,
     review_hash=None,
+    shown_sections=None,
 ):
     if not isinstance(user_text, str) or not user_text.strip():
         fail("請先在對話確認目前顯示的藍圖摘要。")
@@ -372,22 +364,32 @@ def export(
             return
         if decision != "approve":
             fail("尚未收到這一版的匯出決定。")
-        if "draft_design" in proposal and (
+        if (
             proposal.get("status") != "ready_for_confirmation"
+            or "design_review" not in proposal
             or not review_hash
             or review_hash != proposal.get("review_hash")
         ):
             fail("須先顯示完整定稿，並確認該版的定稿指紋。")
-        if "design_review" in proposal:
-            # Require affirmative intent in the actual reply, separately from its
-            # transport decision and the hash identifying the displayed version.
-            reply = user_text.strip().rstrip("。！.!").strip().casefold()
-            if reply not in {
-                "確認定稿並匯出", "同意定稿並匯出", "同意匯出", "確認匯出", "可匯出",
-                "同意這份設計", "確認匯出新版", "確認匯出這份回歸候選",
-                "approve and export", "confirm and export",
-            }:
-                fail("回覆未明確核准匯出，請使用「確認定稿並匯出」或選擇拒絕。")
+        if not proposal.get("draft_confirmation"):
+            fail("這份定稿缺少初稿校閱回覆，請重新預覽並校閱初稿。")
+        reply = user_text.strip().rstrip("。！.!").strip().casefold()
+        if reply not in {
+            "確認定稿並匯出",
+            "同意定稿並匯出",
+            "同意匯出",
+            "確認匯出",
+            "可匯出",
+            "同意這份設計",
+            "確認匯出新版",
+            "確認匯出這份回歸候選",
+            "approve and export",
+            "confirm and export",
+        }:
+            fail("回覆未明確核准匯出，請使用「確認定稿並匯出」或選擇拒絕。")
+        from .design_review import require_shown_sections
+
+        require_shown_sections(proposal, shown_sections)
         files, versions = skill_contents(studio, project_id, proposal["selections"], current=True)
         if versions != proposal["skill_sources"]:
             fail("技能來源版本已變更。")
@@ -424,11 +426,10 @@ def export(
             "skill_sources": versions,
             "skill_files": proposal["skill_files"],
         }
-        if "design_review" in proposal:
-            graph["provenance"]["design_review"] = {
-                "sha256": proposal["review_hash"],
-                "details": proposal["design_review"],
-            }
+        graph["provenance"]["design_review"] = {
+            "sha256": proposal["review_hash"],
+            "details": proposal["design_review"],
+        }
         raw = archive_bytes(graph, files)
         check_import(raw, graph)
         state["blueprint_revision"] = {
@@ -437,6 +438,7 @@ def export(
             "revision": expected_revision + 1,
             "selections": proposal["selections"],
             "confirmation_text": user_text,
+            "shown_sections": shown_sections,
         }
         for domain, value in proposal["decisions"].items():
             item = state["coverage"][domain]
@@ -461,6 +463,7 @@ def export(
             "user_text": user_text,
             "decision": decision,
             **({"review_hash": review_hash} if review_hash is not None else {}),
+            **({"shown_sections": shown_sections} if shown_sections is not None else {}),
         },
         edit,
     )

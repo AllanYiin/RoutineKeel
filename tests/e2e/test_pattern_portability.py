@@ -348,6 +348,8 @@ def _target(service, workflow_id, pattern_ref, workflow_design_review):
         "project_id": pid, "expected_revision": composed["revision"], "request_id": "finalize",
         "draft_id": composed["proposal_id"],
         "review": workflow_design_review(composed["proposal"], workspace=root),
+        "draft_reply": "初稿可進入定稿",
+        "shown_sections": {key: item["sha256"] for key, item in composed["proposal"]["review_sections"].items()},
     })
     exported = studio_request(
         root,
@@ -358,6 +360,7 @@ def _target(service, workflow_id, pattern_ref, workflow_design_review):
             "request_id": "export",
             "proposal_id": final["proposal_id"],
             "review_hash": final["review_hash"],
+            "shown_sections": {key: item["sha256"] for key, item in final["review_sections"].items()},
             "decision": "approve",
             "user_text": "確認匯出",
         },

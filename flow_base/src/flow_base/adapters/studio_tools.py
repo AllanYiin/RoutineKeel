@@ -358,7 +358,7 @@ def register(server, workspace, result):
         design: dict | None = None,
         skills: list[dict] | None = None,
     ) -> dict:
-        """Show the workflow-only draft first. Use host web search for its research_requests."""
+        """Prepare a detailed draft. Show its diagram and every review section before asking for approval."""
         return call(
             "prepare_blueprint",
             project_id=project_id,
@@ -377,11 +377,14 @@ def register(server, workspace, result):
     @server.tool()
     def studio_finalize_workflow_design(
         project_id: str, expected_revision: int, request_id: str, draft_id: str, review: dict,
+        draft_reply: str | None = None,
+        shown_sections: dict[str, str] | None = None,
     ) -> dict:
-        """After displaying the draft, submit the researched settings and show the complete final review."""
+        """Relay actual draft approval and the IDs and SHA-256 values of all displayed sections."""
         return call(
             "finalize_workflow_design", project_id=project_id, expected_revision=expected_revision,
-            request_id=request_id, draft_id=draft_id, review=review,
+            request_id=request_id, draft_id=draft_id, review=review, draft_reply=draft_reply,
+            shown_sections=shown_sections,
         )
 
     @server.tool()
@@ -393,8 +396,9 @@ def register(server, workspace, result):
         decision: str,
         user_text: str,
         review_hash: str | None = None,
+        shown_sections: dict[str, str] | None = None,
     ) -> dict:
-        """Record the desktop user's actual response to the displayed design proposal."""
+        """Relay the user's actual decision and the IDs and SHA-256 values of all displayed final sections."""
         return call(
             "export_blueprint",
             project_id=project_id,
@@ -404,6 +408,7 @@ def register(server, workspace, result):
             decision=decision,
             user_text=user_text,
             review_hash=review_hash,
+            shown_sections=shown_sections,
         )
 
     @server.tool()

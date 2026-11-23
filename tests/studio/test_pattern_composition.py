@@ -180,6 +180,8 @@ def test_composition_is_revisioned_and_verifies_in_existing_builder(
             "request_id": "finalize",
             "draft_id": result["proposal_id"],
             "review": workflow_design_review(result["proposal"]),
+            "draft_reply": "初稿可進入定稿",
+            "shown_sections": {key: item["sha256"] for key, item in result["proposal"]["review_sections"].items()},
         },
     )
     frozen = studio_request(
@@ -191,6 +193,7 @@ def test_composition_is_revisioned_and_verifies_in_existing_builder(
             "request_id": "freeze",
             "proposal_id": final["proposal_id"],
             "review_hash": final["review_hash"],
+            "shown_sections": {key: item["sha256"] for key, item in final["review_sections"].items()},
             "decision": "approve",
             "user_text": "確認匯出新版",
         },

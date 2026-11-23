@@ -69,7 +69,9 @@ def test_desktop_interview_to_reversible_version(tmp_path, workflow_design_revie
     )
     design = studio("finalize_workflow_design", project_id=pid,
                     expected_revision=design["revision"], request_id="finalize",
-                    draft_id=design["proposal_id"], review=workflow_design_review(design))
+                    draft_id=design["proposal_id"], review=workflow_design_review(design),
+                    draft_reply="初稿可進入定稿",
+                    shown_sections={key: item["sha256"] for key, item in design["review_sections"].items()})
     export = studio(
         "export_blueprint",
         project_id=pid,
@@ -79,6 +81,7 @@ def test_desktop_interview_to_reversible_version(tmp_path, workflow_design_revie
         decision="approve",
         user_text="確認定稿並匯出",
         review_hash=design["review_hash"],
+        shown_sections={key: item["sha256"] for key, item in design["review_sections"].items()},
     )
     svc = WorkflowService(tmp_path)
     with ZipFile(export["path"]) as z:
@@ -157,9 +160,12 @@ def test_desktop_interview_to_reversible_version(tmp_path, workflow_design_revie
     candidate["workflow"].update(version="1.1.0", revision=2)
     candidate["nodes"][0]["capability"] = "text.upper"
     proposal = evolve(proposal, "prepare", graph=candidate, design={"rules": "保留原文"})
-    proposal = evolve(proposal, "finalize", design_id=proposal["design_id"], review=workflow_design_review(proposal))
+    proposal = evolve(proposal, "finalize", design_id=proposal["design_id"],
+                      review=workflow_design_review(proposal), draft_reply="初稿可進入定稿",
+                      shown_sections={key: item["sha256"] for key, item in proposal["review_sections"].items()})
     proposal = evolve(proposal, "export", design_id=proposal["design_id"],
-                      review_hash=proposal["review_hash"], user_text="確認定稿並匯出")
+                      review_hash=proposal["review_hash"], user_text="確認定稿並匯出",
+                      shown_sections={key: item["sha256"] for key, item in proposal["review_sections"].items()})
     held = tmp_path / "holdout.json"
     held.write_text(json.dumps([golden("fresh")]))
     compared = evolve(

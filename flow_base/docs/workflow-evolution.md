@@ -11,7 +11,7 @@
 
 ## 比較與安裝
 
-Studio 顯示修訂後的摘要，收到桌面對話的確認後匯出資料藍圖。底座把它建成候選套件，在臨時工作區載入套件，用執行結果逐一核對具名交付。正式工作仍可使用原本的版本。
+Studio 先在對話顯示候選流程的初稿圖，收到當前版本的校閱回覆後才產生含底座與自訂步驟的定稿圖。使用者確認該定稿並同意匯出後，才匯出資料藍圖。底座把它建成候選套件，在臨時工作區載入套件，用執行結果逐一核對具名交付。正式工作仍可使用原本的版本。
 
 比較包含固定案例、連到實際回饋的缺陷案例，以及由驗收方提供的獨立本機案例。底座核對輸入是否重疊，保存案例與比較報告的指紋。驗收方需說明獨立資料的來源，以及提案模型是否曾看過資料。測試時的人工回覆、模型用量與金額若來自案例，僅代表該次模擬。
 
@@ -19,4 +19,4 @@ Studio 顯示修訂後的摘要，收到桌面對話的確認後匯出資料藍�
 
 ## 宿主工具
 
-MCP 工具 `workflow_evolution` 與 CLI `workflow-evolution SESSION OPERATION --payload FILE` 共用 WorkflowService。宿主以 `propose` 建立提案，接著以 `prepare`、`export`、`compare`、`activate` 處理工作流修訂。可隨時 `get` 讀回最新版本，在切換前 `reject` 放棄，或在切換後 `rollback`。修改請求須攜帶提案識別碼、讀到的版本與請求識別碼。模型分析與修訂草稿沿用 Studio 的增量文字顯示，實際確認回覆另行保存。
+MCP 工具 `workflow_evolution` 與 CLI `workflow-evolution SESSION OPERATION --payload FILE` 共用 WorkflowService。宿主以 `propose` 建立提案，接著以 `prepare`、`finalize`、`export`、`compare`、`activate` 處理工作流修訂。`finalize` 傳入初稿校閱原文 `draft_reply` 與當次已展示的章節指紋 `shown_sections`。`export` 提供定稿指紋、定稿章節指紋及後續的匯出確認原文。可隨時 `get` 讀回最新版本，在切換前 `reject` 放棄，或在切換後 `rollback`。修改請求須攜帶提案識別碼、讀到的版本與請求識別碼。模型分析與修訂草稿沿用 Studio 的增量文字顯示，實際確認回覆另行保存。

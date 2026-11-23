@@ -4,6 +4,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from ..contracts import StudioError
+from .design_review import design_progress
 from .interviews import DOMAINS, UserReply, digest
 
 QUESTIONS = {
@@ -50,34 +51,50 @@ def next_question(state, domain=None):
             "text": "已匯出已確認的藍圖，可檢視交付或開始下一版修訂。",
             "next_actions": ["get_blueprint", "revise"],
         }
-    if domain is None:
-        pending = [
-            key
-            for key in DOMAINS
-            if state["coverage"][key]["status"] != "confirmed"
-            and not (
-                state["coverage"][key]["status"] == "defaulted"
-                and state["coverage"][key]["impact"] == "low"
-            )
-        ]
-        # A deferred answer stays visible and blocks export. Ask another available question first.
-        domain = next(
-            (key for key in pending if state["coverage"][key]["status"] != "blocked"),
-            pending[0] if pending else None,
-        )
-    if domain is None:
-        return {
-            **result,
-            "text": "訪談已完成，請檢視交付條件與藍圖摘要。",
-            "next_actions": ["status", "export"],
-        }
+    progress = design_progress(state)
+    if progress:
+        result["design_progress"] = progress
+    if domain is None and progress:
+        stage = progress["stage"]
+        if stage == "draft_required":
+            return {
+                **result,
+                "text": "請先依任務與已知答覆擬完整初稿，預填各步輸入、輸出、分支、例外、復原和驗收。"
+                "有會改變設計且無法合理提案的缺口，再指定領域向使用者提問。",
+                "next_actions": ["prepare_blueprint", "pause", "status"],
+            }
+        if stage in {"draft_review_required", "final_review_required"}:
+            return {
+                **result,
+                "text": state["blueprint_proposal"]["display_text"],
+                "review_sections": state["blueprint_proposal"]["review_sections"],
+                "next_actions": [progress["next_action"], "reply_batch", "pause", "status"],
+            }
+        if stage == "draft_stale":
+            return {
+                **result,
+                "text": "設計已失效或缺少初稿校閱紀錄。請沿用已確認的答覆，重新預覽初稿。",
+                "next_actions": ["prepare_blueprint", "pause", "status"],
+            }
+        domain = progress["open_design_domains"][0]
     item = state["coverage"][domain]
+    proposed = state.get("blueprint_proposal", {}).get("decisions", {})
+    suggested = (
+        proposed.get(domain, item["value"])
+        if progress
+        and progress["stage"] in {"draft_review_required", "decisions_required"}
+        and item["status"] != "confirmed"
+        else item["value"]
+    )
+    next_actions = ["reply", "revise", "skip", "pause", "status"]
+    if progress and progress["stage"] == "draft_required":
+        next_actions.insert(0, "prepare_blueprint")
     return {
         **result,
         "domain": domain,
         "text": QUESTIONS[domain],
         "status": item["status"],
-        "suggested_answer": item["value"],
+        "suggested_answer": suggested,
         "evidence_refs": item["evidence_refs"],
         "origin": item["origin"],
         "question_id": digest(
@@ -85,26 +102,22 @@ def next_question(state, domain=None):
                 "session": state["session_id"],
                 "revision": state["revision"],
                 "domain": domain,
-                "proposal": item["value"],
+                "proposal": suggested,
             }
         ),
         "free_text": True,
         "how_to_reply": "直接輸入你的規則；也可以指定前一題修正、暫停或先保留缺口。",
-        "next_actions": ["reply", "revise", "skip", "pause", "status"],
+        "next_actions": next_actions,
     }
 
 
 def next_questions(state, domains=None):
-    first = next_question(state)
-    if "question_id" not in first:
-        return {**first, "questions": []}
     if domains is None:
-        priorities = ("inputs", "outputs", "rules", "review", "preferences", *DOMAINS)
-        domains = [
-            key
-            for key in dict.fromkeys(priorities)
-            if state["coverage"][key]["status"] in {"unknown", "inferred"}
-        ][:5] or [first["domain"]]
+        first = next_question(state)
+        if "question_id" not in first:
+            return {**first, "questions": []}
+        progress = first.get("design_progress", {})
+        domains = progress.get("open_design_domains") or [first["domain"]]
     if (
         not isinstance(domains, list)
         or not domains
@@ -112,10 +125,18 @@ def next_questions(state, domains=None):
         or len(set(domains)) != len(domains)
     ):
         raise StudioError("INPUT_INVALID", "請提供不同的訪談領域。")
+    first = next_question(state, domains[0])
+    if "question_id" not in first:
+        return {**first, "questions": []}
+    progress = first.get("design_progress")
+    next_actions = ["reply_batch", "pause", "status"]
+    if progress and progress["next_action"] not in next_actions:
+        next_actions.insert(0, progress["next_action"])
     return {
         **{key: first[key] for key in ("project_id", "session_id", "revision", "phase", "counts")},
         "questions": [next_question(state, key) for key in domains],
-        "next_actions": ["reply_batch", "pause", "status"],
+        **({"design_progress": progress} if progress else {}),
+        "next_actions": next_actions,
     }
 
 
@@ -157,17 +178,19 @@ def chat_answer(
         answer_text = user_text
     if not isinstance(answer_text, str) or not answer_text.strip() or answer_text not in user_text:
         raise StudioError("INPUT_INVALID", "答案須引用使用者回覆中的原文。")
-    if response_kind in {"decline", "defer"}:
-        return {"value": answer_text, "status": "blocked", "evidence_refs": [ref]}
-    value = (
-        question["suggested_answer"]
-        if response_kind == "accept_proposal"
-        else ([answer_text] if domain == "success" else answer_text)
-    )
+    blocked = response_kind in {"decline", "defer"}
+    value = answer_text
+    if response_kind == "accept_proposal":
+        approval = answer_text.strip().rstrip("。！.!").strip().casefold()
+        if approval not in {"同意", "採用", "同意採用", "同意提案", "採用提案", "都採用", "accept"}:
+            raise StudioError("USER_CONFIRMATION_REQUIRED", "請轉交使用者明確採用提案的原話。")
+        value = question["suggested_answer"]
+    elif domain == "success" and not blocked:
+        value = [answer_text]
     reply = UserReply(
         value, ref, state["session_id"], domain, state["revision"], request_id, user_text
     )
-    return {"value": value, "status": "confirmed", "user_reply": reply}
+    return {"value": value, "status": "blocked" if blocked else "confirmed", "user_reply": reply}
 
 
 def message_reference(message_ref, request_id):
@@ -393,7 +416,9 @@ def dispatch(studio, workspace, action, params, *, runtime_python=None):
         return {"source_id": src.source_id, "version": src.version, "preview": src.manifest}
     if action in {"get", "status"}:
         try:
-            return studio.interviews.get(pid)
+            state = studio.interviews.get(pid)
+            progress = design_progress(state)
+            return {**state, "design_progress": progress} if progress else state
         except StudioError as exc:
             if exc.code != "INTERVIEW_NOT_FOUND":
                 raise
