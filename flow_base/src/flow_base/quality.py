@@ -43,6 +43,32 @@ def trusted_measurement(runtime, rule, value):
         return None
 
 
+def step_checks(policy, node_id, outputs):
+    rules = policy.get("critical_steps", {}).get(node_id, {}).get("machine", [])
+    checks = []
+    for rule in rules:
+        settings = {key: rule[key] for key in ("expected", "min", "max") if key in rule}
+        specification = {
+            **settings, "id": f"step/{node_id}/{rule['id']}", "output": rule["output"],
+            "evaluator": rule["evaluator"], "version": "1",
+            "severity": "warning" if rule.get("tolerate") else "required", "on_failure": "reject",
+        }
+        (check,) = evaluate({"evaluators": [specification]}, outputs)["checks"]
+        if rule.get("tolerate"):
+            check["follow_up"] = rule["follow_up"]
+        checks.append(check)
+    return checks
+
+
+def recorded_step_checks(nodes):
+    checks = []
+    for node in nodes.values():
+        checks.extend(node.get("output_checks", []))
+        for entry in node.get("loop", {}).get("items", []):
+            checks.extend(entry.get("output_checks", []))
+    return checks
+
+
 def evaluate(contract, outputs, nodes=None, *, runtime=None, patterns=()):
     results = []
     rules = contract.get("evaluators", [])
@@ -195,6 +221,12 @@ def evaluate(contract, outputs, nodes=None, *, runtime=None, patterns=()):
                 "on_failure": "reject",
             }
         )
+    if "execution_review" in contract:
+        results.extend(recorded_step_checks(nodes or {}))
+        results.append({
+            "id": "workflow/output_contract", "status": "pass", "severity": "required",
+            "on_failure": "reject",
+        })
     required = [r for r in results if r["severity"] == "required"]
     policy = contract.get("review_policy", {})
     gate = policy.get("approved_node")
@@ -217,8 +249,24 @@ def evaluate(contract, outputs, nodes=None, *, runtime=None, patterns=()):
     return {"result_status": status, "checks": results}
 
 
+def validate_delivery_outputs(graph, outputs):
+    from routinekeel_contracts.graph_validator import port_for
+
+    from .graph.session import checked_value
+
+    require(outputs.keys() == graph.outputs.keys(), "具名交付輸出與契約不同")
+    nodes = {node.id: node for node in graph.nodes}
+    for name, ref in graph.outputs.items():
+        checked_value(outputs[name], port_for(graph, nodes, ref).model_dump())
+
+
 def assess(runtime, state, outputs):
     graph = state["plan"]["graph"]
+    if "execution_review" in graph["quality_contract"]:
+        from routinekeel_contracts.graph_validator import validate_blueprint
+
+        design, _ = validate_blueprint(graph)
+        validate_delivery_outputs(design, outputs)
     identity = digest(
         [
             state["session_id"],
@@ -371,19 +419,14 @@ def feedback(
                 isinstance(outputs, dict) and outputs.keys() == before["outputs"].keys(),
                 "修正須保留具名交付",
             )
-            from routinekeel_contracts.graph_validator import (
-                port_for,
-                validate_blueprint,
-            )
+            from routinekeel_contracts.graph_validator import validate_blueprint
 
-            from .graph.session import GraphSession, checked_value
+            from .graph.session import GraphSession
             from .runtime import read_json
 
             session = read_json(GraphSession(runtime, before["session_id"]).path)
             graph, _ = validate_blueprint(session["plan"]["graph"])
-            nodes = {n.id: n for n in graph.nodes}
-            for name, ref in graph.outputs.items():
-                checked_value(outputs[name], port_for(graph, nodes, ref).model_dump())
+            validate_delivery_outputs(graph, outputs)
             for token in set(refs(outputs)):
                 assets.resolve(token)
             after.update(

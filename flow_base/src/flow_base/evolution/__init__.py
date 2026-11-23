@@ -35,6 +35,7 @@ def change(service, identity, expected_revision, action, params):
                 in {
                     "proposed",
                     "prepared",
+                    "design_reviewed",
                     "profile_candidate",
                     "exported",
                     "comparison_failed",
@@ -47,7 +48,7 @@ def change(service, identity, expected_revision, action, params):
             return append(folder, {**updated, "user_decision": params["user_text"]}, "rejected")
         if action == "prepare":
             require(
-                state["phase"] in {"proposed", "prepared", "comparison_failed"}
+                state["phase"] in {"proposed", "prepared", "design_reviewed", "comparison_failed"}
                 and task.manifest.sha256 == state["base_wheel_hash"],
                 "基準或提案狀態已變更",
             )
@@ -73,7 +74,11 @@ def change(service, identity, expected_revision, action, params):
                 return append(folder, {**updated, "profile": profile}, "profile_candidate")
             from ..graph.source import inspect_graph
 
-            graph, _ = inspect_graph(params["graph"])
+            raw_graph = dict(params["graph"])
+            quality = raw_graph.get("quality_contract")
+            if isinstance(quality, dict):
+                raw_graph["quality_contract"] = {k: v for k, v in quality.items() if k != "execution_review"}
+            graph, _ = inspect_graph(raw_graph)
             graph["provenance"] = {}
             require(
                 graph["workflow"]["id"] == state["workflow_id"]
@@ -141,14 +146,36 @@ def change(service, identity, expected_revision, action, params):
                     "design_id": proposal["proposal_id"],
                     "design_revision": proposal["revision"],
                     "display_text": proposal["display_text"],
+                    "draft_design": proposal["draft_design"],
+                    "skill_sources": proposal["skill_sources"],
                     "candidate_version": graph["workflow"]["version"],
                 },
                 "prepared",
             )
-        if action == "export":
+        if action == "finalize":
             require(
                 state["phase"] == "prepared" and params["design_id"] == state["design_id"],
-                "請先檢視同一候選摘要",
+                "請先展示同一份候選初稿",
+            )
+            old_policy = baseline["quality_contract"].get("execution_review")
+            if state["category"] == "logic" and old_policy is not None:
+                require(params["review"].get("policy") == old_policy,
+                        "變更既有檢核或交付模式須另列為目標修訂")
+            final = studio_request(service.workspace.root, "finalize_workflow_design", {
+                "project_id": state["studio_project_id"],
+                "expected_revision": state["design_revision"], "request_id": request,
+                "draft_id": state["design_id"], "review": params["review"],
+            })
+            return append(folder, {
+                **updated, "design_id": final["proposal_id"], "design_revision": final["revision"],
+                "display_text": final["display_text"], "design_review": final["design_review"],
+                "review_hash": final["review_hash"],
+            }, "design_reviewed")
+        if action == "export":
+            require(
+                state["phase"] == "design_reviewed" and params["design_id"] == state["design_id"]
+                and params.get("review_hash") == state["review_hash"],
+                "請先檢視並確認同一候選定稿",
             )
             artifact = studio_request(
                 service.workspace.root,
@@ -160,6 +187,7 @@ def change(service, identity, expected_revision, action, params):
                     "proposal_id": state["design_id"],
                     "decision": "approve",
                     "user_text": params["user_text"],
+                    "review_hash": state["review_hash"],
                 },
             )
             draft = service.install_workflow(archive=artifact["path"])

@@ -82,7 +82,9 @@ def test_failed_local_comparison_retains_observed_usage(tmp_path):
     assert denied["measurement"] == "local_trial" and denied["cost_micro_usd"] == 0
 
 
-def test_compare_fixed_defect_and_holdout_before_switch_and_rollback(tmp_path, monkeypatch):
+def test_compare_fixed_defect_and_holdout_before_switch_and_rollback(
+    tmp_path, monkeypatch, workflow_design_review,
+):
     base = data_graph()
     base["nodes"][0]["capability"] = "text.copy"
     base["quality_contract"].update(golden_cases=[case("OK")], success_criteria=["交付原文與大寫"])
@@ -150,11 +152,13 @@ def test_compare_fixed_defect_and_holdout_before_switch_and_rollback(tmp_path, m
             design={"rules": "保留原文"},
         )
     preview = act(proposal, "prepare", "design", graph=candidate, design={"rules": "保留原文"})
+    preview = act(preview, "finalize", "finalize", design_id=preview["design_id"], review=workflow_design_review(preview))
     exported = act(
         preview,
         "export",
         "export",
         design_id=preview["design_id"],
+        review_hash=preview["review_hash"],
         user_text="照這份設計準備候選",
     )
     held = tmp_path / "holdout.json"

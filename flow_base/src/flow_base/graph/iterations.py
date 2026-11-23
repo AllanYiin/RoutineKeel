@@ -39,7 +39,8 @@ def merged_meter(nodes):
 def bounded_failure(session, state, node, reason):
     record = state["nodes"][node["id"]]
     policy = node.get("on_limit", node.get("on_item_failure"))
-    if policy == "review_required":
+    strict = state["plan"]["graph"]["quality_contract"].get("execution_review", {}).get("mode") == "stop_on_error"
+    if policy == "review_required" and not strict and reason != "WORKFLOW_CHECK_FAILED":
         session.wait_for(
             state,
             node,
@@ -175,6 +176,13 @@ def run_loop(session, state, node):
         if view["pending_tasks"]:
             return mirror(session, state, node, entry, view)
         successful = view["status"] == "complete"
+        if "execution_review" in child["graph"]["quality_contract"]:
+            from ..quality import recorded_step_checks
+
+            entry["output_checks"] = [
+                {**check, "iteration_id": check.get("iteration_id", entry["id"])}
+                for check in recorded_step_checks(view["nodes"])
+            ]
         measured = merged_meter(view["nodes"])
         previous = entry.get("usage", {})
         entry.update(
@@ -193,7 +201,13 @@ def run_loop(session, state, node):
             return bounded_failure(session, state, node, "TIME_LIMIT")
         if any(loop["spent"][f] > limits["max_" + f] for f in measured):
             return bounded_failure(session, state, node, "RESOURCE_LIMIT")
-        if not successful and (not each or node["on_item_failure"] != "collect_errors"):
+        strict = child["graph"]["quality_contract"].get("execution_review", {}).get("mode") == "stop_on_error"
+        if not successful and "execution_review" in child["graph"]["quality_contract"] and any(
+            step.get("error") in {"WORKFLOW_CHECK_FAILED", "REVIEW_DECLINED"}
+            for step in view["nodes"].values()
+        ):
+            return bounded_failure(session, state, node, "WORKFLOW_CHECK_FAILED")
+        if not successful and (strict or not each or node["on_item_failure"] != "collect_errors"):
             return bounded_failure(session, state, node, "CHILD_FAILED")
         if successful:
             entry["result"] = view["outputs"]["result" if each else "value"]

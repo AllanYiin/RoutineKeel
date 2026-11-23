@@ -182,6 +182,7 @@ def session_status(service, sid):
         "revision": view["revision"],
         "pending": [{"node_id": p["step"], **p} for p in pending],
         "outputs": view.get("outputs"),
+        **({"pending_corrections": view["pending_corrections"]} if "pending_corrections" in view else {}),
         "next_actions": next_actions,
     }
 
@@ -193,7 +194,8 @@ def conversation(service, *, execution_id=None, session_id=None, proposal_id=Non
         p = service.workflow_evolution(session_id, "get", {"proposal_id": proposal_id})
         options = {
             "proposed": ["prepare", "reject"],
-            "prepared": ["export", "prepare", "reject"],
+            "prepared": ["finalize", "prepare", "reject"],
+            "design_reviewed": ["export", "prepare", "reject"],
             "profile_candidate": ["activate", "reject"],
             "exported": ["compare", "reject"],
             "compared": ["activate", "compare", "reject"],
@@ -209,6 +211,7 @@ def conversation(service, *, execution_id=None, session_id=None, proposal_id=Non
             "risk": p["risk"],
             "comparison_hash": p.get("comparison_hash"),
             "comparison": p.get("comparison"),
+            **({"display_text": p["display_text"]} if "display_text" in p else {}),
             "next_actions": [
                 action(
                     "workflow_evolution",
@@ -217,6 +220,8 @@ def conversation(service, *, execution_id=None, session_id=None, proposal_id=Non
                     payload={
                         "proposal_id": proposal_id,
                         "expected_revision": p["revision"],
+                        **({"design_id": p["design_id"]} if o in {"finalize", "export"} else {}),
+                        **({"review_hash": p["review_hash"]} if o == "export" else {}),
                         **(
                             {"comparison_hash": p["comparison_hash"]}
                             if o == "activate" and "comparison_hash" in p

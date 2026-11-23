@@ -353,10 +353,10 @@ def register(server, workspace, result):
         expected_revision: int,
         request_id: str,
         graph: dict,
-        design: dict,
+        design: dict | None = None,
         skills: list[dict] | None = None,
     ) -> dict:
-        """Prepare the design summary and key review points for display in the conversation."""
+        """Show the workflow-only draft first. Use host web search for its research_requests."""
         return call(
             "prepare_blueprint",
             project_id=project_id,
@@ -368,6 +368,16 @@ def register(server, workspace, result):
         )
 
     @server.tool()
+    def studio_finalize_workflow_design(
+        project_id: str, expected_revision: int, request_id: str, draft_id: str, review: dict,
+    ) -> dict:
+        """After displaying the draft, submit the researched settings and show the complete final review."""
+        return call(
+            "finalize_workflow_design", project_id=project_id, expected_revision=expected_revision,
+            request_id=request_id, draft_id=draft_id, review=review,
+        )
+
+    @server.tool()
     def studio_export_blueprint(
         project_id: str,
         expected_revision: int,
@@ -375,6 +385,7 @@ def register(server, workspace, result):
         proposal_id: str,
         decision: str,
         user_text: str,
+        review_hash: str | None = None,
     ) -> dict:
         """Record the desktop user's actual response to the displayed design proposal."""
         return call(
@@ -385,6 +396,7 @@ def register(server, workspace, result):
             proposal_id=proposal_id,
             decision=decision,
             user_text=user_text,
+            review_hash=review_hash,
         )
 
     @server.tool()

@@ -1,5 +1,6 @@
 """Build a plan from validated graph symbols and independently resolved contracts."""
 
+from routinekeel_contracts.execution_review import child_execution_review
 from routinekeel_contracts.graph_trials import trial_case_gaps
 from routinekeel_contracts.graph_validator import validate_blueprint
 
@@ -96,7 +97,7 @@ def compile_plan_tree(graph, source_hash, workspace, resolved):
             "blueprint_schema_version": 2,
             "graph_contract_version": graph.get("graph_contract_version", "2.0"),
             "workflow": graph["workflow"],
-            "quality_contract": {},
+            "quality_contract": child_execution_review(graph["quality_contract"], node["id"]),
             "provenance": {"parent_graph_hash": plan["graph_hash"], "node": node["id"]},
         }
         model, _ = validate_blueprint(child)

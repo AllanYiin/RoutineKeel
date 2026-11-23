@@ -249,7 +249,7 @@ def _admit_pack(workspace, archive, pattern_ref, *, activate):
         return item, result
 
 
-def _target(service, workflow_id, pattern_ref):
+def _target(service, workflow_id, pattern_ref, workflow_design_review):
     root = service.workspace.root
     project = studio_request(root, "create", {"name": workflow_id, "task": "讀取本機 CSV"})
     pid = project["project_id"]
@@ -344,14 +344,19 @@ def _target(service, workflow_id, pattern_ref):
             "parameter_bindings": {},
         },
     )
+    final = studio_request(root, "finalize_workflow_design", {
+        "project_id": pid, "expected_revision": composed["revision"], "request_id": "finalize",
+        "draft_id": composed["proposal_id"], "review": workflow_design_review(composed["proposal"]),
+    })
     exported = studio_request(
         root,
         "export_blueprint",
         {
             "project_id": pid,
-            "expected_revision": composed["revision"],
+            "expected_revision": final["revision"],
             "request_id": "export",
-            "proposal_id": composed["proposal_id"],
+            "proposal_id": final["proposal_id"],
+            "review_hash": final["review_hash"],
             "decision": "approve",
             "user_text": "確認匯出",
         },
@@ -410,7 +415,7 @@ def _target(service, workflow_id, pattern_ref):
 
 
 def test_portable_pattern_from_mcp_to_qualified_local_csv_and_upgrade_draft(
-    tmp_path, monkeypatch,
+    tmp_path, monkeypatch, workflow_design_review,
 ):
     if not any(entry.name == "routinekeel.csv_read" for entry in entry_points(group=ADAPTER_GROUP)):
         if os.environ.get("ROUTINEKEEL_E2E_ENFORCE") == "1":
@@ -469,8 +474,8 @@ def test_portable_pattern_from_mcp_to_qualified_local_csv_and_upgrade_draft(
         "max_cost_micro_usd": 0,
     }
     _observe(host_catalog, {"routinekeel.csv_read": local})
-    first = _target(runtime, "local_csv_a", pattern_ref)
-    second = _target(runtime, "local_csv_b", pattern_ref)
+    first = _target(runtime, "local_csv_a", pattern_ref, workflow_design_review)
+    second = _target(runtime, "local_csv_b", pattern_ref, workflow_design_review)
     target_ref = "data.portable_csv@1.1.0"
     candidate_path = _pack_candidate(extracted, tmp_path / "revision.zip", version="1.1.0")
     _admit_pack(workspace, candidate_path, target_ref, activate=False)

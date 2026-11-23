@@ -37,10 +37,26 @@ def approved(proposal):
         "proposal_id": proposal["proposal_id"],
         "decision": "approve",
         "user_text": "同意這份設計",
+        **({"review_hash": proposal["review_hash"]} if "review_hash" in proposal else {}),
     }
 
 
-def test_real_importer_round_trip_immutable_export_and_reopen(tmp_path):
+def finalize(studio, root, proposal, review):
+    return dispatch(
+        studio,
+        root,
+        "finalize_workflow_design",
+        {
+            "project_id": proposal["project_id"],
+            "expected_revision": proposal["revision"],
+            "request_id": "finalize",
+            "draft_id": proposal["proposal_id"],
+            "review": review,
+        },
+    )
+
+
+def test_real_importer_round_trip_immutable_export_and_reopen(tmp_path, workflow_design_review):
     with StudioService.open_workspace(tmp_path) as studio:
         state, params = draft(studio, tmp_path)
         attach = studio.sources.import_text(
@@ -51,6 +67,7 @@ def test_real_importer_round_trip_immutable_export_and_reopen(tmp_path):
             skills=[{"name": "review", "source_id": attach.source_id, "version": attach.version}],
         )
         proposal = dispatch(studio, tmp_path, "prepare_blueprint", params)
+        proposal = finalize(studio, tmp_path, proposal, workflow_design_review(proposal))
         assert not (tmp_path / "blueprints").exists()
         result = dispatch(studio, tmp_path, "export_blueprint", approved(proposal))
         path = Path(result["path"])
@@ -84,11 +101,16 @@ def test_real_importer_round_trip_immutable_export_and_reopen(tmp_path):
         )
 
 
-def test_declined_stale_incomplete_or_private_design_never_delivered(tmp_path):
+def test_declined_stale_incomplete_or_private_design_never_delivered(
+    tmp_path, workflow_design_review
+):
     with StudioService.open_workspace(tmp_path) as studio:
         state, params = draft(studio, tmp_path)
+        incomplete = dispatch(studio, tmp_path, "prepare_blueprint", {**params, "design": {}})
+        assert "flowchart" in incomplete["draft_design"]["diagram"]
         with pytest.raises(StudioError, match="缺少"):
-            dispatch(studio, tmp_path, "prepare_blueprint", {**params, "design": {}})
+            finalize(studio, tmp_path, incomplete, workflow_design_review(incomplete))
+        params.update(expected_revision=incomplete["revision"], request_id="revised-preview")
         p = dispatch(studio, tmp_path, "prepare_blueprint", params)
         decision = approved(p)
         assert (
@@ -109,16 +131,14 @@ def test_declined_stale_incomplete_or_private_design_never_delivered(tmp_path):
         params["design"]["rules"] = {"password": "private-fixture"}
         p = dispatch(studio, tmp_path, "prepare_blueprint", params)
         with pytest.raises(StudioError, match="認證"):
-            dispatch(
-                studio,
-                tmp_path,
-                "export_blueprint",
-                {**approved(p), "request_id": "private-export"},
-            )
+            finalize(studio, tmp_path, p, workflow_design_review(p))
         assert not (tmp_path / "blueprints").exists()
 
 
-def test_changed_attachment_invalidates_summary_and_cannot_publish_wrong_version(tmp_path):
+def test_changed_attachment_invalidates_summary_and_cannot_publish_wrong_version(
+    tmp_path,
+    workflow_design_review,
+):
     with StudioService.open_workspace(tmp_path) as studio:
         state, params = draft(studio, tmp_path)
         pid = state["project_id"]
@@ -128,6 +148,7 @@ def test_changed_attachment_invalidates_summary_and_cannot_publish_wrong_version
             skills=[{"name": "rules", "source_id": original.source_id, "version": 1}],
         )
         proposal = dispatch(studio, tmp_path, "prepare_blueprint", params)
+        proposal = finalize(studio, tmp_path, proposal, workflow_design_review(proposal))
         studio.sources.import_text(
             pid, proposal["revision"], "修改規則", name="SKILL.md", source_id=original.source_id
         )

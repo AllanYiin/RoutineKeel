@@ -2,45 +2,44 @@
 
 ## SNAPSHOT — 當前狀態
 
-最後更新：2026-11-23T08:27+08:00
+最後更新：2026-11-23T10:00+08:00
 交接狀態：verified
 
 ### 目標與授權範圍
 
-依 RoutineKeel_Spec_v1.3.0.zip 執行 Stage 17–26，完成本機實作、回歸及可驗證的發行候選。
+將使用者新增的 Workflow Studio 工作規範實作於訪談、定稿、匯出與底座執行。
 
 ### 目前進度
 
-Stage 17–26 已實作並依規格驗收本機交付。已完成實際 MCP stdio 來源與本機 CSV Adapter 目標的跨環境流程，另有兩條工作流的升級回歸、Text／Data 參考 Pack 及獨立發行候選。
+開發工作區完成兩階段流程圖、預填資料定稿與指紋確認、工具與技能清冊、詞彙、變數來源、關鍵檢核及兩種失敗政策。Studio CLI、MCP 與工作流改版走同一確認流程。
 
 ### 下一步
 
-本機交付驗收已完成。正式發布、遠端 CI、macOS 實測與真人走查留待另行授權或安排。
+此輪原始碼實作及回歸已完成。先前 Stage 26 的發行候選仍對應其驗收報告，正式打包或更新另依使用者要求。
 
 ### DECISIONS
 
-- 共同 Graph Validator 和唯一 Builder 已延伸至 Pattern 合成、資格鎖定和回歸試做。
-- 來源與目標的工具觀測分開。環境鎖綁定版本、權限及實測收據；有變更須重新資格檢查。
-- 跨環境測例使用本機 MCP stdio 測試伺服器、實際 CSV Adapter 與模擬人審。開發與測試在獨立工作區，既有七個 IDE 暫存仍在原狀態。
+- 交談宿主依草稿研究需求查找來源，Studio 校正來源欄位及採用值；執行期沿用封存的選值與檢核政策。
+- 可容許偏差保留待修證據；嚴格模式或不可容許的關鍵檢核失敗停止後續執行。既有的底座輸入、輸出及交付入口承擔圖中的共同步驟。
+- Stage 17–26 的既有交付保留於 docs/development/stage-26-report.md 與 dist/candidate-v130-verified/。
 
 ### LANDMINES
 
-- macOS、遠端 CI、真人走查及真實第三方模型品質為 NOT_RUN。正式發行仍需人審。
-- 底座 schema v006、Studio schema 18。回復時先保存當期資料，使用各自的遷移前備份與前版工作流在空目錄還原。
+- 來源查詢由宿主工具執行，測試用固定來源紀錄驗證選值及證據契約。可調設定依藍圖修訂管理。
+- 本輪驗證在 Windows 開發環境。沒有變更 SQLite schema，回退可還原本輪指引與程式差異。
 
 ### 證據索引
 
-- docs/development/stage-26-report.md
-- dist/v130-stage26-coverage.json
-- dist/v130-stage26-verified-e2e.json
-- dist/candidate-v130-verified/release/SHA256SUMS
-- dist/candidate-v130-verified/domain-packs/SHA256SUMS
+- workflow_studio/AGENTS.md
+- workflow_studio/docs/host-conversation.md
+- tests/test_studio_design_contract.py
+- dist/studio-rules-verified-base.xml
+- dist/studio-rules-verified-studio.xml
 
 ### VALIDATION
 
-- Windows 與 WSL 跨環境端到端 — PASS：實際 stdio、隔離 Builder、資格與安裝、本機 CSV、品質回饋及候選改版。最終 ZIP 內兩隔離環境重跑亦通過。
-- 最終收集逐案驗收 — PASS：底座及工作流 710/710、Studio 566/566 有實際 PASS。兩項初跑失敗補修／同版重跑後均通過，POSIX 及音訊條件分別補測。
-- 發行候選校驗 — PASS：五個標準 ZIP、兩個參考 Pack ZIP 與本機 Adapter wheel 共八項 SHA-256 核對無誤。
+- 底座、定稿、改版與跨宿主驗收 — PASS：dist/studio-rules-verified-base.xml，17 passed。含缺研究、摘要錯誤及竄改阻擋、人工拒絕、兩種執行政策與 MCP stdio 至 CSV。
+- Studio 匯出、合成、升版與訪談 — PASS：dist/studio-rules-verified-studio.xml，21 passed。Ruff lint／格式及 Git whitespace 檢查通過。
 
 # HISTORY
 
@@ -567,3 +566,10 @@ Windows 及 WSL 實測逐一核對 1,190 個唯一測例，補驗逾時與所有
 <!-- devnote-review:c4db6082762b6ce79029696f -->
 
 依規格完成擷取、資格、推薦、合成、環境鎖與安全演進。Windows、WSL 與音訊選配環境逐案補測。冷啟動最終候選並重播跨環境流程，八個發行資產指紋核對一致。macOS 與正式發行待另行授權。
+
+
+## [2026-11-23T10:00+08:00] 實作 Studio 初稿、定稿與執行檢核
+
+<!-- devnote-review:4c70ac8d63f32fe574b62142 -->
+
+核對使用者補充規範與前一輪工作指引，接上 Studio、CLI、MCP、改版及底座檢核。定稿綁定全部顯示內容，人審與兩種錯誤處理通過回歸。

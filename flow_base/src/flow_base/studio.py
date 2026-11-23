@@ -98,7 +98,7 @@ def studio_request(workspace, operation, params):
             raise FlowError(response["error"]["code"], response["error"]["message"])
         if proc.returncode == 0:
             result = response["result"]
-            if operation == "prepare_blueprint":
+            if operation in {"prepare_blueprint", "finalize_workflow_design"}:
                 from .graph.builder import preflight_graph
 
                 readiness = preflight_graph(result["graph"], workspace)

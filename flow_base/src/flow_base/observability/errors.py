@@ -7,6 +7,8 @@ import subprocess
 from pydantic import ValidationError
 
 STANDARD = {
+    'WORKFLOW_CHECK_FAILED': ('configuration', 'error', '關鍵輸出檢核未通過', '步驟輸出超出這版工作流確認的驗收條件。',
+                              ['查看失敗步驟及其檢核紀錄。', '檢查輸入後回修該步驟。'], 'manual', ['step', 'check_ids']),
     'BINDING_STALE': ('environment', 'error', '環境綁定需要重驗', '工具、版本、權限或收據已改變。',
                       ['查看被鎖定的 Adapter 與目前環境。', '重新資格檢查後再建置或更新。'], 'after_fix', ['lock_hash', 'environment_fingerprint']),
     'CONTRACT_MISMATCH': ('configuration', 'error', '來源契約不一致', '目前資料、版本或交付埠與已確認的契約不同。',

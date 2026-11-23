@@ -35,7 +35,7 @@ def _pack(path, pattern, version):
 
 
 def _workflow(
-    service, name, version, pattern, pack, trial, *, rehearsal=None, bad=False
+    service, name, version, pattern, pack, trial, *, rehearsal=None, bad=False, review=None
 ):
     valid = {"inputs": {"text": "BASE"}, "expected": {"result": "BASE"}}
     defect = {"inputs": {"text": "Mixed case"}, "expected": {"result": "Mixed case"}}
@@ -123,14 +123,26 @@ def _workflow(
             },
         )
         assert proposal["proposal"]["graph"]["provenance"]["pattern_rehearsal"] == rehearsal
+        final = studio_request(
+            root,
+            "finalize_workflow_design",
+            {
+                "project_id": pid,
+                "expected_revision": proposal["revision"],
+                "request_id": "finalize",
+                "draft_id": proposal["proposal_id"],
+                "review": review(proposal["proposal"]),
+            },
+        )
         exported = studio_request(
             root,
             "export_blueprint",
             {
                 "project_id": pid,
-                "expected_revision": proposal["revision"],
+                "expected_revision": final["revision"],
                 "request_id": "freeze",
-                "proposal_id": proposal["proposal_id"],
+                "proposal_id": final["proposal_id"],
+                "review_hash": final["review_hash"],
                 "decision": "approve",
                 "user_text": "確認匯出這份回歸候選",
             },
@@ -183,7 +195,7 @@ def _feedback(service, workflow, folder, text, tag, *, scope="this_run"):
 
 
 def test_pattern_upgrade_replays_all_dependents_and_preserves_active_workflows(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, workflow_design_review
 ):
     runtime = WorkflowService(tmp_path)
     monkeypatch.setenv("ROUTINEKEEL_STUDIO_PYTHON", sys.executable)
@@ -253,6 +265,7 @@ def test_pattern_upgrade_replays_all_dependents_and_preserves_active_workflows(
             after,
             rehearsal=proposal["proposal_id"],
             bad=workflow == "weekly_b",
+            review=workflow_design_review,
         )
         key_by_workflow[f"{workflow}@1.0.0"] = key
         negatives[f"{workflow}@1.0.0"] = [negative]
@@ -288,6 +301,7 @@ def test_pattern_upgrade_replays_all_dependents_and_preserves_active_workflows(
         recent,
         after,
         rehearsal=proposal["proposal_id"],
+        review=workflow_design_review,
     )
     key_by_workflow["weekly_b@1.0.0"] = fresh
     passed = studio_request(

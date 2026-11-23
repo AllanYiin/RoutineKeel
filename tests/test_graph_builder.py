@@ -97,7 +97,7 @@ def test_graph_gates_preserve_uninstalled_candidate(tmp_path, fault):
     assert not svc.workspace.discover(read_only=True)
 
 
-def test_desktop_design_export_and_builder_use_same_graph_and_receipt(tmp_path):
+def test_desktop_design_export_and_builder_use_same_graph_and_receipt(tmp_path, workflow_design_review):
     from flow_base.studio import studio_request
     from routinekeel_contracts.builder import fingerprint
 
@@ -119,6 +119,10 @@ def test_desktop_design_export_and_builder_use_same_graph_and_receipt(tmp_path):
     assert proposal["build_preflight"] == {
         "status": "ready", "capability_gaps": [], "build_gaps": []
     }
+    proposal = studio_request(tmp_path, "finalize_workflow_design", {
+        "project_id": pid, "expected_revision": proposal["revision"], "request_id": "finalize",
+        "draft_id": proposal["proposal_id"], "review": workflow_design_review(proposal),
+    })
     exported = studio_request(
         tmp_path,
         "export_blueprint",
@@ -129,6 +133,7 @@ def test_desktop_design_export_and_builder_use_same_graph_and_receipt(tmp_path):
             "proposal_id": proposal["proposal_id"],
             "decision": "approve",
             "user_text": "可匯出",
+            "review_hash": proposal["review_hash"],
         },
     )
     svc = WorkflowService(tmp_path)

@@ -333,6 +333,10 @@ def dispatch(studio, workspace, action, params, *, runtime_python=None):
             return evolution.propose(studio, **p)
         return evolution.record_comparison(studio, **p)
     pid = p.pop("project_id")
+    if action == "finalize_workflow_design":
+        from .design_review import finalize
+
+        return finalize(studio, pid, **p)
     if action == "compose_pattern":
         from ..patterns.composer import compose_project
 

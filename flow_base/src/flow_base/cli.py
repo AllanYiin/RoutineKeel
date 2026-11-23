@@ -90,7 +90,7 @@ def parser():
         c.add_argument('--'+field)
     c = commands.add_parser('workflow-evolution', help='提出、比較與核准工作流修訂')
     c.add_argument('session_id')
-    c.add_argument('operation', choices=['propose','get','prepare','export','compare','activate','reject','rollback'])
+    c.add_argument('operation', choices=['propose','get','prepare','finalize','export','compare','activate','reject','rollback'])
     c.add_argument('--payload', type=Path, required=True)
     c = commands.add_parser('workflow-quality', help='預覽品質判定、保存回饋及版本化設定')
     c.add_argument('session_id')

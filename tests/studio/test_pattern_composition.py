@@ -84,7 +84,7 @@ def options(pattern, *, mapping=None, after=None, before=None, namespace="insert
 
 
 def test_composition_is_revisioned_and_verifies_in_existing_builder(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, workflow_design_review
 ):
     runtime = WorkflowService(tmp_path)
     original = chain()
@@ -169,14 +169,26 @@ def test_composition_is_revisioned_and_verifies_in_existing_builder(
     composed, order = validate_blueprint(result["proposal"]["graph"])
     assert order == ["first", added, "middle", "last"]
     assert composed.provenance["pattern_compositions"][0]["ref"] == TEXT
+    final = studio_request(
+        tmp_path,
+        "finalize_workflow_design",
+        {
+            "project_id": pid,
+            "expected_revision": result["revision"],
+            "request_id": "finalize",
+            "draft_id": result["proposal_id"],
+            "review": workflow_design_review(result["proposal"]),
+        },
+    )
     frozen = studio_request(
         tmp_path,
         "export_blueprint",
         {
             "project_id": pid,
-            "expected_revision": result["revision"],
+            "expected_revision": final["revision"],
             "request_id": "freeze",
-            "proposal_id": result["proposal_id"],
+            "proposal_id": final["proposal_id"],
+            "review_hash": final["review_hash"],
             "decision": "approve",
             "user_text": "確認匯出新版",
         },
