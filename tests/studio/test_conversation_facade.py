@@ -6,7 +6,12 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from PIL import Image
 from workflow_studio.contracts import StudioError
-from workflow_studio.conversation.facade import dispatch, next_question, preview
+from workflow_studio.conversation.facade import (
+    dispatch,
+    next_question,
+    next_questions,
+    preview,
+)
 from workflow_studio.service import StudioService
 
 from workflow_studio import __main__ as cli
@@ -25,7 +30,9 @@ def test_retry_creating_project_does_not_create_a_second_interview(tmp_path):
 def test_text_reply_in_desktop_conversation_preserves_scope_and_words(tmp_path):
     with StudioService.open_workspace(tmp_path) as studio:
         state = dispatch(studio, tmp_path, "create", {"name": "案例", "task": "分類文件"})
-        question = next_question(state)
+        assert next_question(state)["next_actions"][0] == "prepare_blueprint"
+        assert next_questions(state)["questions"] == []
+        question = next_question(state, "goal")
         params = {
             "project_id": state["project_id"],
             "domain": "goal",
@@ -43,7 +50,7 @@ def test_text_reply_in_desktop_conversation_preserves_scope_and_words(tmp_path):
             == saved["coverage"]["goal"]["user_text"]
             == "分類報表"
         )
-        assert next_question(saved)["domain"] == "success"
+        assert next_question(saved)["next_actions"][0] == "prepare_blueprint"
         assert saved["coverage"]["goal"]["status"] == "confirmed"
         with pytest.raises(StudioError):
             dispatch(

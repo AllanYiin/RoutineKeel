@@ -2,44 +2,46 @@
 
 ## SNAPSHOT — 當前狀態
 
-最後更新：2026-11-23T10:00+08:00
+最後更新：2026-11-23T11:32+08:00
 交接狀態：verified
 
 ### 目標與授權範圍
 
-將使用者新增的 Workflow Studio 工作規範實作於訪談、定稿、匯出與底座執行。
+修正 Workflow Studio 規格稽核缺口，並讓整合包以空白底座啟動。
 
 ### 目前進度
 
-開發工作區完成兩階段流程圖、預填資料定稿與指紋確認、工具與技能清冊、詞彙、變數來源、關鍵檢核及兩種失敗政策。Studio CLI、MCP 與工作流改版走同一確認流程。
+修正與本機驗證完成。Studio 稽核修正見 363f130。整合包收錄兩個待安裝範例 ZIP，布局與測試隨本交接提交。發行候選位於 dist/candidate-uninstalled-examples/release/。
 
 ### 下一步
 
-此輪原始碼實作及回歸已完成。先前 Stage 26 的發行候選仍對應其驗收報告，正式打包或更新另依使用者要求。
+本機候選已建置。對外發布前依發行流程確認平台驗收及發布授權。
 
 ### DECISIONS
 
-- 交談宿主依草稿研究需求查找來源，Studio 校正來源欄位及採用值；執行期沿用封存的選值與檢核政策。
-- 可容許偏差保留待修證據；嚴格模式或不可容許的關鍵檢核失敗停止後續執行。既有的底座輸入、輸出及交付入口承擔圖中的共同步驟。
-- Stage 17–26 的既有交付保留於 docs/development/stage-26-report.md 與 dist/candidate-v130-verified/。
+- 整合包的 workflows、share_states、share_logs 初始空白。範例沿用現成分包，置於 examples/workflows，使用者選擇後解壓至 RoutineKeel 根目錄。開發用 dist/workspace 可直接用既有已裝好的測試布局。
+- 定稿包含每步用途、完成條件、關鍵性及理由，並封存已顯示的藍圖、品質規則和技能指紋。網頁研究先由宿主搜尋，Studio 擷取支援的 HTTPS 文字來源並核對原文和採用值。
+- 更正交付重新評估原生產節點，必要人審須重新取得。Pack 停用阻擋新建置與安裝，Pattern 控制邊以隔離測具驗證，改版須有回歸比較。
 
 ### LANDMINES
 
-- 來源查詢由宿主工具執行，測試用固定來源紀錄驗證選值及證據契約。可調設定依藍圖修訂管理。
-- 本輪驗證在 Windows 開發環境。沒有變更 SQLite schema，回退可還原本輪指引與程式差異。
+- 本輪驗證於 Windows。macOS、真人宿主與真實模型驗收尚待。來源核對接受支援網域的 HTML、純文字與 Markdown。
+- 本輪範例安裝沿用 ZIP 解壓。沒有 SQLite schema 遷移。回退發行布局可還原 tools/release.py 的全包組裝與相應測試指引。
 
 ### 證據索引
 
-- workflow_studio/AGENTS.md
-- workflow_studio/docs/host-conversation.md
+- tools/release.py
+- tests/test_release_layout.py
 - tests/test_studio_design_contract.py
-- dist/studio-rules-verified-base.xml
-- dist/studio-rules-verified-studio.xml
+- workflow_studio/docs/host-conversation.md
+- dist/candidate-uninstalled-examples/release/versions.json
 
 ### VALIDATION
 
-- 底座、定稿、改版與跨宿主驗收 — PASS：dist/studio-rules-verified-base.xml，17 passed。含缺研究、摘要錯誤及竄改阻擋、人工拒絕、兩種執行政策與 MCP stdio 至 CSV。
-- Studio 匯出、合成、升版與訪談 — PASS：dist/studio-rules-verified-studio.xml，21 passed。Ruff lint／格式及 Git whitespace 檢查通過。
+- 全包、首次空白 catalog、單獨啟用複製流程與快取 — PASS：dist/uninstalled-examples-layout.xml，15 passed。實際解壓候選 ZIP，空工作區無狀態檔，選擇複製分包後 catalog 只列該流程，並實際執行與重跑。
+- 發行包與流程更新 — PASS：dist/uninstalled-examples-release.xml，87 passed。兩個內嵌分包與獨立分包位元相同。
+- 定稿、交付、Graph、Pattern 與整合回歸 — PASS：dist/studio-audit-base.xml 38 passed，dist/studio-audit-studio.xml 29 passed，dist/studio-audit-graph.xml 81 passed，另驗證經 join 轉送的交付更正會重做原節點檢核。
+- 公開真實原文擷取 — PASS：Studio CLI 從 Python 官方 3.12 文件擷取測試引文，回傳查閱日期與來源 SHA-256。
 
 # HISTORY
 
@@ -573,3 +575,17 @@ Windows 及 WSL 實測逐一核對 1,190 個唯一測例，補驗逾時與所有
 <!-- devnote-review:4c70ac8d63f32fe574b62142 -->
 
 核對使用者補充規範與前一輪工作指引，接上 Studio、CLI、MCP、改版及底座檢核。定稿綁定全部顯示內容，人審與兩種錯誤處理通過回歸。
+
+
+## [2026-11-23T11:20+08:00] 修復 Studio 稽核並保留空白底座
+
+<!-- devnote-review:21d4750d4022f9aeaf95990f -->
+
+核對已確認藍圖、成果更正、Pack 停用及 Pattern 改版的執行閘門。依使用者簡化要求，整合包的兩個參考流程收進 examples/workflows 下的現有 ZIP。已確認空白 catalog 與單獨啟用範例。
+
+
+## [2026-11-23T11:32+08:00] 按主題提交 Studio 稽核與整合包調整
+
+<!-- devnote-review:99b992b521885deced8e3ae1 -->
+
+將已驗證的修正拆為 Studio 稽核與空白底座發行布局兩項提交。保留既有測試紀錄。

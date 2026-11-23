@@ -225,7 +225,7 @@ def verify(ws, key, resolution, cases):
             from ..graph.degradation import check_degradation
 
             check_degradation(ws, key, src["graph"]["provenance"].get("degraded_delivery"))
-            plan, ir, registry, cases = build_graph(src, resolution, cases, ws.root)
+            plan, ir, registry, cases = build_graph(src, resolution, cases, ws.root, attachments=files)
             gaps = trial_case_gaps(cases, ir["outputs"])
             require(not gaps, "；".join(dict.fromkeys(gap["reason"] for gap in gaps)))
             capability_evidence = registry["bindings"]
@@ -389,12 +389,14 @@ def checked_candidate(ws, dest, expected):
         )
     bindings = read_json(dest / "resolution.json")["bindings"]
     if "blueprint_schema_version" in json.loads(files["workflow.ir.json"]):
+        from ..graph.builder import verify_pattern_admission
         from ..graph.capabilities import resolve_graph
         from ..graph.degradation import check_degradation
 
         ir = json.loads(files["workflow.ir.json"])
         require("pattern_rehearsal" not in ir["provenance"],
                 "Pattern 回歸候選僅供試做，正式更新須另建工作流版本。")
+        verify_pattern_admission(ir, ws.root)
         check_degradation(ws, record["draft_id"], ir["provenance"].get("degraded_delivery"))
         live = resolve_graph(ir, ws.root)
         require(

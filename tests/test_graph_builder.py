@@ -122,6 +122,8 @@ def test_desktop_design_export_and_builder_use_same_graph_and_receipt(tmp_path, 
     proposal = studio_request(tmp_path, "finalize_workflow_design", {
         "project_id": pid, "expected_revision": proposal["revision"], "request_id": "finalize",
         "draft_id": proposal["proposal_id"], "review": workflow_design_review(proposal),
+        "draft_reply": "初稿可進入定稿",
+        "shown_sections": {key: item["sha256"] for key, item in proposal["review_sections"].items()},
     })
     exported = studio_request(
         tmp_path,
@@ -134,6 +136,7 @@ def test_desktop_design_export_and_builder_use_same_graph_and_receipt(tmp_path, 
             "decision": "approve",
             "user_text": "可匯出",
             "review_hash": proposal["review_hash"],
+            "shown_sections": {key: item["sha256"] for key, item in proposal["review_sections"].items()},
         },
     )
     svc = WorkflowService(tmp_path)

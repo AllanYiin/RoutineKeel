@@ -1,12 +1,14 @@
 # 在對話內設計工作流
 
-在桌面對話說「建立工作流」即可開始。Studio 將回答與來源整理成設計資料。確認摘要後，底座建置候選工作流，將它載入臨時工作區執行驗收案例。只有通過的同一份套件能安裝到正式工作區。以實際回覆確認重要決策即可，使用者全程留在對話裡。
+在桌面對話說「建立工作流」即可開始。Studio 整理來源及實際回覆，宿主先擬好一份可以直接刪改的初稿。初稿與定稿的所有預填都在對話中展示並請使用者確認。定稿確認後，底座建置候選工作流，將它載入臨時工作區執行驗收案例。只有通過的同一份套件能安裝到正式工作區。
 
 在 Codex 或 Claude Code 開啟 `workflow_studio/`，先讀 `AGENTS.md`，用一句話說明要完成的任務。
 宿主負責草擬、提問及呈現修正。RK-NEXT 的 Studio 專案保存來源、回答與版本，供下次對話續編。
 不開啟 Tk 或其他獨立視窗，不要求設計期 API 金鑰。
 
-先從一句任務擬定目標、輸入、交付、處理骨架及驗收，將彼此獨立的必要決策集中在同一輪。使用者已說明的要求直接帶入草案。只有答案確實會改變後續選項時才追問，最後用一份摘要確認設計。
+從一句任務就先擬定完整提案。除了目標、輸入、交付和正常步驟，也預想每步的前置與完成條件、常見例外、分支、人工作業、重試、停止點、如何保留既有成果，以及成功與失敗的驗收案例。把有根據的建議值和選擇理由先寫好，使用者可以直接刪去多餘的步驟或調整預設。已說明的要求直接帶入。會改變設計且無法合理預填的問題可以集中釐清。
+
+先用目前需求、本專案的訪談紀錄及使用者指定的來源草擬。只在有具體缺口或使用者要求比對時，查閱明確相關的本機案例。案例及 DEVNOTE 可提供設計線索，採用的內容要列為待校閱的提案。使用者對某一版設計的實際回覆才是該版的確認證據。歷史決策可引用，無法代替新設計的初稿校閱或定稿匯出確認。
 
 使用宿主可用的提問介面，也接受直接文字修正、中途插話、取消與恢復。未回答不能視為同意。
 草案包含本次製作重點與方向提醒，並區分每次輸入、設定一次，以及由 Agent 當下判斷的項目與理由。
@@ -32,20 +34,22 @@ uv run --project workflow_studio python -m workflow_studio --workspace <RoutineK
 
 宿主透過 `studio_create_project`、`studio_next_questions` 與 `studio_get_project` 進行訪談。可指定本輪要問的領域，使用者可在同一則訊息回答多項。模型產生提問、建議或附件摘要時，在對話中隨生成逐段顯示。若已有 Studio 專案，使用 `studio_start_interview` 並提供目前專案版本。
 
-宿主取得實際使用者訊息後，以 `studio_record_replies` 提交整則原文、同一個 `expected_revision`、`request_id`，以及已回答的 `replies`。每個回答附 `domain`、`question_id`，可用 `answer_text` 指定屬於該題的逐字片段。明確採用已顯示的草案時使用 `accept_proposal`，拒絕與稍後處理分別用 `decline`、`defer` 保存。每批回答原子保存於同一版。單題介面仍可使用，模型建議也可集中放進藍圖摘要。
+宿主取得實際使用者訊息後，以 `studio_record_replies` 提交整則原文、同一個 `expected_revision`、`request_id`，以及已回答的 `replies`。每個回答附 `domain`、`question_id`，可用 `answer_text` 指定屬於該題的逐字片段。使用者明確回覆「採用提案」時使用 `accept_proposal`，拒絕與稍後處理分別用 `decline`、`defer` 保存。每批回答原子保存於同一版。單題介面仍可使用，模型建議也可集中放進藍圖摘要。
 
 ### 初稿、參數研究與定稿確認
 
-1. 用 `studio_preview_blueprint` 取得初稿。先展示 `draft_design.diagram`，帶使用者確認工作流步驟與各步輸入輸出。依 `draft_design` 清冊詢問內嵌技能、工具位置與權限、詞彙表、變數及關鍵檢核。
-2. 宿主依 `draft_design.research_requests` 呼叫可用的網頁搜尋，查閱原廠、正式標準或原始研究。搜尋使用工具名、版本及參數名。保留查詢、來源 URL、標題、查閱日期、適用條件、理由及採用值。CLI 可提供已查得的來源。Studio 會核對來源欄位及選值；來源不足的建議保留在初稿。
-3. 用 `studio_finalize_workflow_design` 提交初稿 ID、預期版次、具名請求與 `review`。資料包含 `skills`（技能名稱對應步驟）、`tool_locations`（步驟對應執行位置）、`glossary`（術語對照）、`variables`（分類及研究證據）和 `policy`（模式、範圍、關鍵檢核）。模型或門檻選值改變時，先更新初稿再產生定稿。可調變數的已確認值跟隨藍圖版本，下一版可在 Studio 修改。
-4. 展示定稿 `display_text`，包含底座開頭的輸入檢核、結尾的輸出檢核與交付，以及所有預填內容。用使用者實際的回覆、定稿 ID 及 `review_hash` 呼叫 `studio_export_blueprint`。CLI 對應操作依序為 `prepare_blueprint`、`finalize_workflow_design`、`export_blueprint`。以既有工作流演進入口製作候選時，依序用 `prepare`、`finalize`、`export`。
+1. 用 `studio_preview_blueprint` 取得初稿。在對話中先展示第一張 `draft_design.diagram`，圖上只顯示工作流步驟與分支。依 `review_sections` 四組清單在對話中逐項展示目標、輸入與交付、步驟與例外、技能工具與變數、業務規則和驗收的實際提案值。使用者可逐組校閱、一起確認，或直接指出要刪改、暫緩的內容。以 `studio_record_replies` 記錄實際答覆，重新預覽變更的初稿。暫緩或拒絕須有新的使用者答覆才能解除。
+2. 宿主依 `draft_design.research_requests` 使用網頁搜尋，帶入工具名、版本及參數名。用 `studio_research_parameter_source` 或 CLI `research_parameter_source` 提交公開第一手 HTTPS 頁面 `url` 與含採用值的原文 `excerpt`。Studio 會擷取實際文字並回傳 `accessed_on` 與 `source_sha256`。研究紀錄也需提供查詢、標題、適用條件、理由及採用值。入口接受支援網域的 HTML、純文字及 Markdown 頁面。證據不足時，建議值留在初稿。
+3. 完成初稿所有章節的展示及討論後，詢問使用者是否同意全部預填並回覆「初稿可進入定稿」。用 `studio_finalize_workflow_design` 提交相同初稿 ID、預期版次、具名請求、`review`、實際回覆 `draft_reply` 及 `shown_sections`。`shown_sections` 為已展示章節 ID 到 `review_sections[id].sha256` 的對照，由宿主轉交。在 `step_decisions` 逐步預填 `purpose`、`completion`、`critical`、`rationale`。在 `policy` 為所有關鍵步驟設定檢核，並說明模式及範圍。定稿另填 `skills`、`tool_locations`、`glossary` 及 `variables`。模型或門檻選值改變時，先更新初稿。可調變數的已確認值跟隨藍圖版本。
+4. 在對話中展示第二張流程圖 `design_review.final_diagram` 和本版全部 `review_sections`。圖上分別標示底座的「檢核輸入」「檢核與交付輸出」、自訂步驟、人工等待、檢核及失敗去向。展示定稿新增和沿用的預填內容後，請使用者另一次確認全數採用並回覆「確認定稿並匯出」。將實際回覆、定稿 ID、`review_hash` 及本版 `shown_sections` 交給 `studio_export_blueprint`。兩張圖與章節內容以白話在對話顯示，保留必要的設定原值。檔案連結供備查。CLI 對應操作為 `prepare_blueprint`、`finalize_workflow_design`、`export_blueprint`。既有工作流演進依序用 `prepare`、`finalize`、`export`，沿用相同校閱契約。
+
+跨對話續編時，用 `studio_get_project` 讀取 `design_progress` 的目前階段及 `next_action`，用 `studio_next_questions` 取得同一階段的提示或待答問題。舊版未匯出的設計如果缺少初稿校閱契約，會指向重新預覽。已保存的使用者答覆可沿用。
 
 交付模式 `deliver_then_refine` 只允許明確標記可容許的機器檢核偏差，交付時列出待修與後續校閱。模式 `stop_on_error` 遇步驟錯誤即停止後續執行。需指定人工檢核時，圖上須有承接該輸出的實際人審節點。拒絕即保存拒絕結果。底座沿用既有的授權、輸入型別與正式交付驗證。
 
 透過底座預覽藍圖時，`build_preflight` 會列出當前宿主的能力缺口及不可執行的案例。文字描述可保留在設計包，建置驗收案例須提供 `inputs`、`expected` 及必要的素材或校閱回覆。預檢通過後，仍須在臨時工作區試做。
 
-工作流設計只在影響結果的重要決定提問。執行中只有藍圖指定的人工作業、關鍵校閱或需授權的動作才等待使用者，其餘步驟在自動契約檢查後繼續。
+設計階段用完整預填減少使用者輸入，初稿與定稿各保留一次實際確認。使用者只回答部分內容時，保存已答覆項目，繼續呈現尚待校閱的項目。執行中只有藍圖指定的人工作業、關鍵校閱或需授權的動作才等待使用者，其餘步驟在自動契約檢查後繼續。
 
 Studio CLI 支援 `interview next_batch|reply_batch` 及既有單題操作，參數透過 `--payload` 傳入。底座 CLI 使用相同操作名。另有 `interview stream` 可逐行接收含 text 的 JSON 文字增量，立即輸出 delta，正常收束時才輸出 completed。此入口不會保存回答。
 

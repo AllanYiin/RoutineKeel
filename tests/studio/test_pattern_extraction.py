@@ -217,6 +217,18 @@ def test_branch_join_review_control_is_preserved_or_explicitly_blocked(tmp_path)
         "nodes": ["copy"],
         "route": "false",
     }
+    from flow_base.graph.pattern_trial import run_pattern_trial
+
+    (input_name,) = guarded["pattern"]["boundary"]["inputs"]
+    (output_name,) = guarded["pattern"]["boundary"]["outputs"]
+    report = run_pattern_trial(
+        guarded["pattern"],
+        [
+            {"inputs": {input_name: "branch fixture"}, "expected": {output_name: "branch fixture"}},
+        ],
+    )
+    assert report["verdict"] == "PASS", report
+    assert report["results"][0]["control_ports"] == ["input/control_in_1"]
     with StudioService.open_workspace(tmp_path) as studio:
         project = studio.projects.create("結構不完整", {"goal": "提取分支"})
         rejected = save_extraction(

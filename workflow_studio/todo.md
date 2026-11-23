@@ -17,6 +17,9 @@ RK-NEXT Stage 2 的 Graph v2 格式與具名交付已完成靜態驗證。Stage 
 
 目前交付以 `docs/host-conversation.md` 為準：對話內引導、`guide`／`projects`／`status` 及無原生視窗的共用核心。Tk Windows 版已退役並移出原始碼與 Release；下方原 Stage 的視窗驗收保留為歷史，不宣稱新對話入口已達成所有舊 Gate。
 
+- [x] 將初稿圖、同版次校閱、定稿圖及獨立匯出確認接到 Studio 共用流程。已驗證 CLI、MCP、改版與候選 wheel。真人宿主圖面走查及正式部署另行驗收。驗證與回滾見 `docs/test-report.md`。
+- [x] 預設先擬可刪改的完整草案，初稿與定稿的預填內容逐章展示並共用批次確認。章節漏列或版次不符會阻擋定稿或匯出。專項、跨宿主與候選 wheel 已驗證。
+
 來源為 `specs/requirements.txt`；此清單只追蹤 Studio，與舊底座 Stage 0–13 分開。
 一次只有一個主要階段進行中。詳細步驟、檔案、測試與 DoD 以原文各 Stage 為準。
 

@@ -4,6 +4,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+from flow_base.core.service import WorkflowService
 from workflow_studio.contracts import StudioError
 from workflow_studio.conversation.facade import dispatch
 from workflow_studio.service import StudioService
@@ -37,6 +38,9 @@ def approved(proposal):
         "proposal_id": proposal["proposal_id"],
         "decision": "approve",
         "user_text": "同意這份設計",
+        "shown_sections": {
+            key: item["sha256"] for key, item in proposal["review_sections"].items()
+        },
         **({"review_hash": proposal["review_hash"]} if "review_hash" in proposal else {}),
     }
 
@@ -52,6 +56,10 @@ def finalize(studio, root, proposal, review):
             "request_id": "finalize",
             "draft_id": proposal["proposal_id"],
             "review": review,
+            "draft_reply": "初稿可進入定稿",
+            "shown_sections": {
+                key: item["sha256"] for key, item in proposal["review_sections"].items()
+            },
         },
     )
 
@@ -67,7 +75,9 @@ def test_real_importer_round_trip_immutable_export_and_reopen(tmp_path, workflow
             skills=[{"name": "review", "source_id": attach.source_id, "version": attach.version}],
         )
         proposal = dispatch(studio, tmp_path, "prepare_blueprint", params)
-        proposal = finalize(studio, tmp_path, proposal, workflow_design_review(proposal))
+        review = workflow_design_review(proposal)
+        review["skills"]["review"] = ["manual"]
+        proposal = finalize(studio, tmp_path, proposal, review)
         assert not (tmp_path / "blueprints").exists()
         result = dispatch(studio, tmp_path, "export_blueprint", approved(proposal))
         path = Path(result["path"])
@@ -99,6 +109,22 @@ def test_real_importer_round_trip_immutable_export_and_reopen(tmp_path, workflow
         assert (
             restored == result and hashlib.sha256(path.read_bytes()).hexdigest() == result["sha256"]
         )
+    runtime = WorkflowService(tmp_path)
+    key = runtime.install_workflow(archive=path)["draft_id"]
+    state = runtime.resolve_blueprint_capabilities(key)
+    candidate = runtime.install_workflow(
+        draft_id=key,
+        resolution={"capability_fingerprint": state["fingerprint"]},
+    )
+    runtime.install_workflow(
+        draft_id=key,
+        build_id=candidate["build_id"],
+        install_hash=candidate["install_hash"],
+    )
+    payload = tmp_path / "message.json"
+    payload.write_text(json.dumps({"inputs": {"message": "a", "needs_review": True}}))
+    waiting = runtime.run_workflow_sync({"task": "routing", "source": payload})["blueprint"]
+    assert waiting["pending"]["skill_documents"] == {"review": {"SKILL.md": "請只在交付時校閱"}}
 
 
 def test_declined_stale_incomplete_or_private_design_never_delivered(
@@ -129,9 +155,8 @@ def test_declined_stale_incomplete_or_private_design_never_delivered(
             expected_revision=studio.projects.get(state["project_id"]).version, request_id="private"
         )
         params["design"]["rules"] = {"password": "private-fixture"}
-        p = dispatch(studio, tmp_path, "prepare_blueprint", params)
         with pytest.raises(StudioError, match="認證"):
-            finalize(studio, tmp_path, p, workflow_design_review(p))
+            dispatch(studio, tmp_path, "prepare_blueprint", params)
         assert not (tmp_path / "blueprints").exists()
 
 

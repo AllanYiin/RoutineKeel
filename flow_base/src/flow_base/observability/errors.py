@@ -31,6 +31,8 @@ STANDARD = {
                            ['用發行包的 Studio 啟動器準備環境。', '確認本機 Studio Python 路徑及版本。'], 'after_fix', ['studio_environment']),
     'STUDIO_TIMEOUT': ('execution', 'error', '訪談服務回覆逾時', '目前無法確認訪談操作是否已經保存。',
                        ['先重新讀取專案狀態。', '必要時重送相同請求識別碼。'], 'after_fix', ['request_id']),
+    'BLUEPRINT_BLOCKED': ('configuration', 'warning', '藍圖設計需要校閱', '請核對目前版次的設計缺口與校閱回覆。',
+                          ['讀取 Studio 的設計階段與下一個操作。'], 'after_fix', ['project_id', 'revision']),
     'USER_CONFIRMATION_REQUIRED': ('permission', 'warning', '等待使用者答覆', '請在目前的桌面對話回答這個問題。',
                                    ['查看問題、草稿與專案版本。', '直接回覆你的決定或修改內容。'], 'after_fix', ['project_id', 'revision']),
     'INPUT_NOT_FOUND': ('input', 'error', '找不到輸入', '指定的檔案、流程或執行紀錄不存在。',
@@ -204,4 +206,8 @@ def explain_exception(exc, diagnostic=None):
                                 evidence=diagnostic.get('evidence'))
     if original_code == 'PREFLIGHT_BLOCKED':
         explanation['code'] = original_code
+    if original_code == 'BLUEPRINT_BLOCKED':
+        from ..diagnostics import redact
+
+        explanation['user_message'] = redact(str(exc))
     return explanation

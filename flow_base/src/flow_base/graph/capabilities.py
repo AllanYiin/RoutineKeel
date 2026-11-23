@@ -256,6 +256,7 @@ def resolve_graph(payload, workspace, *, offline=False, admission=None, allow_wa
     from .qualification import graph_fingerprint
 
     graph, _ = validate_blueprint(payload)
+    reviewed_tools = graph.provenance.get("design_review", {}).get("details", {}).get("tools", {})
     requirements = graph_requirements(graph)
     resolved, gaps, decisions = {}, [], []
     locked = None
@@ -275,6 +276,11 @@ def resolve_graph(payload, workspace, *, offline=False, admission=None, allow_wa
         except FlowError:
             lock_error = True
 
+    def check_locus(key, actual):
+        expected = reviewed_tools.get(key, {}).get("locus")
+        if expected and actual != expected:
+            raise FlowError("CONTRACT_MISMATCH", f"工具執行位置與定稿不同：{key}（{expected} → {actual}）")
+
     def visit(body, prefix=""):
         for node in body.nodes:
             key = prefix + node.id
@@ -282,7 +288,10 @@ def resolve_graph(payload, workspace, *, offline=False, admission=None, allow_wa
                 try:
                     rule = requirements.get(key)
                     if rule is None:
-                        resolved[key] = resolve_task(node, workspace, offline=offline)
+                        binding = resolve_task(node, workspace, offline=offline)
+                        locus = "host_mediated" if binding["provider"] == "desktop_host" else "local_runtime"
+                        check_locus(key, locus)
+                        resolved[key] = binding
                     else:
                         decision, candidates = resolve_requirement(
                             key,
@@ -311,6 +320,7 @@ def resolve_graph(payload, workspace, *, offline=False, admission=None, allow_wa
                                     "lock_hash": locked.lock_hash,
                                     "qualification_receipt": selected.qualification_receipt,
                                 }
+                                check_locus(key, selected.execution_locus)
                                 resolved[key] = locked_binding
                                 decision.update(
                                     status="bound",
@@ -332,6 +342,7 @@ def resolve_graph(payload, workspace, *, offline=False, admission=None, allow_wa
                             and (decision["catalog_unavailable"]
                                  or admission[key]["tool"] not in host_catalog(workspace))
                         ):
+                            check_locus(key, selected.execution_locus)
                             resolved[key] = admission[key]
                             decision.update(
                                 status="bound",

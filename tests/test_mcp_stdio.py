@@ -28,7 +28,9 @@ def test_real_stdio_interview_resumes_and_keeps_host_answers_unconfirmed(tmp_pat
     async def exercise():
         async with client_for(tmp_path) as client:
             state = (await call(client,'studio_create_project',name='週報',task='整理週報'))['result']
-            question = (await call(client,'studio_next_question',project_id=state['project_id']))['result']
+            guidance = (await call(client, "studio_next_questions", project_id=state["project_id"]))["result"]
+            assert guidance["questions"] == [] and guidance["next_actions"][0] == "prepare_blueprint"
+            question = (await call(client,'studio_next_question',project_id=state['project_id'],domain='goal'))['result']
             assert question['text'] and question['free_text']
             params = {'project_id': state['project_id'],'expected_revision': state['revision'],
                           'request_id': 'pilot','domain': 'goal','value': '整理週報','evidence_refs': ['對話草稿'],
@@ -37,12 +39,13 @@ def test_real_stdio_interview_resumes_and_keeps_host_answers_unconfirmed(tmp_pat
             assert denied['error']['code'] == 'USER_CONFIRMATION_REQUIRED'
             saved = (await call(client,'studio_submit_answer',**params))['result']
             assert saved['coverage']['goal']['status'] == 'inferred'
-            shown = (await call(client,'studio_next_question',project_id=state['project_id']))['result']
+            shown = (await call(client,'studio_next_question',project_id=state['project_id'],domain='goal'))['result']
             saved = (await call(client,'studio_record_reply',project_id=state['project_id'],domain='goal',
                                 question_id=shown['question_id'],expected_revision=shown['revision'],
                                 request_id='chat-2',user_text='整理每週的銷售報表'))['result']
         async with client_for(tmp_path) as client:
             reopened = (await call(client,'studio_get_project',project_id=state['project_id']))['result']
+            assert reopened.pop("design_progress")["stage"] == "draft_required"
             assert reopened == saved and reopened['coverage']['goal']['origin'] == 'desktop_conversation'
             assert reopened['coverage']['goal']['value'] == '整理每週的銷售報表'
             batch = (await call(client, "studio_next_questions", project_id=state["project_id"],
@@ -62,6 +65,56 @@ def test_real_stdio_interview_resumes_and_keeps_host_answers_unconfirmed(tmp_pat
             assert submitted["coverage"]["inputs"]["value"] == "銷售 CSV"
             assert submitted["coverage"]["outputs"]["value"] == "週報 PDF"
             assert submitted["coverage"]["review"]["status"] == "unknown"
+    asyncio.run(exercise())
+
+
+def test_stdio_requires_two_review_turns_and_returns_both_diagrams(tmp_path, workflow_design_review):
+    from test_graph_builder import data_graph
+
+    async def exercise():
+        graph = data_graph()
+        graph["quality_contract"]["success_criteria"] = ["交付原文及大寫"]
+        async with client_for(tmp_path) as client:
+            created = await call(
+                client, "studio_create_project", name="文字流程", task=graph["workflow"]["goal"],
+            )
+            project = created["result"]
+            drafted = await call(
+                client, "studio_preview_blueprint", project_id=project["project_id"],
+                expected_revision=project["revision"], request_id="draft", graph=graph,
+                design={"rules": "保留原文"},
+            )
+            draft = drafted["result"]
+            assert "底座" not in draft["draft_design"]["diagram"]
+            params = {
+                "project_id": project["project_id"], "expected_revision": draft["revision"],
+                "request_id": "finalize", "draft_id": draft["proposal_id"],
+                "review": workflow_design_review(draft),
+                "shown_sections": {key: item["sha256"] for key, item in draft["review_sections"].items()},
+            }
+            blocked = await call(client, "studio_finalize_workflow_design", **params)
+            assert blocked["error"]["code"] == "BLUEPRINT_BLOCKED"
+            assert "初稿" in blocked["error"]["message"]
+        async with client_for(tmp_path) as client:
+            finalized = await call(
+                client, "studio_finalize_workflow_design", **params, draft_reply="初稿可進入定稿",
+            )
+            final = finalized["result"]
+            diagram = final["design_review"]["final_diagram"]
+            assert "底座 · 檢核輸入" in diagram
+            assert "底座 · 檢核與交付輸出" in diagram
+            assert "工作流 · copy" in diagram
+            approval = {
+                "project_id": project["project_id"], "expected_revision": final["revision"],
+                "request_id": "export", "proposal_id": final["proposal_id"],
+                "review_hash": final["review_hash"], "decision": "approve",
+                "shown_sections": {key: item["sha256"] for key, item in final["review_sections"].items()},
+            }
+            wrong = await call(client, "studio_export_blueprint", **approval, user_text="初稿可進入定稿")
+            assert wrong["error"]["code"] == "BLUEPRINT_BLOCKED"
+            exported = await call(client, "studio_export_blueprint", **approval, user_text="確認定稿並匯出")
+            assert exported["result"]["status"] == "exported"
+
     asyncio.run(exercise())
 
 
@@ -90,7 +143,7 @@ def test_stdio_negotiation_queue_tool_set_and_path_boundary(workspace):
                              'studio_next_question', 'studio_submit_answer', 'studio_pause_interview',
                              'studio_resume_interview', 'studio_preview_source', 'studio_start_interview',
                              'studio_record_reply', 'studio_preview_blueprint', 'studio_export_blueprint',
-                             'studio_finalize_workflow_design',
+                             'studio_finalize_workflow_design', 'studio_research_parameter_source',
                              'studio_next_questions', 'studio_record_replies',
                              'studio_extract_pattern', 'studio_get_pattern_extraction',
                              'studio_export_pattern_extraction',

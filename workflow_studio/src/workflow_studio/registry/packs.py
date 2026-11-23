@@ -316,6 +316,25 @@ class PackRegistry:
         )
         return [self.inspect_pattern(row[0], "L1") for row in rows if self._has_active_pack(row[0])]
 
+    def verify_composition(self, composition):
+        from routinekeel_contracts.pattern_composition import PatternComposition
+
+        requested = PatternComposition.model_validate(composition)
+        item = self.pattern_status(requested.ref)
+        if item["content_hash"] != requested.hash:
+            raise StudioError("CONTRACT_MISMATCH", "Pattern 內容與藍圖不同。")
+        if (
+            item["status"] != "active"
+            or item["qualification_hash"] != requested.qualification_hash
+            or not self._has_active_pack(requested.ref)
+        ):
+            raise StudioError(
+                "PATTERN_APPROVAL_REQUIRED", "Pattern 或 Pack 已停用，請重新確認藍圖。"
+            )
+        trial = self.trial(requested.ref, requested.qualification_hash)
+        if (trial["pack_ref"], trial["pack_hash"]) != (requested.pack_ref, requested.pack_hash):
+            raise StudioError("CONTRACT_MISMATCH", "Pattern 資格與藍圖宣告的 Pack 不符。")
+
     def inspect_pattern(self, pattern_ref, level):
         properties = {
             "L1": {

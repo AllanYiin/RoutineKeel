@@ -34,6 +34,41 @@ def studio_python():
     )
 
 
+def design_preflight(proposal, workspace):
+    from .graph.builder import preflight_graph
+
+    graph = proposal["graph"]
+    if "design_review" in proposal:
+        graph = {
+            **graph,
+            "provenance": {
+                **graph["provenance"],
+                "design_review": {
+                    "details": proposal["design_review"],
+                    "sha256": proposal["review_hash"],
+                },
+                "skill_files": proposal["skill_files"],
+                "skill_sources": proposal["skill_sources"],
+            },
+        }
+    readiness = preflight_graph(graph, workspace)
+    result = {
+        "status": readiness["build_status"],
+        "capability_gaps": readiness["gaps"],
+        "build_gaps": readiness["build_gaps"],
+    }
+    lines = ["\n\n### 候選工作流建置預檢"]
+    if result["status"] == "ready":
+        lines.append("預檢通過。候選套件建置後，仍須載入臨時工作區實跑驗收案例。")
+    else:
+        lines.append("目前無法建置候選工作流。請在設計校閱時一併呈現下列缺口。")
+        for gap in (*result["capability_gaps"], *result["build_gaps"]):
+            context = gap.get("node") or (f"案例 {gap['case']}" if "case" in gap else "建置")
+            lines.append(f"- {context}｜{gap['reason']}")
+    proposal["build_preflight"] = result
+    proposal["display_text"] += "\n".join(lines)
+
+
 def studio_request(workspace, operation, params):
     evidence_environment = {}
     if operation == "extract_pattern":
@@ -50,7 +85,10 @@ def studio_request(workspace, operation, params):
         params = dict(params)
         if operation == "propose_pattern_improvement":
             params["evidence"] = patterns.observe(
-                workspace, params["source_ref"], params.pop("feedback_ids")
+                workspace,
+                params["source_ref"],
+                params.pop("feedback_ids"),
+                planned=bool(params.get("planned_reason")),
             )
         else:
             state = studio_request(
@@ -99,14 +137,11 @@ def studio_request(workspace, operation, params):
         if proc.returncode == 0:
             result = response["result"]
             if operation in {"prepare_blueprint", "finalize_workflow_design"}:
-                from .graph.builder import preflight_graph
-
-                readiness = preflight_graph(result["graph"], workspace)
-                result["build_preflight"] = {
-                    "status": readiness["build_status"],
-                    "capability_gaps": readiness["gaps"],
-                    "build_gaps": readiness["build_gaps"],
-                }
+                design_preflight(result, workspace)
+            if operation in {"get", "status"} and result.get("design_progress", {}).get(
+                "stage"
+            ) in {"draft_review_required", "decisions_required", "final_review_required"}:
+                design_preflight(result["blueprint_proposal"], workspace)
             return result
     except (ValueError, KeyError, TypeError):
         pass

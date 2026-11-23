@@ -152,14 +152,17 @@ def test_compare_fixed_defect_and_holdout_before_switch_and_rollback(
             design={"rules": "保留原文"},
         )
     preview = act(proposal, "prepare", "design", graph=candidate, design={"rules": "保留原文"})
-    preview = act(preview, "finalize", "finalize", design_id=preview["design_id"], review=workflow_design_review(preview))
+    preview = act(preview, "finalize", "finalize", design_id=preview["design_id"],
+                  review=workflow_design_review(preview), draft_reply="初稿可進入定稿",
+                  shown_sections={key: item["sha256"] for key, item in preview["review_sections"].items()})
     exported = act(
         preview,
         "export",
         "export",
         design_id=preview["design_id"],
         review_hash=preview["review_hash"],
-        user_text="照這份設計準備候選",
+        shown_sections={key: item["sha256"] for key, item in preview["review_sections"].items()},
+        user_text="確認定稿並匯出",
     )
     held = tmp_path / "holdout.json"
     params = {

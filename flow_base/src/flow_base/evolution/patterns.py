@@ -53,14 +53,16 @@ def installed_dependents(service, pattern_ref):
     return sorted(results, key=lambda row: row["workflow_ref"])
 
 
-def observe(workspace, pattern_ref, feedback_ids):
-    if not isinstance(feedback_ids, list) or not 1 <= len(feedback_ids) <= 50:
+def observe(workspace, pattern_ref, feedback_ids, *, planned=False):
+    if not isinstance(feedback_ids, list) or not (0 if planned else 1) <= len(feedback_ids) <= 50:
         raise FlowError("INVALID_CONFIGURATION", "請提供具名的實際品質回饋。")
     if any(
         not isinstance(value, str) or not value.startswith("feedback_") for value in feedback_ids
     ):
         raise FlowError("INVALID_CONFIGURATION", "回饋識別不符合契約。")
     service = WorkflowService(workspace)
+    if not feedback_ids:
+        return {"attribution": [], "dependents": installed_dependents(service, pattern_ref)}
     runtime = service.workspace.runtime
     require((runtime.home / "state.sqlite3").is_file(), "工作區沒有品質回饋。")
     evidence = []
@@ -130,7 +132,8 @@ def compare(workspace, state, candidate_drafts, negative_cases, limits):
         raise FlowError("INVALID_CONFIGURATION", "比較須提供新版草稿及各流程反例。")
     service = WorkflowService(workspace)
     feedback_ids = [row["feedback_id"] for row in state["attribution"]["observations"]]
-    observe(workspace, state["source_ref"], feedback_ids)
+    planned = bool(state.get("planned_reason"))
+    observe(workspace, state["source_ref"], feedback_ids, planned=planned)
     observed = installed_dependents(service, state["source_ref"])
     require(observed == state["dependents"], "依賴工作流已改變，須重新核對影響範圍。")
     expected = {item["workflow_ref"] for item in observed}
@@ -193,9 +196,9 @@ def compare(workspace, state, candidate_drafts, negative_cases, limits):
         installed_dependents(service, state["source_ref"]) == observed,
         "比較期間已安裝版本變更，請重新掃描。",
     )
-    observe(workspace, state["source_ref"], feedback_ids)
+    observe(workspace, state["source_ref"], feedback_ids, planned=planned)
     return {
-        "status": "PASS" if results and all(row["passed"] for row in results) else "FAIL",
+        "status": "PASS" if all(row["passed"] for row in results) else "FAIL",
         "comparisons": results,
         "limits": limits,
     }

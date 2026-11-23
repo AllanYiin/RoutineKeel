@@ -147,6 +147,7 @@ def change(service, identity, expected_revision, action, params):
                     "design_revision": proposal["revision"],
                     "display_text": proposal["display_text"],
                     "draft_design": proposal["draft_design"],
+                    "review_sections": proposal["review_sections"],
                     "skill_sources": proposal["skill_sources"],
                     "candidate_version": graph["workflow"]["version"],
                 },
@@ -165,11 +166,14 @@ def change(service, identity, expected_revision, action, params):
                 "project_id": state["studio_project_id"],
                 "expected_revision": state["design_revision"], "request_id": request,
                 "draft_id": state["design_id"], "review": params["review"],
+                "draft_reply": params.get("draft_reply"),
+                "shown_sections": params.get("shown_sections"),
             })
             return append(folder, {
                 **updated, "design_id": final["proposal_id"], "design_revision": final["revision"],
                 "display_text": final["display_text"], "design_review": final["design_review"],
-                "review_hash": final["review_hash"],
+                "review_hash": final["review_hash"], "build_preflight": final["build_preflight"],
+                "review_sections": final["review_sections"],
             }, "design_reviewed")
         if action == "export":
             require(
@@ -188,6 +192,7 @@ def change(service, identity, expected_revision, action, params):
                     "decision": "approve",
                     "user_text": params["user_text"],
                     "review_hash": state["review_hash"],
+                    "shown_sections": params.get("shown_sections"),
                 },
             )
             draft = service.install_workflow(archive=artifact["path"])

@@ -199,6 +199,11 @@ def _report(suite, runtime, rules):
                 "external_behavior": "simulated" if simulated else "local_execution",
                 "simulated_steps": simulated,
                 "quality_checks": checks,
+                **(
+                    {"control_ports": observed["control_ports"]}
+                    if "control_ports" in observed
+                    else {}
+                ),
             }
         )
     pass_quality = all(

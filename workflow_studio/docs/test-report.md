@@ -1,5 +1,23 @@
 # Studio 驗證紀錄
 
+## 主動預填與逐章確認（2026-11-23）
+
+- 底座、Studio 設計合約、MCP stdio 及改版端到端回歸，26 passed。Studio 訪談、封裝匯出與 Pattern 專項，19 passed。含本機 Data Adapter 的跨宿主 Pattern 端到端回歸，1 passed。結果在 `dist/studio-prefill-review-base.xml`、`dist/studio-prefill-review-studio.xml` 及 `dist/studio-prefill-review-portability.xml`。
+- 初次取得引導時預設先產生初稿。漏展示任一章節、章節屬於不同階段或版次、缺少實際回覆時，Studio 阻擋下一階段。兩個階段各一次回覆可確認當版的全部章節。
+- `tools/release.py --project workflow_studio --candidate studio-prefill-review` 建置成功。Windows 用獨立 QA 環境安裝該包的兩個 wheel，重用開發環境的第三方依賴。以實際發行 wheel 核對先擬稿、完整預填校閱、遺漏章節拒絕、兩版流程圖、確認匯出及臨時工作區試做，結果為 PASS。
+- Studio 驗證宿主轉交的章節指紋及回覆，真人桌面實際呈現待驗。本次無 DB schema 遷移。回滾使用先前成對 wheel，保留資料庫及既有藍圖。先前未匯出的設計需重新預覽，已保存的實際回答可沿用。
+
+## 初稿與定稿的對話確認（2026-11-23）
+
+- Windows Studio 全套回歸，566 passed。結果在 `dist/studio-design-gate-studio.xml`。
+- CLI／服務與改版回歸，19 passed。涵蓋兩次校閱、缺回覆、過期設計、暫緩決策、技能與驗收、候選試做及回滾。結果在 `dist/studio-design-gate-base.xml`。
+- MCP stdio 與錯誤目錄回歸，21 passed。用官方 SDK 重連後讀取設計，確認缺初稿回覆時可取得具體原因，收到兩次相應的測試回覆後才產生藍圖。結果在 `dist/studio-design-gate-transport.xml`。
+- Studio 訪談、封裝匯出、Pattern 合成與改版專項，19 passed。結果在 `dist/studio-design-gate-focused.xml`。
+- 安裝本機 Data Adapter wheel 後，跨宿主 Pattern 的 MCP、資格檢查與改版候選測試，1 passed。結果在 `dist/studio-design-gate-portability.xml`。
+- `tools/release.py --project workflow_studio --candidate studio-design-review` 建置成功。Windows 將候選的 Studio 與底座 wheel 各置於獨立 QA 環境，重用開發環境已安裝的第三方依賴。以候選 wheel 實測拒絕越過初稿、產生兩張圖、確認匯出及臨時工作區的候選試做，結果為 PASS。
+- 離線乾淨啟動器缺工作區受管理的 Python 3.12。上述 wheel 驗證使用已存在的 Python 3.12.11。真人桌面對話的呈現、macOS 與正式部署待驗。Studio 可以驗證收到的回覆和版次，圖面顯示及真人原文由宿主轉交。
+- 本次沿用原有 SQLite 版本快照，無 DB schema 遷移。回滾時使用原本的成對底座與 Studio wheel，保留資料庫及已匯出的藍圖。升級後缺初稿校閱契約的待匯出草稿由新版本引導重新預覽。
+
 ## 起始環境（2026-11-17）
 
 Windows，CPython 3.12.11；本機 checkout `2397ede`，另含既有未提交變更。

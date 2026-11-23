@@ -9,10 +9,28 @@ from ..runtime import FlowError, digest
 from .capabilities import resolve_graph
 
 
+def verify_pattern_admission(graph, workspace):
+    provenance = graph["provenance"]
+    compositions = provenance.get("pattern_compositions", [])
+    if compositions:
+        from ..studio import studio_request
+
+        receipt = studio_request(workspace, "verify_pattern_admission", {
+            "compositions": compositions, "rehearsal": provenance.get("pattern_rehearsal"),
+        })
+        require(receipt.get("verified") is True, "缺少目前有效的 Pattern 與 Pack 資格。")
+
+
 def preflight_graph(graph, workspace, *, offline=False):
     resolved = resolve_graph(graph, workspace, offline=offline)
     cases = graph["quality_contract"].get("golden_cases")
     build_gaps = trial_case_gaps(cases, graph["outputs"])
+    admission_failed = False
+    try:
+        verify_pattern_admission(graph, workspace)
+    except FlowError as error:
+        build_gaps.append({"code": error.code, "reason": str(error)})
+        admission_failed = True
     build_gaps.extend(
         {"code": "GRAPH_UNSUPPORTED", "node": key, "reason": "Graph Builder 尚未支援此原生能力。"}
         for key, binding in resolved["bindings"].items()
@@ -20,13 +38,15 @@ def preflight_graph(graph, workspace, *, offline=False):
     )
     return {
         **resolved,
+        "status": "blocked" if admission_failed else resolved["status"],
         "build_status": "blocked" if resolved["gaps"] or build_gaps else "ready",
         "build_gaps": build_gaps,
     }
 
 
-def build_graph(source, requested, cases, workspace):
+def build_graph(source, requested, cases, workspace, *, attachments=None):
     graph = source["graph"]
+    verify_pattern_admission(graph, workspace)
     resolved = resolve_graph(graph, workspace)
     require(
         resolved["status"] == "ready",
@@ -57,11 +77,21 @@ def build_graph(source, requested, cases, workspace):
     require(
         isinstance(cases, list) and all(c in cases for c in required), "不可省略已確認的驗收案例"
     )
-    plan = compile_plan_tree(graph, source["source_hash"], workspace, resolved)
+    assignments = graph["provenance"].get("design_review", {}).get("details", {}).get("skills", {})
+    attachments = attachments or {}
+    documents = {}
+    for skill, paths in assignments.items():
+        prefix = f"skills/{skill}/"
+        group = {name[len(prefix):]: data.decode("utf-8-sig")
+                 for name, data in attachments.items() if name.startswith(prefix)}
+        require("SKILL.md" in group, "定稿指定的技能缺少已驗證來源。")
+        for path in paths:
+            documents.setdefault(path, {})[skill] = group
+    plan = compile_plan_tree(graph, source["source_hash"], workspace, resolved, documents=documents)
     return plan, graph, {"bindings": resolved["bindings"]}, cases
 
 
-def compile_plan_tree(graph, source_hash, workspace, resolved):
+def compile_plan_tree(graph, source_hash, workspace, resolved, *, documents=None):
     if any(
         n["kind"] not in {"task", "human_review", "switch", "join", "foreach", "repeat_until"}
         or (
@@ -88,6 +118,10 @@ def compile_plan_tree(graph, source_hash, workspace, resolved):
         "order": order,
         "dependencies": dependencies,
     }
+    documents = documents or {}
+    local_docs = {key: value for key, value in documents.items() if "/" not in key}
+    if local_docs:
+        plan["skill_documents"] = local_docs
     children = {}
     for node in graph["nodes"]:
         if node["kind"] not in {"foreach", "repeat_until"}:
@@ -118,7 +152,10 @@ def compile_plan_tree(graph, source_hash, workspace, resolved):
             child_bindings["status"] == "ready" and child_bindings["bindings"] == pinned,
             "子圖工具版本已變更",
         )
-        children[node["id"]] = compile_plan_tree(child, source_hash, workspace, child_bindings)
+        children[node["id"]] = compile_plan_tree(
+            child, source_hash, workspace, child_bindings,
+            documents={key[len(prefix):]: value for key, value in documents.items() if key.startswith(prefix)},
+        )
     if children:
         plan["children"] = children
     return plan
