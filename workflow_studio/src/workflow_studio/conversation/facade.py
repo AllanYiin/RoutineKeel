@@ -320,6 +320,10 @@ def dispatch(studio, workspace, action, params, *, runtime_python=None):
         }[action]
         return handler(studio, **p)
     pid = p.pop("project_id")
+    if action == "compose_pattern":
+        from ..patterns.composer import compose_project
+
+        return compose_project(studio, pid, **p)
     if action in {"extract_pattern", "get_extraction", "export_extraction"}:
         from ..patterns import extractor
 

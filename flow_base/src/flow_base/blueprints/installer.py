@@ -222,7 +222,9 @@ def verify(ws, key, resolution, cases):
             from routinekeel_contracts.graph_trials import trial_case_gaps
 
             from ..graph.builder import build_graph
+            from ..graph.degradation import check_degradation
 
+            check_degradation(ws, key, src["graph"]["provenance"].get("degraded_delivery"))
             plan, ir, registry, cases = build_graph(src, resolution, cases, ws.root)
             gaps = trial_case_gaps(cases, ir["outputs"])
             require(not gaps, "；".join(dict.fromkeys(gap["reason"] for gap in gaps)))
@@ -258,7 +260,8 @@ def verify(ws, key, resolution, cases):
             trial = Path(temp) / "workspace"
             trial.mkdir()
             trial_catalog = Path(temp) / "host" / "catalog.json"
-            if any(item["provider"] == "desktop_host" for item in capability_evidence.values()):
+            if any(item["provider"] in {"desktop_host", "portable_local"}
+                   for item in capability_evidence.values()):
                 # The trial can inspect already observed tool metadata; its receipts are disposable.
                 atomic_json(trial_catalog, read_json(Path(os.environ["ROUTINEKEEL_HOST_CATALOG"])))
             else:
@@ -278,6 +281,17 @@ def verify(ws, key, resolution, cases):
                 trial / "share_states/blueprint_bindings" / (digest(plan) + ".json"),
                 resolution["bindings"],
             )
+            if plan["format"] == 2:
+                locks = {item["lock_hash"] for item in capability_evidence.values() if "lock_hash" in item}
+                if locks:
+                    from routinekeel_contracts.graph_validator import validate_blueprint
+
+                    from ..graph.locking import copy_lock_for_trial
+                    from ..graph.qualification import graph_fingerprint
+
+                    shape, _ = validate_blueprint(ir)
+                    require(len(locks) == 1, "候選試做須使用同一份環境鎖定。")
+                    copy_lock_for_trial(ws.root, trial, graph_fingerprint(shape), next(iter(locks)))
             atomic_json(trial / "cases.json", cases)
             proc = subprocess.run(
                 [
@@ -376,8 +390,13 @@ def checked_candidate(ws, dest, expected):
     bindings = read_json(dest / "resolution.json")["bindings"]
     if "blueprint_schema_version" in json.loads(files["workflow.ir.json"]):
         from ..graph.capabilities import resolve_graph
+        from ..graph.degradation import check_degradation
 
-        live = resolve_graph(json.loads(files["workflow.ir.json"]), ws.root)
+        ir = json.loads(files["workflow.ir.json"])
+        require("pattern_rehearsal" not in ir["provenance"],
+                "Pattern 回歸候選僅供試做，正式更新須另建工作流版本。")
+        check_degradation(ws, record["draft_id"], ir["provenance"].get("degraded_delivery"))
+        live = resolve_graph(ir, ws.root)
         require(
             live["status"] == "ready"
             and live["bindings"] == bindings

@@ -128,6 +128,38 @@ def register(server, workspace, result):
         )
 
     @server.tool()
+    def studio_compose_pattern(
+        project_id: str,
+        draft_id: str,
+        expected_revision: int,
+        request_id: str,
+        pattern_ref: str,
+        insert_location: dict,
+        port_map: dict,
+        parameter_bindings: dict,
+        decision_id: str,
+        golden_cases: list[dict] | None = None,
+        improvement_id: str | None = None,
+        target_trial: str | None = None,
+    ) -> dict:
+        """Expand an accepted Pattern in a new Blueprint draft revision."""
+        return call(
+            "compose_pattern",
+            project_id=project_id,
+            draft_id=draft_id,
+            expected_revision=expected_revision,
+            request_id=request_id,
+            pattern_ref=pattern_ref,
+            insert_location=insert_location,
+            port_map=port_map,
+            parameter_bindings=parameter_bindings,
+            decision_id=decision_id,
+            golden_cases=golden_cases,
+            improvement_id=improvement_id,
+            target_trial=target_trial,
+        )
+
+    @server.tool()
     def studio_generalize_patterns(
         pattern_refs: list[str],
         pattern_id: str,

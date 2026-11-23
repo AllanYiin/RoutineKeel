@@ -99,7 +99,17 @@ def archive_bytes(graph, files):
 
 
 def prepare(
-    studio, project_id, expected_revision, request_id, graph, design=None, skills=None, lineage=None
+    studio,
+    project_id,
+    expected_revision,
+    request_id,
+    graph,
+    design=None,
+    skills=None,
+    lineage=None,
+    *,
+    _pattern_compositions=None,
+    _pattern_rehearsal=None,
 ):
     design = {} if design is None else design
     skills = [] if skills is None else skills
@@ -116,10 +126,14 @@ def prepare(
         revision_source = {"lineage": lineage}
     if not isinstance(design, dict) or set(design) - DOMAINS.keys():
         fail("設計摘要含未知領域。")
+    if graph.get("provenance"):
+        fail("來源追蹤由 Studio 依專案版本產生。")
+    if _pattern_compositions is not None:
+        graph = {**graph, "provenance": {"pattern_compositions": _pattern_compositions}}
+        if _pattern_rehearsal is not None:
+            graph["provenance"]["pattern_rehearsal"] = _pattern_rehearsal
     model, order = validate_blueprint(graph)
     canonical = model.model_dump(mode="json", exclude_none=True)
-    if canonical["provenance"]:
-        fail("來源追蹤由 Studio 依專案版本產生。")
 
     def edit(db, state):
         if state["phase"] == "paused":
@@ -336,7 +350,29 @@ def export(
         if versions != proposal["skill_sources"]:
             fail("技能來源版本已變更。")
         graph = dict(proposal["graph"])
+        registry = studio.tools.packs
+        rehearsal = graph["provenance"].get("pattern_rehearsal")
+        if rehearsal:
+            from ..patterns.evolution import get, rehearsal_trial
+
+            target_ref = get(studio, rehearsal)["target_ref"]
+        for composition in graph["provenance"].get("pattern_compositions", []):
+            ref = composition["ref"]
+            if rehearsal and ref == target_ref:
+                rehearsal_trial(
+                    studio, rehearsal, ref, composition["hash"], composition["qualification_hash"]
+                )
+                continue
+            pattern = registry.pattern_status(ref)
+            if (
+                pattern["status"] != "active"
+                or pattern["content_hash"] != composition["hash"]
+                or pattern["qualification_hash"] != composition["qualification_hash"]
+                or not registry._has_active_pack(ref)
+            ):
+                fail("Pattern 版本、試做收據或 Pack 狀態已更改，請重新核對草稿。")
         graph["provenance"] = {
+            **graph["provenance"],
             **({"lineage": proposal["lineage"]} if "lineage" in proposal else {}),
             "project_id": project_id,
             "interview_revision": expected_revision,

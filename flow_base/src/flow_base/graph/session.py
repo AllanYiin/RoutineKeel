@@ -361,6 +361,14 @@ class GraphSession(Session):
             return
         tool = node["capability"]
         binding = state["bindings"][key]
+        if binding["provider"] == "portable_local":
+            from .qualification import execute_local
+
+            outputs = execute_local(binding, node, values, node.get("parameters", {}))
+            self.complete_node(state, node, outputs, {
+                "kind": "local_execution", "qualification_receipt": binding["qualification_receipt"],
+            })
+            return
         if binding["provider"] == "desktop_host":
             elevated = (
                 binding["side_effect"] == "external"
@@ -413,8 +421,13 @@ class GraphSession(Session):
             if record["status"] == "running":
                 record["status"] = "invalidated"
                 self.checkpoint(state, key, "recovered_interruption")
-        if any(r["status"] not in {"succeeded", "skipped"} for r in state["nodes"].values()):
-            observed = resolve_graph(graph, self.runtime.workspace_root)
+        nested_lock = state.get("owner_session") and any(
+            "lock_hash" in value for value in state["bindings"].values()
+        )
+        if not nested_lock and any(r["status"] not in {"succeeded", "skipped"} for r in state["nodes"].values()):
+            observed = resolve_graph(
+                graph, self.runtime.workspace_root, admission=state["bindings"], allow_waiting=True
+            )
             require(
                 observed["fingerprint"] == state["plan"]["capability_fingerprint"],
                 "能力或權限已變更",
@@ -693,9 +706,24 @@ class GraphSession(Session):
                 or not (state.get("offline") and state["bindings"][key].get("network", True)),
                 "離線工作不能領取網路工具操作",
             )
-            live = resolve_graph(state["plan"]["graph"], self.runtime.workspace_root)
+            authority = state
+            owners = set()
+            while authority.get("owner_session"):
+                parent = authority["owner_session"]
+                require(parent not in owners, "子工作的綁定鏈包含循環")
+                owners.add(parent)
+                authority = read_json(GraphSession(self.runtime, parent).path)
+                require(
+                    digest(authority["plan"]) == authority["plan_hash"]
+                    and digest(authority["bindings"]) == authority["plan"]["bindings_hash"],
+                    "父工作的綁定或執行計畫已變更",
+                )
+            live = resolve_graph(
+                authority["plan"]["graph"], self.runtime.workspace_root,
+                admission=authority["bindings"],
+            )
             require(
-                live["fingerprint"] == state["plan"]["capability_fingerprint"], "工具或權限已變更"
+                live["fingerprint"] == authority["plan"]["capability_fingerprint"], "工具或權限已變更"
             )
             require(
                 task["kind"] != "external"

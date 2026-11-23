@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "routinekeel-data-adapter"
+version = "1.0.0"
+requires-python = ">=3.11,<3.14"
+description = "Optional local CSV and Decimal reconciliation adapters for RoutineKeel"
+license = "MIT"
+
+[project.entry-points."routinekeel.portable_adapters"]
+"routinekeel.csv_read" = "routinekeel_data_adapter.operations:read_csv"
+"routinekeel.decimal_reconcile" = "routinekeel_data_adapter.operations:reconcile"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/routinekeel_data_adapter"]
