@@ -133,7 +133,10 @@ def _workflow(
                 "draft_id": proposal["proposal_id"],
                 "review": review(proposal["proposal"]),
                 "draft_reply": "初稿可進入定稿",
-                "shown_sections": {key: item["sha256"] for key, item in proposal["proposal"]["review_sections"].items()},
+                "shown_sections": {
+                    key: item["sha256"]
+                    for key, item in proposal["proposal"]["review_sections"].items()
+                },
             },
         )
         exported = studio_request(
@@ -145,7 +148,9 @@ def _workflow(
                 "request_id": "freeze",
                 "proposal_id": final["proposal_id"],
                 "review_hash": final["review_hash"],
-                "shown_sections": {key: item["sha256"] for key, item in final["review_sections"].items()},
+                "shown_sections": {
+                    key: item["sha256"] for key, item in final["review_sections"].items()
+                },
                 "decision": "approve",
                 "user_text": "確認匯出這份回歸候選",
             },

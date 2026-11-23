@@ -221,9 +221,12 @@ def test_branch_join_review_control_is_preserved_or_explicitly_blocked(tmp_path)
 
     (input_name,) = guarded["pattern"]["boundary"]["inputs"]
     (output_name,) = guarded["pattern"]["boundary"]["outputs"]
-    report = run_pattern_trial(guarded["pattern"], [
-        {"inputs": {input_name: "branch fixture"}, "expected": {output_name: "branch fixture"}},
-    ])
+    report = run_pattern_trial(
+        guarded["pattern"],
+        [
+            {"inputs": {input_name: "branch fixture"}, "expected": {output_name: "branch fixture"}},
+        ],
+    )
     assert report["verdict"] == "PASS", report
     assert report["results"][0]["control_ports"] == ["input/control_in_1"]
     with StudioService.open_workspace(tmp_path) as studio:

@@ -324,10 +324,13 @@ class PackRegistry:
         if item["content_hash"] != requested.hash:
             raise StudioError("CONTRACT_MISMATCH", "Pattern 內容與藍圖不同。")
         if (
-            item["status"] != "active" or item["qualification_hash"] != requested.qualification_hash
+            item["status"] != "active"
+            or item["qualification_hash"] != requested.qualification_hash
             or not self._has_active_pack(requested.ref)
         ):
-            raise StudioError("PATTERN_APPROVAL_REQUIRED", "Pattern 或 Pack 已停用，請重新確認藍圖。")
+            raise StudioError(
+                "PATTERN_APPROVAL_REQUIRED", "Pattern 或 Pack 已停用，請重新確認藍圖。"
+            )
         trial = self.trial(requested.ref, requested.qualification_hash)
         if (trial["pack_ref"], trial["pack_hash"]) != (requested.pack_ref, requested.pack_hash):
             raise StudioError("CONTRACT_MISMATCH", "Pattern 資格與藍圖宣告的 Pack 不符。")

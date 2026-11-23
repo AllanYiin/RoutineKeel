@@ -6,7 +6,12 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from PIL import Image
 from workflow_studio.contracts import StudioError
-from workflow_studio.conversation.facade import dispatch, next_question, next_questions, preview
+from workflow_studio.conversation.facade import (
+    dispatch,
+    next_question,
+    next_questions,
+    preview,
+)
 from workflow_studio.service import StudioService
 
 from workflow_studio import __main__ as cli
