@@ -3,7 +3,7 @@ from pathlib import Path
 
 WORKSPACE_GUIDE = '''# flow_base 工作區的 Agent 入口
 
-產品主線為 workflow_studio 設計 → blueprints 藍圖包 → flow_base 轉換安裝與執行；既有流程僅保留少量參考案例。此處包含一個共用底座與 workflows/ 下的獨立流程。使用者要求執行任務時，先讀 flow_base/AGENTS.md，再讀workflows/FLOW_<名稱>/ 的 AGENTS.md、flow.json 與 README.md，使用已封裝 CLI 執行。
+使用 workflow_studio 設計並匯出藍圖，再透過 flow_base 轉換、安裝及執行。已安裝流程位於 workflows/。全包中的 examples/workflows/ 存放待安裝的範例 ZIP。使用者要求執行任務時，先讀 flow_base/AGENTS.md，再讀目標流程的 AGENTS.md、flow.json 與 README.md，使用底座 CLI 執行。
 
 預設每個流程各自建立 Codex 專案，這個父資料夾只作為共用執行工作區。只有使用者明確要跨流程管理時，才以此處作為對話專案。選擇流程不等於重新選擇技術棧；不要另寫替代流程或掃描其他磁碟找現成結果。沒有指定流程時，先呼叫底座 catalog，按宣告能力選擇；缺必要資訊才詢問。
 

@@ -10,7 +10,7 @@
 | `workflow_studio/` | `workflow-studio-<版本>.zip` |
 | `blueprints/` | 全包內提供空目錄；私人內容不打包 |
 
-全包 `RoutineKeel-workspace-<底座版本>.zip` 提供相同結構。
+全包 `RoutineKeel-workspace-<底座版本>.zip` 內的 `workflows/` 初始為空。待安裝的兩個參考流程 ZIP 放在 `examples/workflows/`。
 
 Studio 訪談、不可變修訂與來源屬於設計期。底座在工作區狀態目錄的 `blueprint_drafts/` 保存來源與候選建置，在 `blueprint_jobs/` 保存節點與待辦，在 `graph_evolution/` 保存修訂比較。正式工作流仍由 `workflows/` 探索。備份時一併保存工作流、兩個元件的狀態及對應成果。[版本與驗收索引](specs/README.md)
 分包解壓至共同的 RoutineKeel 根目錄；不要將流程移出 workflows/。

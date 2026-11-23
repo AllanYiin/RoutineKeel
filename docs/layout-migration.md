@@ -10,6 +10,7 @@ RoutineKeel/
 │   └── share_states/              # 狀態、快取與模型，不提交或打包內容
 ├── workflows/
 │   └── FLOW_<流程名稱>/
+├── examples/workflows/           # 全包提供待安裝的參考流程 ZIP
 ├── blueprints/                    # 藍圖來源，尚未轉成可執行流程
 └── workflow_studio/
 ```
@@ -20,12 +21,12 @@ Python import 名稱、flow_id、job_id 與 run_id 不因資料夾前綴而改�
 私人藍圖、已安裝流程、設定、模型與既有成果不會自動加入 GitHub。
 
 從根目錄執行 `python tools/release.py`，產生四個元件 ZIP，以及
-`RoutineKeel-workspace-<底座版本>.zip` 全包。全包解壓得到 `RoutineKeel/`；
-分包則解壓至同一個 `RoutineKeel/` 內，保留 `workflows/FLOW_…/` 路徑。
+`RoutineKeel-workspace-<底座版本>.zip` 全包。全包解壓得到 `RoutineKeel/` 和空白的 `workflows/`。
+需要範例時，把 `examples/workflows/` 裡選定的分包解壓至同一個 `RoutineKeel/`，保留 `workflows/FLOW_…/` 路徑。
 `.venv/` 不隨 ZIP 分發；共享環境由底座啟動器在根目錄建立。
 
 舊版平面工作區仍可執行，不能只建立空的 `workflows/` 就宣稱完成遷移。
-更新既有流程以識別碼配對並保留原資料夾，兩種 ZIP 都可作為更新附件。
+用獨立的流程 ZIP 更新既有流程。底座以識別碼配對並保留原資料夾。
 不要直接將新 ZIP 覆蓋到正在使用的舊安裝；先結束工作並保存完整備份。
 有排隊或非終態 Run 時，套件更新會拒絕。
 

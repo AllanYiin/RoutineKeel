@@ -123,7 +123,7 @@ jobs:
           else
             gh release create "$tag" --draft --target "$GITHUB_SHA" \
               --title "RoutineKeel ${GITHUB_SHA:0:12}" \
-              --notes "優先下載 RoutineKeel-workspace 完整安裝包，解壓即有 flow_base、workflows、blueprints、workflow_studio。獨立套件解壓到同一個 RoutineKeel 資料夾；流程位於 workflows/FLOW_<名稱>。.venv 於首次啟動建立，不含私人設定、模型與執行成果。SHA256SUMS 可校驗下載檔案。"
+              --notes "優先下載 RoutineKeel-workspace 完整安裝包。首次解壓後 workflows/ 為空。待安裝的參考流程 ZIP 位於 examples/workflows/，選定後解壓到同一個 RoutineKeel 根目錄。.venv 於首次啟動建立。SHA256SUMS 可校驗下載檔案。"
           fi
           (cd packages && sha256sum -c SHA256SUMS)
           gh release upload "$tag" packages/*.zip packages/SHA256SUMS packages/versions.json --clobber

@@ -229,14 +229,20 @@ def write_workspace_archive(staging, reports):
         '只有指定的業務判斷、關鍵校閱或對外授權需要回覆。\n\n'
         '[對話操作與真人走查](flow_base/user-guide.md) · [本機 MCP 設定](flow_base/mcp-local.md) · '
         '[支援範圍](flow_base/known-issues.md)\n\n'
-        '宿主指引位於 workflow_studio/AGENTS.md。參考流程在 workflows/，共享執行紀錄在 flow_base/share_logs/，'
-        '狀態在 flow_base/share_states/。首次啟動會建立本機環境。\n', encoding='utf-8')
+        '宿主指引位於 workflow_studio/AGENTS.md。全包首次解壓時，workflows/ 保持空白。\n\n'
+        '兩個待安裝的參考流程 ZIP 位於 examples/workflows/。想使用其中一個時，把選定的 ZIP '
+        '解壓到本 RoutineKeel 根目錄，再從 flow_base/ 的共用入口執行。\n\n'
+        '共享執行紀錄與狀態會放在 flow_base/share_logs/ 和 flow_base/share_states/。'
+        '首次啟動會建立本機環境。\n', encoding='utf-8')
     version = project_info(BASE)[1]
     output = staging / 'release' / f'RoutineKeel-workspace-{version}.zip'
     with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as archive:
         archive.writestr('RoutineKeel/', b'')
         for file in sorted(workspace.rglob('*')):
-            member = 'RoutineKeel/' + file.relative_to(workspace).as_posix()
+            relative = file.relative_to(workspace)
+            if relative.parts[0] == 'workflows' and len(relative.parts) > 1:
+                continue
+            member = 'RoutineKeel/' + relative.as_posix()
             if file.is_dir():
                 archive.writestr(member + '/', b'')
             else:
@@ -245,6 +251,13 @@ def write_workspace_archive(staging, reports):
                 info.external_attr = (0o100755 if file.suffix in {'.sh', '.command'} else 0o100644) << 16
                 info.compress_type = zipfile.ZIP_DEFLATED
                 archive.writestr(info, file.read_bytes())
+        for item in reports:
+            if item['folder'].startswith('workflows/'):
+                archive.write(
+                    staging / 'release' / item['file'],
+                    'RoutineKeel/examples/workflows/' + item['file'],
+                    compress_type=zipfile.ZIP_STORED,
+                )
     with zipfile.ZipFile(output) as archive:
         if archive.testzip() is not None:
             raise ValueError('Corrupted workspace ZIP')

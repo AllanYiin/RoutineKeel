@@ -22,6 +22,14 @@ def extracted(tmp_path):
     return target / 'RoutineKeel'
 
 
+@pytest.fixture
+def with_examples(extracted):
+    for package in (extracted / 'examples/workflows').glob('*.zip'):
+        with zipfile.ZipFile(package) as archive:
+            archive.extractall(extracted)
+    return extracted
+
+
 def cli(workspace, *arguments, ok=True):
     wheel = next((workspace / 'flow_base').glob('flow_base-*.whl'))
     code = 'import sys;sys.path.insert(0,sys.argv.pop(1));from flow_base.cli import main;raise SystemExit(main())'
@@ -31,7 +39,7 @@ def cli(workspace, *arguments, ok=True):
     return json.loads(result.stdout)
 
 
-def test_full_zip_contains_studio_runtime_and_two_reference_flows():
+def test_full_zip_contains_studio_runtime_and_two_uninstalled_examples():
     with zipfile.ZipFile(full_archive()) as archive:
         assert archive.testzip() is None
         names = set(archive.namelist())
@@ -39,17 +47,18 @@ def test_full_zip_contains_studio_runtime_and_two_reference_flows():
         for folder in ['flow_base', 'flow_base/share_states', 'flow_base/share_logs', 'blueprints', 'workflow_studio', 'workflows']:
             assert 'RoutineKeel/' + folder + '/' in names
         assert 'RoutineKeel/workflow_studio/studio.bat' in names
-        assert {n for n in names if n.endswith('/flow.json')} == {
-            'RoutineKeel/workflows/FLOW_課程影片產生字幕/flow.json',
-            'RoutineKeel/workflows/FLOW_檔案複製範例/flow.json',
-        }
+        assert {n for n in names if n.startswith('RoutineKeel/workflows/')} == {'RoutineKeel/workflows/'}
+        assert not any(n.endswith('/flow.json') for n in names)
+        examples = {Path(n).name for n in names if n.startswith('RoutineKeel/examples/workflows/')}
+        assert len(examples) == 2
+        assert {name.rsplit('-', 1)[0] for name in examples} == {'flow_copy', 'flow_subtitles'}
         assert not any(part in {'.venv', '.studio-venv', 'outputs', '.git', '__pycache__'} for name in names for part in name.split('/'))
         assert not any(name.endswith(('/settings.json', '/router.json', '/state.sqlite3', '/model.bin')) for name in names)
         assert all(name.endswith('/') for name in names if '/share_states/' in name or '/share_logs/' in name)
         assert archive.getinfo('RoutineKeel/flow_base/start.sh').external_attr >> 16 & 0o111
 
 
-def test_split_zips_overlay_same_relative_locations_as_full_bundle(tmp_path):
+def test_split_zips_match_full_bundle_components_and_pending_packages(tmp_path):
     reports = json.loads((RELEASE / 'versions.json').read_text(encoding='utf-8'))
     combined = full_archive().name
     with zipfile.ZipFile(full_archive()) as full:
@@ -58,10 +67,14 @@ def test_split_zips_overlay_same_relative_locations_as_full_bundle(tmp_path):
             assert hashlib.sha256(path.read_bytes()).hexdigest() == report['sha256']
             if report['file'] == combined:
                 continue
+            is_example = report['folder'].startswith('workflows/')
+            if is_example:
+                name = 'RoutineKeel/examples/workflows/' + report['file']
+                assert full.read(name) == path.read_bytes()
             with zipfile.ZipFile(path) as part:
                 part.extractall(tmp_path)
                 for item in part.infolist():
-                    if not item.is_dir():
+                    if not item.is_dir() and not is_example:
                         assert part.read(item) == full.read('RoutineKeel/' + item.filename)
     assert (tmp_path / 'flow_base/start.ps1').is_file()
     assert (tmp_path / 'workflows/FLOW_檔案複製範例/flow.json').is_file()
@@ -90,9 +103,18 @@ raise SystemExit(main())
     assert json.loads(result.stdout)['result']['mode'] == 'host_conversation'
 
 
-def test_clean_extracted_wheel_catalog_plan_execution_and_cache(extracted):
-    catalog = cli(extracted, 'catalog')['result']['tasks']
-    assert {item['folder'] for item in catalog} == {'FLOW_課程影片產生字幕', 'FLOW_檔案複製範例'}
+def test_clean_catalog_then_opt_in_example_execution_and_cache(extracted):
+    assert not list((extracted / 'workflows').iterdir())
+    assert not list((extracted / 'flow_base/share_states').iterdir())
+    assert not list((extracted / 'flow_base/share_logs').iterdir())
+    assert cli(extracted, 'catalog')['result']['tasks'] == []
+    assert not list((extracted / 'flow_base/share_states').iterdir())
+    example, = (extracted / 'examples/workflows').glob('flow_copy-*.zip')
+    with zipfile.ZipFile(example) as archive:
+        archive.extractall(extracted)
+    assert [row['folder'] for row in cli(extracted, 'catalog')['result']['tasks']] == [
+        'FLOW_檔案複製範例'
+    ]
     source = extracted / 'workflows/FLOW_檔案複製範例/測試 input.txt'
     source.write_text('實際發行包：解壓、計畫、執行、快取。\n', encoding='utf-8')
     plan = cli(extracted, 'plan', '--task', 'ai_flow02', '--input', source)['result']
@@ -134,7 +156,8 @@ assert not any(name.startswith("workflow_studio") for name in sys.modules)
     'blueprints/job', 'workflow_studio/job',
     'workflows/FLOW_課程影片產生字幕/outputs/job',
 ])
-def test_clean_release_protects_shared_directories_and_other_flows(extracted, relative):
+def test_clean_release_protects_shared_directories_and_other_flows(with_examples, relative):
+    extracted = with_examples
     source = extracted / 'input.txt'
     source.write_text('do not overwrite other workflows', encoding='utf-8')
     result = cli(extracted, 'plan', '--task', 'ai_flow02', '--input', source,
@@ -142,13 +165,13 @@ def test_clean_release_protects_shared_directories_and_other_flows(extracted, re
     assert result['error']['code'] == 'OUTPUT_PROTECTED'
 
 
-def test_nested_launch_folder_must_belong_to_workflows(extracted):
+def test_nested_launch_folder_must_belong_to_workflows(with_examples):
     from flow_base.runtime import FlowError
     from flow_base.workspace import Workspace
-    ws = Workspace(extracted)
-    assert ws.task_at(extracted / 'workflows/FLOW_檔案複製範例').manifest.id == 'ai_flow02'
+    ws = Workspace(with_examples)
+    assert ws.task_at(with_examples / 'workflows/FLOW_檔案複製範例').manifest.id == 'ai_flow02'
     with pytest.raises(FlowError, match='流程目錄'):
-        ws.task_at(extracted / 'workflow_studio')
+        ws.task_at(with_examples / 'workflow_studio')
 
 
 @pytest.mark.parametrize('nested', [False, True])

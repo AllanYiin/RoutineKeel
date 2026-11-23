@@ -49,7 +49,7 @@ RoutineKeel 想解決的是這段「從作者的方法到他人能穩定使用�
 
 這次本機驗收請使用 `RoutineKeel-workspace-0.3.0.zip`，解壓到新的資料夾。完整包內的 `README.md` 會帶你接好桌面對話與兩個參考流程。交付目錄內的 `SHA256SUMS` 可核對五份 ZIP。
 
-完整候選包內有 Studio、底座與兩個參考流程。接好本機工作區後，在桌面對話說明任務即可建立可續編的訪談。宿主可用專案、工作或執行編號接回上次進度。[對話操作說明](workflow_studio/docs/host-conversation.md)
+完整候選包內有 Studio、底座與兩個待安裝的參考流程 ZIP。全包第一次解壓時，`workflows/` 為空。要使用範例時，從 `examples/workflows/` 選一個 ZIP，解壓到同一個 `RoutineKeel/`。接好本機工作區後，在桌面對話說明任務即可建立可續編的訪談。宿主可用專案、工作或執行編號接回上次進度。[對話操作說明](workflow_studio/docs/host-conversation.md)
 
 到 GitHub Releases 開啟最新發行，從 **Assets** 下載底座 ZIP 和你需要的流程 ZIP。例如字幕需要 `flow_base-*.zip` 與 `flow_subtitles-*.zip`。[前往 Releases](https://github.com/AllanYiin/RoutineKeel/releases)
 
