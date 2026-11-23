@@ -1,0 +1,49 @@
+pattern_schema_version: '1.0'
+pattern:
+  id: text.preserve
+  version: 1.0.0
+  title: 保留原文
+  kind: reusable_graph
+  declared_domains: [text]
+boundary:
+  inputs:
+    text: {type: string}
+  outputs:
+    text: {type: string}
+requirements:
+  - id: copier
+    capability: text.copy
+    version: 1.0.0
+    required: true
+    portability: flexible
+triggers:
+  design:
+    activation: suggest
+    task_categories: [transcript]
+    intents: [preserve_source]
+    positive_examples: [保持來源文字]
+    negative_examples: [改寫原文]
+    prerequisites: [source_text]
+  runtime:
+    activation: compiled_graph_only
+  evolution:
+    signals: [confirmed_pattern_defect]
+graph:
+  inputs:
+    text: {type: string}
+  nodes:
+    - id: copy
+      kind: task
+      capability: text.copy
+      capability_version: 1.0.0
+      inputs:
+        source: {source: 'input://text', port: {type: string}}
+      outputs:
+        result: {type: string}
+      side_effect: none
+      permissions: []
+  outputs:
+    text: 'artifact://copy/result'
+tests:
+  golden_cases_manifest: cases/index.json
+  required_edges: [normal, empty]
