@@ -181,7 +181,7 @@ def test_v14_project_upgrades_and_backup_restores_in_empty_directory(tmp_path, m
     with sqlite3.connect(old_path.as_uri() + "?mode=ro", uri=True) as db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 14
     with StudioService.open_workspace(previous) as upgraded:
-        assert upgraded.repository.schema_version == 15
+        assert upgraded.repository.schema_version == storage.SCHEMA_VERSION
         assert upgraded.projects.get(p.project_id) == p
         (snapshot,) = upgraded.repository.path.parent.glob("backups/before-v014-*.sqlite3")
         assert (

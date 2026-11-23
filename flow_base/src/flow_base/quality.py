@@ -43,7 +43,33 @@ def trusted_measurement(runtime, rule, value):
         return None
 
 
-def evaluate(contract, outputs, nodes=None, *, runtime=None):
+def step_checks(policy, node_id, outputs):
+    rules = policy.get("critical_steps", {}).get(node_id, {}).get("machine", [])
+    checks = []
+    for rule in rules:
+        settings = {key: rule[key] for key in ("expected", "min", "max") if key in rule}
+        specification = {
+            **settings, "id": f"step/{node_id}/{rule['id']}", "output": rule["output"],
+            "evaluator": rule["evaluator"], "version": "1",
+            "severity": "warning" if rule.get("tolerate") else "required", "on_failure": "reject",
+        }
+        (check,) = evaluate({"evaluators": [specification]}, outputs)["checks"]
+        if rule.get("tolerate"):
+            check["follow_up"] = rule["follow_up"]
+        checks.append(check)
+    return checks
+
+
+def recorded_step_checks(nodes):
+    checks = []
+    for node in nodes.values():
+        checks.extend(node.get("output_checks", []))
+        for entry in node.get("loop", {}).get("items", []):
+            checks.extend(entry.get("output_checks", []))
+    return checks
+
+
+def evaluate(contract, outputs, nodes=None, *, runtime=None, patterns=()):
     results = []
     rules = contract.get("evaluators", [])
     require(isinstance(rules, list), "品質評估器清單無效")
@@ -136,6 +162,71 @@ def evaluate(contract, outputs, nodes=None, *, runtime=None):
         results.append(
             {"id": missing, "status": "not_run", "severity": "required", "on_failure": "review"}
         )
+    for pattern in patterns:
+        from routinekeel_contracts.references import parse_reference
+
+        policy = pattern.get("quality_contract", {})
+        if policy:
+            artifacts = {}
+            for name, text in pattern.get("quality_outputs", {}).items():
+                ref = parse_reference(text)
+                producer = (nodes or {}).get(ref.owner, {})
+                values = producer.get("outputs", {})
+                if (
+                    producer.get("status") == "succeeded"
+                    and ref.port in values
+                    and digest(values) == producer.get("outputs_hash")
+                ):
+                    artifacts[name] = values[ref.port]
+            evaluated = evaluate(policy, artifacts, nodes, runtime=runtime)
+            prefix = "pattern/" + pattern["namespace"] + "/"
+            results.extend({**check, "id": prefix + check["id"]} for check in evaluated["checks"])
+            review = policy.get("review_policy", {})
+            if review.get("required"):
+                user_reviewed = (
+                    (nodes or {}).get(review.get("approved_node"), {}).get("user_reviewed")
+                )
+                results.append(
+                    {
+                        "id": prefix + "human_review",
+                        "status": "pass" if user_reviewed else "fail",
+                        "severity": "required",
+                        "on_failure": "review",
+                    }
+                )
+        gate = pattern.get("gate")
+        if not gate:
+            continue
+        ref = parse_reference(gate["source"])
+        node = (nodes or {}).get(ref.owner, {})
+        value = node.get("outputs", {})
+        status = "not_run"
+        measured = None
+        if (
+            node.get("status") == "succeeded"
+            and ref.port in value
+            and digest(value) == node.get("outputs_hash")
+        ):
+            measured = digest(value[ref.port])
+            status = "pass" if measured == digest(gate["equals"]) else "fail"
+        results.append(
+            {
+                "id": "pattern/" + pattern["namespace"],
+                "evaluator": "pattern_delivery_gate",
+                "version": "1",
+                "output": gate["source"],
+                "status": status,
+                "measured": measured,
+                "severity": "required",
+                "on_failure": "reject",
+            }
+        )
+    if "execution_review" in contract:
+        results.extend(recorded_step_checks(nodes or {}))
+        results.append({
+            "id": "workflow/output_contract", "status": "pass", "severity": "required",
+            "on_failure": "reject",
+        })
     required = [r for r in results if r["severity"] == "required"]
     policy = contract.get("review_policy", {})
     gate = policy.get("approved_node")
@@ -158,8 +249,24 @@ def evaluate(contract, outputs, nodes=None, *, runtime=None):
     return {"result_status": status, "checks": results}
 
 
+def validate_delivery_outputs(graph, outputs):
+    from routinekeel_contracts.graph_validator import port_for
+
+    from .graph.session import checked_value
+
+    require(outputs.keys() == graph.outputs.keys(), "具名交付輸出與契約不同")
+    nodes = {node.id: node for node in graph.nodes}
+    for name, ref in graph.outputs.items():
+        checked_value(outputs[name], port_for(graph, nodes, ref).model_dump())
+
+
 def assess(runtime, state, outputs):
     graph = state["plan"]["graph"]
+    if "execution_review" in graph["quality_contract"]:
+        from routinekeel_contracts.graph_validator import validate_blueprint
+
+        design, _ = validate_blueprint(graph)
+        validate_delivery_outputs(design, outputs)
     identity = digest(
         [
             state["session_id"],
@@ -171,7 +278,13 @@ def assess(runtime, state, outputs):
     )
     with closing(runtime.connect()) as db:
         if not db.execute("SELECT 1 FROM graph_assessments WHERE id=?", (identity,)).fetchone():
-            result = evaluate(graph["quality_contract"], outputs, state["nodes"], runtime=runtime)
+            result = evaluate(
+                graph["quality_contract"],
+                outputs,
+                state["nodes"],
+                runtime=runtime,
+                patterns=graph["provenance"].get("pattern_compositions", []),
+            )
             body = {
                 "outputs": outputs,
                 "original_hash": digest(outputs),
@@ -306,24 +419,25 @@ def feedback(
                 isinstance(outputs, dict) and outputs.keys() == before["outputs"].keys(),
                 "修正須保留具名交付",
             )
-            from routinekeel_contracts.graph_validator import (
-                port_for,
-                validate_blueprint,
-            )
+            from routinekeel_contracts.graph_validator import validate_blueprint
 
-            from .graph.session import GraphSession, checked_value
+            from .graph.session import GraphSession
             from .runtime import read_json
 
-            graph, _ = validate_blueprint(
-                read_json(GraphSession(runtime, before["session_id"]).path)["plan"]["graph"]
-            )
-            nodes = {n.id: n for n in graph.nodes}
-            for name, ref in graph.outputs.items():
-                checked_value(outputs[name], port_for(graph, nodes, ref).model_dump())
+            session = read_json(GraphSession(runtime, before["session_id"]).path)
+            graph, _ = validate_blueprint(session["plan"]["graph"])
+            validate_delivery_outputs(graph, outputs)
             for token in set(refs(outputs)):
                 assets.resolve(token)
             after.update(
-                outputs=outputs, **evaluate(before["quality_contract"], outputs, runtime=runtime)
+                outputs=outputs,
+                **evaluate(
+                    before["quality_contract"],
+                    outputs,
+                    session["nodes"],
+                    runtime=runtime,
+                    patterns=graph.provenance.get("pattern_compositions", []),
+                ),
             )
         elif decision == "accept":
             require(
@@ -354,8 +468,16 @@ def feedback(
             "user_text": user_text,
             "before_hash": digest(before["outputs"]),
             "after_hash": digest(after["outputs"]),
-            "before_ref":{"assessment_id":identity,"revision":expected_revision,"sha256":digest(before["outputs"])},
-            "after_ref":{"assessment_id":identity,"revision":expected_revision+1,"sha256":digest(after["outputs"])},
+            "before_ref": {
+                "assessment_id": identity,
+                "revision": expected_revision,
+                "sha256": digest(before["outputs"]),
+            },
+            "after_ref": {
+                "assessment_id": identity,
+                "revision": expected_revision + 1,
+                "sha256": digest(after["outputs"]),
+            },
             "before": before,
             "after": after,
         }
@@ -375,7 +497,9 @@ def feedback(
         return event
 
 
-def save_profile(runtime, graph, identity, expected_revision, settings, scope, user_text, *, request_id=None):
+def save_profile(
+    runtime, graph, identity, expected_revision, settings, scope, user_text, *, request_id=None
+):
     from jsonschema import Draft202012Validator
 
     require(
@@ -402,15 +526,17 @@ def save_profile(runtime, graph, identity, expected_revision, settings, scope, u
         "revision": expected_revision + 1,
     }
     if request_id is not None:
-        require(isinstance(request_id,str) and request_id.strip(),"設定請求識別無效")
-        body["request_id"]=request_id
+        require(isinstance(request_id, str) and request_id.strip(), "設定請求識別無效")
+        body["request_id"] = request_id
     with closing(runtime.connect()) as db:
         db.execute("BEGIN IMMEDIATE")
         if request_id is not None:
-            prior=db.execute("SELECT content_hash FROM graph_profiles WHERE workflow=? AND profile_id=? AND revision=?",
-                             (body["workflow_id"],identity,body["revision"])).fetchone()
-            if prior and prior[0]==digest(body):
-                return {**body,"content_hash":prior[0]}
+            prior = db.execute(
+                "SELECT content_hash FROM graph_profiles WHERE workflow=? AND profile_id=? AND revision=?",
+                (body["workflow_id"], identity, body["revision"]),
+            ).fetchone()
+            if prior and prior[0] == digest(body):
+                return {**body, "content_hash": prior[0]}
         version = (
             db.execute(
                 "SELECT MAX(revision) FROM graph_profiles WHERE workflow=? AND profile_id=?",

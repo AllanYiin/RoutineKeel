@@ -65,7 +65,9 @@ def check_predicate(predicate, port):
     require(predicate.op == "equals" or numeric, "大小比較需要數值埠")
 
 
-def validate_structure(graph, depth=0, *, max_nodes=200, dependencies=None, extended=False):
+def validate_structure(
+    graph, depth=0, *, max_nodes=200, dependencies=None, route_guards=None, extended=False
+):
     require(depth <= 8, "子圖巢狀層數超過限制")
     require(len(graph.nodes) <= max_nodes, "此版本的 Graph 節點數超過上限")
     nodes = {n.id: n for n in graph.nodes}
@@ -253,10 +255,12 @@ def validate_structure(graph, depth=0, *, max_nodes=200, dependencies=None, exte
     graph.nodes = [nodes[key] for key in order]
     if dependencies is not None:
         dependencies.update({key: sorted(parents) for key, parents in deps.items()})
+    if route_guards is not None:
+        route_guards.update(guards)
     return order
 
 
-def validate_blueprint(payload, *, dependencies=None):
+def validate_blueprint(payload, *, dependencies=None, route_guards=None):
     try:
         graph = Blueprint.model_validate(payload)
     except ValidationError as exc:
@@ -269,9 +273,17 @@ def validate_blueprint(payload, *, dependencies=None):
             else "GRAPH_INVALID"
         )
         raise StudioError(code, "Graph v2 宣告欄位或節點種類不受支援") from exc
-    return graph, validate_structure(
+    tracked = {} if dependencies is None else dependencies
+    order = validate_structure(
         graph,
         max_nodes=200 if graph.graph_contract_version == "2.0" else 401,
         extended=graph.graph_contract_version == "2.2",
-        dependencies=dependencies,
+        dependencies=tracked,
+        route_guards=route_guards,
     )
+    from .execution_review import validate_execution_review
+    from .pattern_composition import validate_pattern_records
+
+    validate_pattern_records(graph, order, tracked)
+    validate_execution_review(graph)
+    return graph, order

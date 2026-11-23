@@ -8,9 +8,9 @@ from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 
-from . import v001, v002, v003, v004, v005
+from . import v001, v002, v003, v004, v005, v006
 
-MIGRATIONS = (v001, v002, v003, v004, v005)
+MIGRATIONS = (v001, v002, v003, v004, v005, v006)
 
 
 def _tables(db):
@@ -43,6 +43,9 @@ def migrate(db: sqlite3.Connection, path: Path, *, existed: bool):
 
     version = db.execute('PRAGMA user_version').fetchone()[0]
     latest = MIGRATIONS[-1].VERSION
+    required_tables = v001.NEW_TABLES | (v005.TABLES if latest >= 5 else set())
+    if latest >= 6:
+        required_tables |= v006.TABLES
     if version > latest:
         raise FlowError('SCHEMA_TOO_NEW', '資料庫由較新版底座建立；請使用相容版本', schema_version=version, supported=latest)
     tables = _tables(db)
@@ -63,7 +66,7 @@ def migrate(db: sqlite3.Connection, path: Path, *, existed: bool):
         if version != max(records, default=0):
             raise FlowError('SCHEMA_MISMATCH', '資料庫版本標記與遷移紀錄不一致', schema_version=version)
     if version == latest:
-        missing = (v001.NEW_TABLES | (v005.TABLES if latest>=5 else set())) - tables
+        missing = required_tables - tables
         if missing:
             raise FlowError('SCHEMA_MISMATCH', '已標記升級的資料庫缺少必要資料表', missing=sorted(missing))
         extra = {row[1] for row in db.execute('PRAGMA table_info(run_executions)')}
@@ -97,7 +100,7 @@ def migrate(db: sqlite3.Connection, path: Path, *, existed: bool):
                 db.execute('INSERT INTO schema_migrations(version, applied_at, checksum) VALUES(?,?,?)',
                            (migration.VERSION, datetime.now(UTC).isoformat(), migration.CHECKSUM))
                 db.execute(f'PRAGMA user_version={migration.VERSION}')
-        missing = v001.NEW_TABLES - _tables(db)
+        missing = required_tables - _tables(db)
         if missing:
             raise FlowError('SCHEMA_MISMATCH', '遷移未建立必要資料表', missing=sorted(missing))
         db.commit()

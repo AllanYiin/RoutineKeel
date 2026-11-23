@@ -22,7 +22,7 @@ def golden(text):
     }
 
 
-def test_desktop_interview_to_reversible_version(tmp_path):
+def test_desktop_interview_to_reversible_version(tmp_path, workflow_design_review):
     graph = data_graph()
     graph["nodes"][0]["capability"] = "text.copy"
     graph["nodes"].append(
@@ -67,6 +67,9 @@ def test_desktop_interview_to_reversible_version(tmp_path):
         graph=graph,
         design={"rules": "保留原文"},
     )
+    design = studio("finalize_workflow_design", project_id=pid,
+                    expected_revision=design["revision"], request_id="finalize",
+                    draft_id=design["proposal_id"], review=workflow_design_review(design))
     export = studio(
         "export_blueprint",
         project_id=pid,
@@ -75,6 +78,7 @@ def test_desktop_interview_to_reversible_version(tmp_path):
         proposal_id=design["proposal_id"],
         decision="approve",
         user_text="確認測試設計",
+        review_hash=design["review_hash"],
     )
     svc = WorkflowService(tmp_path)
     with ZipFile(export["path"]) as z:
@@ -153,7 +157,9 @@ def test_desktop_interview_to_reversible_version(tmp_path):
     candidate["workflow"].update(version="1.1.0", revision=2)
     candidate["nodes"][0]["capability"] = "text.upper"
     proposal = evolve(proposal, "prepare", graph=candidate, design={"rules": "保留原文"})
-    proposal = evolve(proposal, "export", design_id=proposal["design_id"], user_text="確認候選設計")
+    proposal = evolve(proposal, "finalize", design_id=proposal["design_id"], review=workflow_design_review(proposal))
+    proposal = evolve(proposal, "export", design_id=proposal["design_id"],
+                      review_hash=proposal["review_hash"], user_text="確認候選設計")
     held = tmp_path / "holdout.json"
     held.write_text(json.dumps([golden("fresh")]))
     compared = evolve(

@@ -34,6 +34,15 @@ uv run --project workflow_studio python -m workflow_studio --workspace <RoutineK
 
 宿主取得實際使用者訊息後，以 `studio_record_replies` 提交整則原文、同一個 `expected_revision`、`request_id`，以及已回答的 `replies`。每個回答附 `domain`、`question_id`，可用 `answer_text` 指定屬於該題的逐字片段。明確採用已顯示的草案時使用 `accept_proposal`，拒絕與稍後處理分別用 `decline`、`defer` 保存。每批回答原子保存於同一版。單題介面仍可使用，模型建議也可集中放進藍圖摘要。
 
+### 初稿、參數研究與定稿確認
+
+1. 用 `studio_preview_blueprint` 取得初稿。先展示 `draft_design.diagram`，帶使用者確認工作流步驟與各步輸入輸出。依 `draft_design` 清冊詢問內嵌技能、工具位置與權限、詞彙表、變數及關鍵檢核。
+2. 宿主依 `draft_design.research_requests` 呼叫可用的網頁搜尋，查閱原廠、正式標準或原始研究。搜尋使用工具名、版本及參數名。保留查詢、來源 URL、標題、查閱日期、適用條件、理由及採用值。CLI 可提供已查得的來源。Studio 會核對來源欄位及選值；來源不足的建議保留在初稿。
+3. 用 `studio_finalize_workflow_design` 提交初稿 ID、預期版次、具名請求與 `review`。資料包含 `skills`（技能名稱對應步驟）、`tool_locations`（步驟對應執行位置）、`glossary`（術語對照）、`variables`（分類及研究證據）和 `policy`（模式、範圍、關鍵檢核）。模型或門檻選值改變時，先更新初稿再產生定稿。可調變數的已確認值跟隨藍圖版本，下一版可在 Studio 修改。
+4. 展示定稿 `display_text`，包含底座開頭的輸入檢核、結尾的輸出檢核與交付，以及所有預填內容。用使用者實際的回覆、定稿 ID 及 `review_hash` 呼叫 `studio_export_blueprint`。CLI 對應操作依序為 `prepare_blueprint`、`finalize_workflow_design`、`export_blueprint`。以既有工作流演進入口製作候選時，依序用 `prepare`、`finalize`、`export`。
+
+交付模式 `deliver_then_refine` 只允許明確標記可容許的機器檢核偏差，交付時列出待修與後續校閱。模式 `stop_on_error` 遇步驟錯誤即停止後續執行。需指定人工檢核時，圖上須有承接該輸出的實際人審節點。拒絕即保存拒絕結果。底座沿用既有的授權、輸入型別與正式交付驗證。
+
 透過底座預覽藍圖時，`build_preflight` 會列出當前宿主的能力缺口及不可執行的案例。文字描述可保留在設計包，建置驗收案例須提供 `inputs`、`expected` 及必要的素材或校閱回覆。預檢通過後，仍須在臨時工作區試做。
 
 工作流設計只在影響結果的重要決定提問。執行中只有藍圖指定的人工作業、關鍵校閱或需授權的動作才等待使用者，其餘步驟在自動契約檢查後繼續。

@@ -1,5 +1,6 @@
 """Build a plan from validated graph symbols and independently resolved contracts."""
 
+from routinekeel_contracts.execution_review import child_execution_review
 from routinekeel_contracts.graph_trials import trial_case_gaps
 from routinekeel_contracts.graph_validator import validate_blueprint
 
@@ -36,6 +37,20 @@ def build_graph(source, requested, cases, workspace):
         "請先取得目前能力清單並綁定相同指紋",
     )
     required = graph["quality_contract"].get("golden_cases")
+    locks = {
+        binding["lock_hash"] for binding in resolved["bindings"].values() if "lock_hash" in binding
+    }
+    if locks:
+        from .locking import read_lock
+        from .qualification import graph_fingerprint
+
+        shape, _ = validate_blueprint(graph)
+        require(len(locks) == 1, "建置僅能使用已確認的單一環境鎖定。")
+        authority = read_lock(workspace, graph_fingerprint(shape), lock_hash=next(iter(locks)))
+        require(
+            authority and authority[0].blueprint_hash == source["source_hash"],
+            "環境鎖定屬於另一份藍圖版本，請重新驗證。",
+        )
     require(isinstance(required, list) and required, "藍圖須附成功條件與驗收案例")
     if cases is None:
         cases = required
@@ -51,7 +66,8 @@ def compile_plan_tree(graph, source_hash, workspace, resolved):
         n["kind"] not in {"task", "human_review", "switch", "join", "foreach", "repeat_until"}
         or (
             n["kind"] == "task"
-            and resolved["bindings"][n["id"]]["provider"] not in {"builtin", "desktop_host"}
+            and resolved["bindings"][n["id"]]["provider"]
+            not in {"builtin", "desktop_host", "portable_local"}
         )
         for n in graph["nodes"]
     ):
@@ -81,14 +97,23 @@ def compile_plan_tree(graph, source_hash, workspace, resolved):
             "blueprint_schema_version": 2,
             "graph_contract_version": graph.get("graph_contract_version", "2.0"),
             "workflow": graph["workflow"],
-            "quality_contract": {},
+            "quality_contract": child_execution_review(graph["quality_contract"], node["id"]),
             "provenance": {"parent_graph_hash": plan["graph_hash"], "node": node["id"]},
         }
         model, _ = validate_blueprint(child)
         child = model.model_dump(mode="json", exclude_none=True)
-        child_bindings = resolve_graph(child, workspace)
         prefix = node["id"] + "/"
         pinned = {k[len(prefix) :]: v for k, v in bindings.items() if k.startswith(prefix)}
+        if any("lock_hash" in binding for binding in pinned.values()):
+            child_bindings = {
+                "status": "ready",
+                "bindings": pinned,
+                "fingerprint": digest(
+                    {"graph": model.model_dump(mode="json"), "bindings": pinned, "gaps": []}
+                ),
+            }
+        else:
+            child_bindings = resolve_graph(child, workspace)
         require(
             child_bindings["status"] == "ready" and child_bindings["bindings"] == pinned,
             "子圖工具版本已變更",

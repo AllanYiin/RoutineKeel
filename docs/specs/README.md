@@ -2,6 +2,8 @@
 
 這份候選以 RK-NEXT-2026-11 技術規格及 Stage 0–16 規劃開發。兩份輸入文件的 SHA-256、起始版本及相容性範圍記錄於[開發基線](rk-next-baseline.md)。
 
+v1.3.0 Stage 17–26 延伸 Pack／Pattern、跨環境綁定及改版回歸。參閱 [Pack 與 Pattern 操作](domain-packs.md) 及 [Stage 26 交付證據](../development/stage-26-report.md)。
+
 | 查詢項目 | 文件 |
 | --- | --- |
 | 藍圖版本、資料埠、分支與有限迭代 | [Graph v2 契約](blueprint-graph-v2.md) |

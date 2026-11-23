@@ -29,7 +29,7 @@ jobs:
       - name: Install pinned environment tool
         run: python -m pip install 'uv==0.13.6'
       - name: Prepare independent Runtime environment
-        run: uv sync --locked --python 3.12 --project flow_base --group dev
+        run: uv sync --locked --python 3.12 --project flow_base --group dev --extra mcp
       - name: Prepare Studio development environment
         run: uv sync --locked --python 3.12 --project workflow_studio --group dev
       - name: Record environment and test scope
@@ -45,6 +45,10 @@ jobs:
         env:
           STUDIO_GATE_REPORT_DIR: ${{ runner.temp }}/studio-evidence
         run: uv run --locked --project workflow_studio --group dev python -m pytest tests/studio -q -rs --junitxml="${{ runner.temp }}/studio-evidence/studio-junit.xml"
+      - name: Replay cross-host Pattern portability
+        env:
+          STUDIO_GATE_REPORT_DIR: ${{ runner.temp }}/studio-evidence
+        run: python workflow_studio/scripts/ci_pattern_portability.py
       - name: Preserve scoped acceptance evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

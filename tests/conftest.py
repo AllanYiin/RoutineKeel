@@ -12,6 +12,41 @@ for project in [ROOT / 'flow_base', *(ROOT / 'workflows').iterdir()]:
 
 
 @pytest.fixture
+def workflow_design_review():
+    """Complete design answers for local fixture graphs, including a mocked research record."""
+    def make(proposal):
+        draft = proposal["draft_design"]
+        step, output = next(
+            (path, name)
+            for path, row in draft["steps"].items() if row["kind"] == "task"
+            for name, port in row["outputs"].items() if port["type"] in {"string", "array", "object"}
+        )
+        variables = {key: {"kind": row["suggested_kind"]} for key, row in draft["variables"].items()}
+
+        def research(value):
+            return {
+                "query": "fixture query", "url": "https://example.org/fixture",
+                "title": "Fixture research", "accessed_on": "2026-11-23",
+                "applicability": "Fixture tools only", "rationale": "Test recorded source data",
+                "recommended_value": value,
+            }
+
+        for request in draft["research_requests"]:
+            variables[request["variable"]]["research"] = research(request["value"])
+        variables[f"check/{step}/format/min"] = {"kind": "fixed", "research": research(0)}
+        return {
+            "policy": {"mode": "deliver_then_refine", "scope": "fixture task", "critical_steps": {
+                step: {"machine": [{"id": "format", "output": output, "evaluator": "length", "min": 0}]},
+            }},
+            "skills": {name: [step] for name in proposal["skill_sources"]},
+            "tool_locations": {path: "local_runtime" for path in draft["tools"]},
+            "glossary": {},
+            "variables": variables,
+        }
+    return make
+
+
+@pytest.fixture
 def desktop_test_catalog(tmp_path_factory, monkeypatch):
     """Emulate a host-published observation outside the workflow's data workspace."""
     directory=tmp_path_factory.mktemp("host-inventory")

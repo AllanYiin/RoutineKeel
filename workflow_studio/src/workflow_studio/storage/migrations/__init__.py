@@ -1,7 +1,7 @@
 """Ordered, transactional Studio schema migrations."""
 
 APPLICATION_ID = 0x53545544  # STUD; rejects accidentally selected Runtime databases.
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 18
 
 V001 = (
     """CREATE TABLE studio_projects (
@@ -213,6 +213,91 @@ V015 = (
         BEGIN SELECT RAISE(ABORT,'retain interview revision'); END""",
 )
 
+V016 = (
+    """CREATE TABLE studio_domain_packs (
+        ref TEXT PRIMARY KEY, manifest BLOB NOT NULL, manifest_hash TEXT NOT NULL,
+        source_hash TEXT NOT NULL, archive BLOB NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('candidate','active','disabled','deprecated','archived')),
+        approved INTEGER NOT NULL CHECK(approved IN (0,1)), revision INTEGER NOT NULL CHECK(revision>0),
+        created_at TEXT NOT NULL, CHECK(status<>'active' OR approved=1))""",
+    """CREATE TRIGGER immutable_domain_pack BEFORE UPDATE OF ref,manifest,manifest_hash,source_hash,archive,created_at
+        ON studio_domain_packs BEGIN SELECT RAISE(ABORT,'immutable Pack version'); END""",
+    """CREATE TABLE studio_domain_assets (
+        kind TEXT NOT NULL, ref TEXT NOT NULL, body BLOB NOT NULL, content_hash TEXT NOT NULL,
+        PRIMARY KEY(kind,ref))""",
+    """CREATE TRIGGER immutable_domain_asset BEFORE UPDATE ON studio_domain_assets
+        BEGIN SELECT RAISE(ABORT,'immutable asset version'); END""",
+    """CREATE TABLE studio_pattern_records (
+        ref TEXT PRIMARY KEY, status TEXT NOT NULL
+        CHECK(status IN ('candidate','active','disabled','deprecated','archived')),
+        revision INTEGER NOT NULL CHECK(revision>0), qualification_hash TEXT,
+        CHECK(status<>'active' OR qualification_hash IS NOT NULL))""",
+    """CREATE TABLE studio_pattern_trials (
+        pattern_ref TEXT NOT NULL REFERENCES studio_pattern_records(ref), pattern_hash TEXT NOT NULL,
+        report_hash TEXT NOT NULL, report BLOB NOT NULL, status TEXT NOT NULL CHECK(status IN ('PASS','FAIL')),
+        PRIMARY KEY(pattern_ref,report_hash))""",
+    """CREATE TRIGGER immutable_pattern_trial BEFORE UPDATE ON studio_pattern_trials
+        BEGIN SELECT RAISE(ABORT,'immutable Pattern trial'); END""",
+    """CREATE TABLE studio_pack_members (
+        pack_ref TEXT NOT NULL REFERENCES studio_domain_packs(ref),
+        kind TEXT NOT NULL, asset_ref TEXT NOT NULL, source_hash TEXT NOT NULL,
+        FOREIGN KEY(kind,asset_ref) REFERENCES studio_domain_assets(kind,ref),
+        PRIMARY KEY(pack_ref,kind,asset_ref))""",
+    "CREATE INDEX studio_pack_member_lookup ON studio_pack_members(kind,asset_ref,pack_ref)",
+    """CREATE TABLE studio_pack_dependencies (
+        pack_ref TEXT NOT NULL REFERENCES studio_domain_packs(ref),
+        dependency_ref TEXT NOT NULL, PRIMARY KEY(pack_ref,dependency_ref))""",
+    "CREATE INDEX studio_pack_dependency_lookup ON studio_pack_dependencies(dependency_ref,pack_ref)",
+    """CREATE TABLE studio_pattern_requirements (
+        pattern_ref TEXT NOT NULL, requirement_id TEXT NOT NULL, capability_id TEXT NOT NULL,
+        capability_version TEXT, required INTEGER NOT NULL CHECK(required IN (0,1)),
+        PRIMARY KEY(pattern_ref,requirement_id))""",
+    "CREATE INDEX studio_pattern_capability_lookup ON studio_pattern_requirements(capability_id,pattern_ref)",
+    """CREATE TABLE studio_pattern_pins (
+        workflow_ref TEXT NOT NULL, blueprint_hash TEXT NOT NULL,
+        pattern_ref TEXT NOT NULL REFERENCES studio_pattern_records(ref),
+        pattern_hash TEXT NOT NULL, pack_ref TEXT NOT NULL REFERENCES studio_domain_packs(ref),
+        created_at TEXT NOT NULL, PRIMARY KEY(workflow_ref,blueprint_hash,pattern_ref))""",
+    "CREATE INDEX studio_pattern_dependent_lookup ON studio_pattern_pins(pattern_ref,workflow_ref)",
+    """CREATE TABLE studio_domain_events (
+        sequence INTEGER PRIMARY KEY, event_id TEXT NOT NULL UNIQUE, kind TEXT NOT NULL,
+        ref TEXT NOT NULL, action TEXT NOT NULL, content_hash TEXT NOT NULL, revision INTEGER NOT NULL,
+        actor TEXT, reason TEXT, review_channel TEXT, decision_hash TEXT, created_at TEXT NOT NULL)""",
+    "CREATE INDEX studio_domain_event_history ON studio_domain_events(kind,ref,sequence)",
+    """CREATE TRIGGER immutable_domain_event BEFORE UPDATE ON studio_domain_events
+        BEGIN SELECT RAISE(ABORT,'immutable domain event'); END""",
+    """CREATE TRIGGER retain_domain_event BEFORE DELETE ON studio_domain_events
+        BEGIN SELECT RAISE(ABORT,'retain domain event'); END""",
+)
+
+
+V017 = (
+    """CREATE TABLE studio_pattern_extractions (
+        id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES studio_projects(project_id),
+        project_revision INTEGER NOT NULL, request_id TEXT NOT NULL, request_hash TEXT NOT NULL,
+        report_hash TEXT NOT NULL, artifact BLOB NOT NULL, created_at TEXT NOT NULL,
+        UNIQUE(project_id,request_id))""",
+    """CREATE TRIGGER immutable_pattern_extraction BEFORE UPDATE ON studio_pattern_extractions
+        BEGIN SELECT RAISE(ABORT,'immutable extraction draft'); END""",
+    """CREATE TRIGGER retain_pattern_extraction BEFORE DELETE ON studio_pattern_extractions
+        BEGIN SELECT RAISE(ABORT,'retain extraction draft'); END""",
+)
+
+
+V018 = (
+    """CREATE TABLE studio_pattern_improvements (
+        id TEXT PRIMARY KEY, source_ref TEXT NOT NULL, target_ref TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL)""",
+    """CREATE TABLE studio_pattern_improvement_revisions (
+        proposal_id TEXT NOT NULL REFERENCES studio_pattern_improvements(id),
+        revision INTEGER NOT NULL, body BLOB NOT NULL, PRIMARY KEY(proposal_id,revision))""",
+    """CREATE TRIGGER immutable_pattern_improvement BEFORE UPDATE ON studio_pattern_improvement_revisions
+        BEGIN SELECT RAISE(ABORT,'immutable improvement revision'); END""",
+    """CREATE TRIGGER retain_pattern_improvement BEFORE DELETE ON studio_pattern_improvement_revisions
+        BEGIN SELECT RAISE(ABORT,'retain improvement history'); END""",
+)
+
+
 MIGRATIONS = {
     1: V001,
     2: V002,
@@ -229,4 +314,7 @@ MIGRATIONS = {
     13: V013,
     14: V014,
     15: V015,
+    16: V016,
+    17: V017,
+    18: V018,
 }

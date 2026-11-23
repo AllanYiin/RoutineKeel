@@ -105,6 +105,8 @@ class GraphSession(Session):
                     require(not (profile["settings"].keys() & state["config"].keys()),"工作設定與指定的設定版本重複")
                     state.update(profile=profile,config={**profile["settings"],**state["config"]})
                 atomic_json(session.path, state)
+                if "execution_review" in plan["graph"]["quality_contract"]:
+                    session.checkpoint(state, None, "input_checked", inputs_hash=state["inputs_hash"])
             return session.advance(state)
 
     @staticmethod
@@ -199,6 +201,20 @@ class GraphSession(Session):
         for reference in set(refs(outputs)):
             self.assets.resolve(reference)
         record = state["nodes"][node["id"]]
+        policy = state["plan"]["graph"]["quality_contract"].get("execution_review")
+        if policy:
+            from ..quality import step_checks
+
+            checked = step_checks(policy, node["id"], outputs)
+            if checked:
+                record["output_checks"] = checked
+                if any(row["severity"] == "required" and row["status"] != "pass" for row in checked):
+                    record.update(status="failed", error="WORKFLOW_CHECK_FAILED")
+                    self.checkpoint(
+                        state, node["id"], "output_check_failed",
+                        check_ids=[row["id"] for row in checked if row["status"] != "pass"],
+                    )
+                    return
         if evidence.get("kind")=="review" and evidence.get("user_text"):
             record["user_reviewed"]=True
         record.update(status="succeeded", outputs=outputs, outputs_hash=digest(outputs))
@@ -216,6 +232,9 @@ class GraphSession(Session):
             "succeeded",
             attempt=record["attempt"],
             outputs_hash=record["outputs_hash"],
+            **({"pending_corrections": [row["id"] for row in record["output_checks"]
+                                        if row["status"] != "pass"]}
+               if "output_checks" in record else {}),
         )
 
     def wait_for(self, state, node, kind, values):
@@ -328,6 +347,8 @@ class GraphSession(Session):
                     else ("false" if "false" in node["routes"] else "default")
                 )
             except (TypeError, ValueError):
+                policy = state["plan"]["graph"]["quality_contract"].get("execution_review", {})
+                require(policy.get("mode") != "stop_on_error", "條件資料錯誤，依確認的交付模式停止")
                 if node["on_error"] == "review_required":
                     self.wait_for(
                         state,
@@ -361,6 +382,14 @@ class GraphSession(Session):
             return
         tool = node["capability"]
         binding = state["bindings"][key]
+        if binding["provider"] == "portable_local":
+            from .qualification import execute_local
+
+            outputs = execute_local(binding, node, values, node.get("parameters", {}))
+            self.complete_node(state, node, outputs, {
+                "kind": "local_execution", "qualification_receipt": binding["qualification_receipt"],
+            })
+            return
         if binding["provider"] == "desktop_host":
             elevated = (
                 binding["side_effect"] == "external"
@@ -413,15 +442,20 @@ class GraphSession(Session):
             if record["status"] == "running":
                 record["status"] = "invalidated"
                 self.checkpoint(state, key, "recovered_interruption")
-        if any(r["status"] not in {"succeeded", "skipped"} for r in state["nodes"].values()):
-            observed = resolve_graph(graph, self.runtime.workspace_root)
+        nested_lock = state.get("owner_session") and any(
+            "lock_hash" in value for value in state["bindings"].values()
+        )
+        if not nested_lock and any(r["status"] not in {"succeeded", "skipped"} for r in state["nodes"].values()):
+            observed = resolve_graph(
+                graph, self.runtime.workspace_root, admission=state["bindings"], allow_waiting=True
+            )
             require(
                 observed["fingerprint"] == state["plan"]["capability_fingerprint"],
                 "能力或權限已變更",
             )
         gates = gate_map(graph)
         for node in graph["nodes"]:
-            if self.cancellation(state):
+            if self.cancellation(state) or self.stopped_on_error(state):
                 break
             key = node["id"]
             record = state["nodes"][key]
@@ -448,6 +482,17 @@ class GraphSession(Session):
             self.checkpoint(state,None,"quality_assessed",assessment_id=state["assessment_id"])
             result=self.view(state)
         return result
+
+    @staticmethod
+    def stopped_on_error(state):
+        policy = state["plan"]["graph"]["quality_contract"].get("execution_review", {})
+        return bool(policy) and any(
+            node["status"] == "failed" and (
+                policy.get("mode") == "stop_on_error"
+                or node.get("error") in {"WORKFLOW_CHECK_FAILED", "REVIEW_DECLINED"}
+            )
+            for node in state["nodes"].values()
+        )
 
     def view(self, state):
         nodes = state["nodes"]
@@ -496,6 +541,11 @@ class GraphSession(Session):
                               execution_status="succeeded",result_status=quality["result_status"],
                               quality_revision=quality["revision"],preview_id=quality["preview_id"],
                               delivery_status=quality["delivery_status"])
+                if "execution_review" in state["plan"]["graph"]["quality_contract"]:
+                    result["pending_corrections"] = [
+                        check for check in quality["checks"]
+                        if check["status"] == "fail" and check.get("follow_up")
+                    ]
         return result
 
     def invalidate(self, state, key, *, retry_iteration=False):
@@ -565,6 +615,11 @@ class GraphSession(Session):
             require(payload.get("revision") == digest(state), "工作版本已更新，請重讀待辦")
             require(not state.get("cancelled"), "工作已取消")
             pending = state["pending_tasks"].get(payload.get("task_id"), {})
+            if self.stopped_on_error(state) and operation not in {"revise", "retry", "cancel"}:
+                require(
+                    pending.get("claimed") and operation in {"stream_delta", "complete", "reconcile"},
+                    "工作已因檢核或執行錯誤停止，請先回修失敗步驟",
+                )
             if pending.get("child_id") and operation not in {"cancel", "revise", "retry"}:
                 from .iterations import forward_reply
 
@@ -579,6 +634,15 @@ class GraphSession(Session):
                     )
                 require(bool(payload.get("reason")), "請提供回修理由")
                 changed = self.invalidate(state, key, retry_iteration=operation == "retry")
+            elif operation == "decline" and pending.get("kind") == "human":
+                evidence = payload.get("evidence") or {}
+                require(isinstance(evidence.get("user_text"), str) and evidence["user_text"].strip(),
+                        "請轉交拒絕此人工檢核的實際回覆")
+                state["requests"][request_id] = stamp
+                del state["pending_tasks"][pending["id"]]
+                state["nodes"][pending["step"]].update(status="failed", error="REVIEW_DECLINED")
+                self.checkpoint(state, pending["step"], "declined")
+                return self.advance(state)
             elif operation in {"authorize", "decline", "claim", "reconcile", "stream_delta"} or (
                 operation == "complete"
                 and state["pending_tasks"].get(payload.get("task_id"), {}).get("kind")
@@ -693,9 +757,24 @@ class GraphSession(Session):
                 or not (state.get("offline") and state["bindings"][key].get("network", True)),
                 "離線工作不能領取網路工具操作",
             )
-            live = resolve_graph(state["plan"]["graph"], self.runtime.workspace_root)
+            authority = state
+            owners = set()
+            while authority.get("owner_session"):
+                parent = authority["owner_session"]
+                require(parent not in owners, "子工作的綁定鏈包含循環")
+                owners.add(parent)
+                authority = read_json(GraphSession(self.runtime, parent).path)
+                require(
+                    digest(authority["plan"]) == authority["plan_hash"]
+                    and digest(authority["bindings"]) == authority["plan"]["bindings_hash"],
+                    "父工作的綁定或執行計畫已變更",
+                )
+            live = resolve_graph(
+                authority["plan"]["graph"], self.runtime.workspace_root,
+                admission=authority["bindings"],
+            )
             require(
-                live["fingerprint"] == state["plan"]["capability_fingerprint"], "工具或權限已變更"
+                live["fingerprint"] == authority["plan"]["capability_fingerprint"], "工具或權限已變更"
             )
             require(
                 task["kind"] != "external"

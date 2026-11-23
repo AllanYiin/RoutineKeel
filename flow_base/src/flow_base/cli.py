@@ -90,7 +90,7 @@ def parser():
         c.add_argument('--'+field)
     c = commands.add_parser('workflow-evolution', help='提出、比較與核准工作流修訂')
     c.add_argument('session_id')
-    c.add_argument('operation', choices=['propose','get','prepare','export','compare','activate','reject','rollback'])
+    c.add_argument('operation', choices=['propose','get','prepare','finalize','export','compare','activate','reject','rollback'])
     c.add_argument('--payload', type=Path, required=True)
     c = commands.add_parser('workflow-quality', help='預覽品質判定、保存回饋及版本化設定')
     c.add_argument('session_id')
@@ -99,6 +99,14 @@ def parser():
     c = commands.add_parser('resolve-blueprint', help='核對藍圖需要的工具與目前可用能力')
     c.add_argument('--draft-id', required=True)
     c.add_argument('--offline', action='store_true')
+    c = commands.add_parser('qualify-blueprint', help='預覽或在本機核准並試做 Adapter 綁定')
+    c.add_argument('--draft-id', required=True)
+    c.add_argument('--selections', type=Path, required=True)
+    c.add_argument('--execute', action='store_true')
+    c = commands.add_parser('qualify-degradation', help='核對並核准另版的選用能力降級')
+    c.add_argument('--draft-id', required=True)
+    c.add_argument('--source-draft-id', required=True)
+    c.add_argument('--execute', action='store_true')
     c = commands.add_parser('install-workflow', help='匯入訪談藍圖、試做或首次安裝')
     selector = c.add_mutually_exclusive_group(required=True)
     selector.add_argument('--archive', type=Path)
@@ -423,6 +431,33 @@ def main(argv=None):
             result=service.workflow_quality(args.session_id,args.operation,read_json(args.payload) if args.payload else {})
         elif command == 'resolve-blueprint':
             result = service.resolve_blueprint_capabilities(args.draft_id,offline=args.offline)
+        elif command in {'qualify-blueprint', 'qualify-degradation'}:
+            if command == 'qualify-blueprint':
+                selections = read_json(args.selections)
+                result = service.preview_binding_qualification(args.draft_id, selections)
+            else:
+                result = service.preview_blueprint_degradation(args.source_draft_id, args.draft_id)
+            if args.execute:
+                from secrets import token_hex
+
+                from routinekeel_contracts.console import interactive_console
+
+                from .graph.qualification import BindingReview
+
+                if not interactive_console():
+                    raise FlowError('USER_CONFIRMATION_REQUIRED', '請在本機互動終端確認資格檢查。')
+                challenge = token_hex(4)
+                print(json.dumps(result, ensure_ascii=False, indent=2), file=sys.stderr)
+                print(f'輸入 {challenge} 核准這份試做與綁定。', file=sys.stderr)
+                if input().strip() != challenge:
+                    raise FlowError('USER_CONFIRMATION_REQUIRED', '這次資格檢查未獲確認。')
+                review = BindingReview(result["request_hash"], challenge)
+                if command == 'qualify-blueprint':
+                    result = service.qualify_blueprint_bindings(args.draft_id, selections, review)
+                else:
+                    result = service.approve_blueprint_degradation(
+                        args.source_draft_id, args.draft_id, review,
+                    )
         elif command == 'install-workflow':
             result = service.install_workflow(archive=args.archive, draft_id=args.draft_id,
                 resolution=read_json(args.resolution) if args.resolution else None,

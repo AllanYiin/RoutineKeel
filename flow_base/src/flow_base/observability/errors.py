@@ -7,6 +7,20 @@ import subprocess
 from pydantic import ValidationError
 
 STANDARD = {
+    'WORKFLOW_CHECK_FAILED': ('configuration', 'error', '關鍵輸出檢核未通過', '步驟輸出超出這版工作流確認的驗收條件。',
+                              ['查看失敗步驟及其檢核紀錄。', '檢查輸入後回修該步驟。'], 'manual', ['step', 'check_ids']),
+    'BINDING_STALE': ('environment', 'error', '環境綁定需要重驗', '工具、版本、權限或收據已改變。',
+                      ['查看被鎖定的 Adapter 與目前環境。', '重新資格檢查後再建置或更新。'], 'after_fix', ['lock_hash', 'environment_fingerprint']),
+    'CONTRACT_MISMATCH': ('configuration', 'error', '來源契約不一致', '目前資料、版本或交付埠與已確認的契約不同。',
+                           ['核對已確認的版本與內容指紋。', '修訂候選或恢復原契約後重試。'], 'after_fix', ['expected_hash', 'observed_hash']),
+    'OPTIONAL_DECISION_REQUIRED': ('permission', 'warning', '等待替代交付確認', '選用能力的缺口需要獨立的降級版本。',
+                                    ['查看省略的能力和替代交付。', '確認新版草稿及案例後再試做。'], 'manual', ['blueprint_hash', 'fallback_contract']),
+    'PATTERN_DEPENDENCY_CONFLICT': ('configuration', 'error', 'Pattern 依賴互斥', '版本、權限或依賴的組合無法成立。',
+                                    ['查看重複或衝突的 Pattern 和 Adapter 版本。', '修訂草稿後重新解析相依。'], 'after_fix', ['pattern_ref', 'capability_id']),
+    'REVISION_CONFLICT': ('state', 'error', '目前版本已變更', '這次操作所對應的草稿或收據不是目前版本。',
+                          ['重新讀取草稿或提案版本。', '核對最新差異後再提交。'], 'manual', ['revision']),
+    'SECRET_IN_PORTABLE_PACKAGE': ('permission', 'error', '可攜資產含私人資料', '資產、試做證據或鎖定含需要移除的私人資訊。',
+                                    ['移除機密欄位與私人路徑。', '保留雜湊或改用本機具名需求後再驗證。'], 'after_fix', ['asset_ref']),
     'CAPABILITY_UNAVAILABLE': ('environment', 'error', '所需工具尚未就緒', '目前的本機或宿主工具與工作流要求不符。',
                                ['查看缺少的能力、版本與回執。', '恢復能力後重新綁定，或在對話中選擇其他交付方式。'], 'after_fix', ['capability_id']),
     'GRAPH_UNSUPPORTED': ('configuration', 'error', '流程圖使用未支援的功能', '目前底座無法建置這項流程圖宣告。',

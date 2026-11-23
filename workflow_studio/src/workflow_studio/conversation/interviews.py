@@ -59,6 +59,10 @@ def invalidate(db, state, domain, revision):
             item = state["coverage"][key]
             if item["status"] != "unknown":
                 item.update(status="blocked", origin="upstream_changed", revision=revision)
+    if affected.intersection({"goal", "inputs", "outputs", "rules", "capabilities", "preferences"}):
+        for decision in state.get("pattern_decisions", {}).values():
+            if decision["decision"] in {"accepted", "edited"}:
+                decision["needs_review"] = True
     if "cases" in affected:
         state["stale_cases"] = [
             dict(row)

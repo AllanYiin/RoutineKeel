@@ -93,6 +93,28 @@ class WorkflowService:
             return preflight_graph(src["graph"], self.workspace.root, offline=offline)
         return resolve_graph(src["graph"],self.workspace.root,offline=offline)
 
+    def preview_binding_qualification(self, draft_id, selections):
+        from ..graph.qualification import describe_qualification
+
+        return describe_qualification(self.workspace, draft_id, selections)
+
+    @package_operation
+    def qualify_blueprint_bindings(self, draft_id, selections, review):
+        from ..graph.qualification import qualify_bindings
+
+        return qualify_bindings(self.workspace, draft_id, selections, review)
+
+    def preview_blueprint_degradation(self, source_draft_id, draft_id):
+        from ..graph.degradation import describe_degradation
+
+        return describe_degradation(self.workspace, source_draft_id, draft_id)
+
+    @package_operation
+    def approve_blueprint_degradation(self, source_draft_id, draft_id, review):
+        from ..graph.degradation import approve_degradation
+
+        return approve_degradation(self.workspace, source_draft_id, draft_id, review)
+
     def workflow_evolution(self, session_id, operation, payload=None):
         from .. import evolution
         from ..blueprints.source import require

@@ -51,9 +51,12 @@ class BlueprintAdapter(BaseAdapter):
     def verify(self, runtime, workflow):
         if self.plan_data["format"]==2:
             from ..graph.capabilities import resolve_graph
-            live=resolve_graph(self.plan_data["graph"],runtime.workspace_root)
             path=self.binding_path(runtime)
-            ok=(path.is_file() and digest(read_json(path))==self.plan_data["bindings_hash"] and
+            stored = read_json(path) if path.is_file() else None
+            live = resolve_graph(
+                self.plan_data["graph"], runtime.workspace_root, admission=stored, allow_waiting=True
+            )
+            ok=(stored is not None and digest(stored)==self.plan_data["bindings_hash"] and
                 live["status"]=="ready" and live["fingerprint"]==self.plan_data["capability_fingerprint"])
             return {"ok":ok,"profile":"core","missing":[] if ok else ["graph_bindings"]}
         installed = local_operations()

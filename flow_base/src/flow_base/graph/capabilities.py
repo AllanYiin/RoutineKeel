@@ -69,7 +69,7 @@ def plan_probe_catalog(workspace, task_id, destination):
         names = {
             b["tool"]
             for b in registry.get("bindings", {}).values()
-            if b.get("provider") == "desktop_host"
+            if b.get("provider") in {"desktop_host", "portable_local"}
         }
         if not names:
             return {}
@@ -95,6 +95,8 @@ def plan_probe_catalog(workspace, task_id, destination):
         "kind",
         "distribution",
         "destination",
+        "portable",
+        "scope_hash",
     }
     tools = {
         name: {k: v for k, v in row.items() if k in allowed}
@@ -248,16 +250,107 @@ def resolve_task(node, workspace, *, offline=False):
     return {**description, "fingerprint": digest(description)}
 
 
-def resolve_graph(payload, workspace, *, offline=False):
+def resolve_graph(payload, workspace, *, offline=False, admission=None, allow_waiting=False):
+    from .locking import read_lock
+    from .portable import graph_requirements, resolve_requirement
+    from .qualification import graph_fingerprint
+
     graph, _ = validate_blueprint(payload)
-    resolved, gaps = {}, []
+    requirements = graph_requirements(graph)
+    resolved, gaps, decisions = {}, [], []
+    locked = None
+    lock_error = False
+    if requirements:
+        hashes = {
+            binding["lock_hash"] for binding in (admission or {}).values() if "lock_hash" in binding
+        }
+        try:
+            if len(hashes) > 1:
+                raise FlowError("BINDING_STALE", "安裝包包含不同的環境鎖定。")
+            authority = read_lock(
+                workspace, graph_fingerprint(graph), lock_hash=next(iter(hashes), None)
+            )
+            if authority:
+                locked = authority[0]
+        except FlowError:
+            lock_error = True
 
     def visit(body, prefix=""):
         for node in body.nodes:
             key = prefix + node.id
             if isinstance(node, Task):
                 try:
-                    resolved[key] = resolve_task(node, workspace, offline=offline)
+                    rule = requirements.get(key)
+                    if rule is None:
+                        resolved[key] = resolve_task(node, workspace, offline=offline)
+                    else:
+                        decision, candidates = resolve_requirement(
+                            key,
+                            node,
+                            rule,
+                            workspace,
+                            offline=offline,
+                        )
+                        selected = locked.bindings.get(key) if locked else None
+                        live = candidates.get(selected.adapter) if selected else None
+                        if selected and live and live[0]["allowed"] and live[1] is not None:
+                            candidate, concrete = live
+                            if all(
+                                candidate[field] == getattr(selected, field)
+                                for field in (
+                                    "environment_fingerprint",
+                                    "schema_hash",
+                                    "implementation_hash",
+                                    "provider_version",
+                                    "model_version",
+                                    "permission_scope",
+                                )
+                            ):
+                                locked_binding = {
+                                    **concrete,
+                                    "lock_hash": locked.lock_hash,
+                                    "qualification_receipt": selected.qualification_receipt,
+                                }
+                                resolved[key] = locked_binding
+                                decision.update(
+                                    status="bound",
+                                    code=None,
+                                    installation_allowed=True,
+                                    selected_adapter=selected.adapter,
+                                )
+                                decisions.append(decision)
+                                continue
+                        if (
+                            allow_waiting
+                            and selected
+                            and selected.execution_locus == "host_mediated"
+                            and admission
+                            and key in admission
+                            and admission[key].get("lock_hash") == locked.lock_hash
+                            and admission[key].get("qualification_receipt")
+                            == selected.qualification_receipt
+                            and (decision["catalog_unavailable"]
+                                 or admission[key]["tool"] not in host_catalog(workspace))
+                        ):
+                            resolved[key] = admission[key]
+                            decision.update(
+                                status="bound",
+                                code="HOST_TOOL_UNAVAILABLE",
+                                selected_adapter=selected.adapter,
+                            )
+                            decisions.append(decision)
+                            continue
+                        if lock_error or selected:
+                            decision.update(status="blocked", code="BINDING_STALE")
+                        decisions.append(decision)
+                        gaps.append(
+                            {
+                                "node": key,
+                                "tool": rule.capability,
+                                "code": decision["code"],
+                                "reason": "請依目前環境資訊完成能力選擇與資格驗證。",
+                            }
+                        )
                 except FlowError as exc:
                     gaps.append(
                         {"node": key, "tool": node.capability, "code": exc.code, "reason": str(exc)}
@@ -266,7 +359,7 @@ def resolve_graph(payload, workspace, *, offline=False):
                 visit(node.body, key + "/")
 
     visit(graph)
-    return {
+    report = {
         "status": "blocked" if gaps else "ready",
         "bindings": resolved,
         "gaps": gaps,
@@ -274,3 +367,6 @@ def resolve_graph(payload, workspace, *, offline=False):
             {"graph": graph.model_dump(mode="json"), "bindings": resolved, "gaps": gaps}
         ),
     }
+    if decisions:
+        report["portable_decisions"] = decisions
+    return report
