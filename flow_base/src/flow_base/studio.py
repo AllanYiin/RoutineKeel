@@ -50,7 +50,10 @@ def studio_request(workspace, operation, params):
         params = dict(params)
         if operation == "propose_pattern_improvement":
             params["evidence"] = patterns.observe(
-                workspace, params["source_ref"], params.pop("feedback_ids")
+                workspace,
+                params["source_ref"],
+                params.pop("feedback_ids"),
+                planned=bool(params.get("planned_reason")),
             )
         else:
             state = studio_request(
@@ -101,7 +104,21 @@ def studio_request(workspace, operation, params):
             if operation in {"prepare_blueprint", "finalize_workflow_design"}:
                 from .graph.builder import preflight_graph
 
-                readiness = preflight_graph(result["graph"], workspace)
+                graph = result["graph"]
+                if operation == "finalize_workflow_design":
+                    graph = {
+                        **graph,
+                        "provenance": {
+                            **graph["provenance"],
+                            "design_review": {
+                                "details": result["design_review"],
+                                "sha256": result["review_hash"],
+                            },
+                            "skill_files": result["skill_files"],
+                            "skill_sources": result["skill_sources"],
+                        },
+                    }
+                readiness = preflight_graph(graph, workspace)
                 result["build_preflight"] = {
                     "status": readiness["build_status"],
                     "capability_gaps": readiness["gaps"],

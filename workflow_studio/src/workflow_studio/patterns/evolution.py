@@ -69,7 +69,7 @@ def get(studio, proposal_id):
     return _read(studio.repository.connection, proposal_id)
 
 
-def propose(studio, source_ref, target_ref, request_id, evidence):
+def propose(studio, source_ref, target_ref, request_id, evidence, planned_reason=None):
     registry = studio.tools.packs
     source = registry.get_asset("pattern", source_ref)
     target = registry.get_asset("pattern", target_ref)
@@ -83,7 +83,14 @@ def propose(studio, source_ref, target_ref, request_id, evidence):
         raise StudioError("CONTRACT_MISMATCH", "品質回饋與來源 Pattern 指紋不一致。")
     if contains_private_data(evidence):
         raise StudioError("SECRET_IN_PORTABLE_PACKAGE", "改善證據含私人資料。")
-    if not report["corroborated"] and not report["urgent"]:
+    if planned_reason is not None and (
+        not isinstance(planned_reason, str)
+        or not planned_reason.strip()
+        or len(planned_reason) > 500
+        or contains_private_data({"reason": planned_reason})
+    ):
+        raise StudioError("INPUT_INVALID", "計畫改版須提供可公開的具體原因。")
+    if not planned_reason and not report["corroborated"] and not report["urgent"]:
         return {"status": "review_only", "attribution": report, "source_ref": source_ref}
     identity = content_hash([source_ref, target_ref, request_id])
     proposal = {
@@ -101,6 +108,7 @@ def propose(studio, source_ref, target_ref, request_id, evidence):
         ],
         "status": "proposed",
         "revision": 1,
+        **({"planned_reason": planned_reason.strip()} if planned_reason else {}),
     }
     with studio.repository.transaction() as db:
         existing = db.execute(
@@ -163,12 +171,26 @@ def require_regression(db, pattern_ref, sha256, qualification_hash):
     row = db.execute(
         "SELECT id FROM studio_pattern_improvements WHERE target_ref=?", (pattern_ref,)
     ).fetchone()
+    identity, _, target_version = pattern_ref.rpartition("@")
+    prior = [
+        ref
+        for (ref,) in db.execute(
+            """SELECT ref FROM studio_pattern_records
+            WHERE substr(ref, 1, ?) = ? AND qualification_hash IS NOT NULL""",
+            (len(identity) + 1, identity + "@"),
+        )
+        if Version(ref.rpartition("@")[2]) < Version(target_version)
+    ]
+    if row is None and prior:
+        raise StudioError("PATTERN_REGRESSION_FAILED", "新版 Pattern 須有影響範圍與回歸比較。")
     if row is not None:
         proposal = _read(db, row["id"])
+        predecessor = max(prior, key=lambda ref: Version(ref.rpartition("@")[2])) if prior else None
         if (
             proposal["status"] != "eligible"
             or proposal["target_hash"] != sha256
             or proposal["target_pattern_trial"] != qualification_hash
+            or (predecessor and proposal["source_ref"] != predecessor)
         ):
             raise StudioError(
                 "PATTERN_REGRESSION_FAILED", "改版須先通過所有受影響工作流的回歸驗證。"

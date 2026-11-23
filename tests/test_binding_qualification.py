@@ -74,7 +74,9 @@ def verify_install(service, draft_id):
     return candidate
 
 
-def test_qualify_lock_build_install_and_run_local_adapter(tmp_path):
+def test_qualify_lock_build_install_and_run_local_adapter(tmp_path, monkeypatch):
+    # This test isolates capability qualification with synthetic Pattern catalog hashes.
+    monkeypatch.setattr("flow_base.graph.builder.verify_pattern_admission", lambda *args: None)
     service, draft_id = draft(tmp_path, echo_blueprint())
     choices = {"rwp_reader": "routinekeel.text_copy@1.0.0"}
     preview = service.preview_binding_qualification(draft_id, choices)
@@ -170,6 +172,7 @@ def test_host_data_with_separate_qualification_waits_when_disconnected(
     observed_inventory,  # noqa: F811
     monkeypatch,
 ):
+    monkeypatch.setattr("flow_base.graph.builder.verify_pattern_admission", lambda *args: None)
     graph = reader_blueprint()
     cases = [
         {
@@ -254,6 +257,22 @@ def test_optional_fallback_requires_new_and_approved_delivery(tmp_path):
         required=False,
         fallback_contract="tabular.data_omitted",
     )
+    original["inputs"]["subject"] = {"type": "string"}
+    original["nodes"].append({
+        "id": "subject", "kind": "task", "capability": "text.copy", "capability_version": "1",
+        "inputs": {"text": {"source": "input://subject", "port": {"type": "string"}}},
+        "outputs": {"text": {"type": "string"}},
+        "permissions": [], "side_effect": "none",
+    })
+    original["outputs"]["subject"] = "artifact://subject/text"
+    original["quality_contract"]["golden_cases"][0]["inputs"]["subject"] = "OK"
+    original["quality_contract"]["golden_cases"][0]["expected"]["subject"] = "OK"
+    original["quality_contract"]["execution_review"] = {
+        "mode": "stop_on_error", "scope": "保留標題",
+        "critical_steps": {"subject": {"machine": [{
+            "id": "same", "output": "text", "evaluator": "equals", "expected": "OK",
+        }]}},
+    }
     service, origin = draft(tmp_path, original)
     variant = {
         "blueprint_schema_version": 2,
@@ -288,6 +307,15 @@ def test_optional_fallback_requires_new_and_approved_delivery(tmp_path):
             "golden_cases": [{"inputs": {"fallback": []}, "expected": {"rows": []}}]
         },
     }
+    variant["inputs"]["subject"] = original["inputs"]["subject"]
+    variant["nodes"].append(original["nodes"][-1])
+    variant["outputs"]["subject"] = original["outputs"]["subject"]
+    variant["quality_contract"]["golden_cases"][0]["inputs"]["subject"] = "OK"
+    variant["quality_contract"]["golden_cases"][0]["expected"]["subject"] = "OK"
+    service, weakened = draft(tmp_path, variant)
+    with pytest.raises(FlowError, match="保留其餘步驟"):
+        service.preview_blueprint_degradation(origin, weakened)
+    variant["quality_contract"]["execution_review"] = original["quality_contract"]["execution_review"]
     service, candidate = draft(tmp_path, variant)
     resolution = service.resolve_blueprint_capabilities(candidate)
     request = {"capability_fingerprint": resolution["fingerprint"]}

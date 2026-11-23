@@ -69,7 +69,7 @@ def recorded_step_checks(nodes):
     return checks
 
 
-def evaluate(contract, outputs, nodes=None, *, runtime=None, patterns=()):
+def evaluate(contract, outputs, nodes=None, *, runtime=None, patterns=(), extra_checks=()):
     results = []
     rules = contract.get("evaluators", [])
     require(isinstance(rules, list), "品質評估器清單無效")
@@ -227,6 +227,7 @@ def evaluate(contract, outputs, nodes=None, *, runtime=None, patterns=()):
             "id": "workflow/output_contract", "status": "pass", "severity": "required",
             "on_failure": "reject",
         })
+    results.extend(extra_checks)
     required = [r for r in results if r["severity"] == "required"]
     policy = contract.get("review_policy", {})
     gate = policy.get("approved_node")
@@ -258,6 +259,65 @@ def validate_delivery_outputs(graph, outputs):
     nodes = {node.id: node for node in graph.nodes}
     for name, ref in graph.outputs.items():
         checked_value(outputs[name], port_for(graph, nodes, ref).model_dump())
+
+
+def corrected_observations(graph, nodes, outputs):
+    """Build assessment-only observations while keeping the Run history immutable."""
+    from routinekeel_contracts.graph import Join
+    from routinekeel_contracts.references import parse_reference
+
+    contract = graph.quality_contract
+    policy = contract.get("execution_review")
+    patterns = graph.provenance.get("pattern_compositions", [])
+    if not policy and not patterns:
+        return nodes, []
+    steps = {node.id: node for node in graph.nodes}
+    updates = {}
+    for name, source in graph.outputs.items():
+        ref = parse_reference(source)
+        while ref.scheme == "artifact":
+            values = updates.setdefault(ref.owner, {})
+            require(
+                ref.port not in values or digest(values[ref.port]) == digest(outputs[name]),
+                "同一產物的具名別名須維持相同內容",
+            )
+            values[ref.port] = outputs[name]
+            step = steps[ref.owner]
+            if not isinstance(step, Join):
+                break
+            if step.policy == "selected_branch":
+                chosen = nodes[step.switch]["selected_route"]
+                ref = parse_reference(step.branches[chosen][ref.port])
+            else:
+                port = ref.port
+                ref = parse_reference(step.inputs[port].source)
+                if (
+                    step.policy == "all_done" and ref.scheme == "artifact"
+                    and nodes[ref.owner]["status"] != "succeeded"
+                ):
+                    ref = parse_reference(step.fallbacks[port])
+    changed = {
+        node: values for node, values in updates.items()
+        if any(digest(value) != digest(nodes[node]["outputs"][key]) for key, value in values.items())
+    }
+    observations = dict(nodes)
+    for node, edits in changed.items():
+        values = {**nodes[node]["outputs"], **edits}
+        observations[node] = {**nodes[node], "outputs": values, "outputs_hash": digest(values)}
+        if policy:
+            observations[node]["output_checks"] = step_checks(policy, node, values)
+    reviewed = any(
+        data.get("human") for data in (policy or {}).get("critical_steps", {}).values()
+    ) or contract.get("review_policy", {}).get("required") or any(
+        pattern.get("quality_contract", {}).get("review_policy", {}).get("required")
+        for pattern in patterns
+    )
+    if changed and reviewed:
+        return observations, [{
+            "id": "workflow/corrected_output_review", "status": "not_run",
+            "severity": "required", "on_failure": "review",
+        }]
+    return observations, []
 
 
 def assess(runtime, state, outputs):
@@ -429,14 +489,16 @@ def feedback(
             validate_delivery_outputs(graph, outputs)
             for token in set(refs(outputs)):
                 assets.resolve(token)
+            observations, rechecks = corrected_observations(graph, session["nodes"], outputs)
             after.update(
                 outputs=outputs,
                 **evaluate(
                     before["quality_contract"],
                     outputs,
-                    session["nodes"],
+                    observations,
                     runtime=runtime,
                     patterns=graph.provenance.get("pattern_compositions", []),
+                    extra_checks=rechecks,
                 ),
             )
         elif decision == "accept":

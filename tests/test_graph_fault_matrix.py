@@ -42,7 +42,9 @@ def test_pinned_golden_case(tmp_path, name):
         view = session.interact(
             "decline",
             {
-                "revision": view["revision"], "task_id": view["pending"]["id"], "user_text": "拒絕本次交付"
+                "revision": view["revision"],
+                "task_id": view["pending"]["id"],
+                "evidence": {"user_text": "拒絕本次交付"},
             },
         )
     assert view["status"] == status and view.get("outputs") == outputs

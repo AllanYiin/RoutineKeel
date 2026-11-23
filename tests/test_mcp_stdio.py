@@ -90,7 +90,7 @@ def test_stdio_negotiation_queue_tool_set_and_path_boundary(workspace):
                              'studio_next_question', 'studio_submit_answer', 'studio_pause_interview',
                              'studio_resume_interview', 'studio_preview_source', 'studio_start_interview',
                              'studio_record_reply', 'studio_preview_blueprint', 'studio_export_blueprint',
-                             'studio_finalize_workflow_design',
+                             'studio_finalize_workflow_design', 'studio_research_parameter_source',
                              'studio_next_questions', 'studio_record_replies',
                              'studio_extract_pattern', 'studio_get_pattern_extraction',
                              'studio_export_pattern_extraction',

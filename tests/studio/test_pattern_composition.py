@@ -5,12 +5,14 @@ import zipfile
 
 import pytest
 from flow_base.core.service import WorkflowService
+from flow_base.graph.pattern_trial import run_pattern_trial
 from flow_base.graph.qualification import BindingReview
 from flow_base.runtime import FlowError
 from flow_base.studio import studio_request
 from routinekeel_contracts.domain_assets import PatternManifest, content_hash
 from routinekeel_contracts.graph_validator import validate_blueprint
 from test_pattern_extraction import chain, evidence, request
+from test_pattern_registry import decision
 from test_pattern_trigger import TEXT, activate, candidates, text_task
 from workflow_studio.contracts import StudioError
 from workflow_studio.patterns.composer import compose
@@ -195,14 +197,43 @@ def test_composition_is_revisioned_and_verifies_in_existing_builder(
     )
     candidate = package(runtime, frozen["path"])
     assert candidate["validation"]["status"] == "PASS"
-    assert runtime.workspace.task("extract_source", read_only=True).manifest.version == "1.0.0"
+    key = runtime.install_workflow(archive=frozen["path"])["draft_id"]
+    prior_resolution = runtime.resolve_blueprint_capabilities(key)
+    with StudioService.open_workspace(tmp_path) as studio:
+        registry = studio.tools.packs
+        pack = registry.get(composed.provenance["pattern_compositions"][0]["pack_ref"])
+        registry.decide(decision("disable", pack))
+    blocked = runtime.resolve_blueprint_capabilities(key)
+    assert blocked["build_status"] == "blocked"
+    assert any(
+        row["code"] == "PATTERN_APPROVAL_REQUIRED" for row in blocked["build_gaps"]
+    )
+    with pytest.raises(FlowError):
+        runtime.install_workflow(
+            draft_id=key,
+            resolution={"capability_fingerprint": prior_resolution["fingerprint"]},
+        )
+    with pytest.raises(FlowError, match="停用"):
+        runtime.install_workflow(
+            draft_id=key,
+            build_id=candidate["build_id"],
+            install_hash=candidate["install_hash"],
+        )
+    assert (
+        runtime.workspace.task("extract_source", read_only=True).manifest.version
+        == "1.0.0"
+    )
     source = tmp_path / "run-original.json"
     source.write_text('{"inputs":{"text":"prior revision"}}')
     completed = runtime.run_workflow_sync({"task": "extract_source", "source": source})
     assert completed["blueprint"]["outputs"] == {"result": "prior revision"}
 
 
-def test_quality_gate_is_checked_on_success_paths_and_in_runtime(tmp_path):
+def test_quality_gate_is_checked_on_success_paths_and_in_runtime(tmp_path, monkeypatch):
+    # This Graph fixture uses synthetic catalog hashes. Real admission is tested above.
+    monkeypatch.setattr(
+        "flow_base.graph.builder.verify_pattern_admission", lambda *args: None
+    )
     original = chain()
     raw = executable_pattern(gate=True)
     raw["quality_contract"]["invariants"] = [
@@ -279,6 +310,20 @@ def test_noncontiguous_pattern_preserves_control_and_data_boundary_when_reinsert
     source = ExtractionSource.model_validate(evidence(original))
     draft = extract(ExtractionRequest.model_validate(request(original, ["first", "last"])), source)
     pattern = PatternManifest.model_validate(draft["pattern"])
+    result = run_pattern_trial(
+        draft["pattern"],
+        [
+            {
+                "inputs": {"in_1": "first", "in_2": "last"},
+                "expected": {"out_1": "first", "result": "last"},
+            },
+        ],
+    )
+    assert result["verdict"] == "PASS", result
+    assert result["results"][0]["control_ports"] == [
+        "input/control_in_1",
+        "output/control_out_1",
+    ]
     middle = copy.deepcopy(original)
     middle["nodes"] = [original["nodes"][1]]
     middle["nodes"][0]["depends_on"] = []

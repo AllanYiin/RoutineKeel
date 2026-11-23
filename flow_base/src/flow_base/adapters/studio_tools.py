@@ -165,14 +165,16 @@ def register(server, workspace, result):
         target_ref: str,
         request_id: str,
         feedback_ids: list[str],
+        planned_reason: str | None = None,
     ) -> dict:
-        """Tie a candidate Pattern version to observed Runtime feedback and dependents."""
+        """Use observed feedback or a planned change to verify installed Runtime dependents."""
         return call(
             "propose_pattern_improvement",
             source_ref=source_ref,
             target_ref=target_ref,
             request_id=request_id,
             feedback_ids=feedback_ids,
+            planned_reason=planned_reason,
         )
 
     @server.tool()
@@ -366,6 +368,11 @@ def register(server, workspace, result):
             design=design,
             skills=skills or [],
         )
+
+    @server.tool()
+    def studio_research_parameter_source(url: str, excerpt: str) -> dict:
+        """Verify a passage from an official public source found through web search."""
+        return call("research_parameter_source", url=url, excerpt=excerpt)
 
     @server.tool()
     def studio_finalize_workflow_design(

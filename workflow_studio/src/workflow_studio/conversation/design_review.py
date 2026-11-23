@@ -6,13 +6,14 @@ from datetime import date
 from urllib.parse import urlsplit
 
 from pydantic import Field, JsonValue, ValidationError
-from routinekeel_contracts.execution_review import ExecutionReview, step_paths
+from routinekeel_contracts.execution_review import ExecutionReview, reviewed_graph_hash, step_paths
 from routinekeel_contracts.graph_validator import port_for, validate_blueprint, validate_structure
 from routinekeel_contracts.models import Contract
 from routinekeel_contracts.references import parse_reference
 
 from ..contracts import StudioError
 from .interviews import digest
+from .research import verify_source
 
 _MODEL_PARAMETER = re.compile(
     r"temperature|top[_-]?[pk]|beam|sampling|seed|tokens|penalty|whisper|vad", re.I
@@ -30,6 +31,15 @@ class ResearchSource(Contract):
     accessed_on: str
     recommended_value: JsonValue
     applicability: str = Field(min_length=1, max_length=1000)
+    rationale: str = Field(min_length=1, max_length=1000)
+    excerpt: str = Field(min_length=12, max_length=1500)
+    source_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class StepDecision(Contract):
+    purpose: str = Field(min_length=1, max_length=1500)
+    completion: str = Field(min_length=1, max_length=1500)
+    critical: bool
     rationale: str = Field(min_length=1, max_length=1000)
 
 
@@ -99,11 +109,13 @@ def _put(result, key, value, category, default_kind, *, port=None):
     }
 
 
-def _field_variables(result, prefix, fields, *, model_parameter=False):
+def _field_variables(result, prefix, fields, *, model_parameter=False, default_kind="fixed"):
     for name, value in fields.items():
         key = prefix + "/" + name.replace("~", "~0").replace("/", "~1")
         if isinstance(value, dict) and value:
-            _field_variables(result, key, value, model_parameter=model_parameter)
+            _field_variables(
+                result, key, value, model_parameter=model_parameter, default_kind=default_kind
+            )
         else:
             category = "other"
             if type(value) in {int, float}:
@@ -111,7 +123,7 @@ def _field_variables(result, prefix, fields, *, model_parameter=False):
                     category = "model_hyperparameter"
                 if _THRESHOLD.search(name):
                     category = "threshold"
-            _put(result, key, value, category, "fixed")
+            _put(result, key, value, category, default_kind)
 
 
 def inventory(model):
@@ -190,6 +202,10 @@ def inventory(model):
                             "fixed",
                         )
     for record in model.provenance.get("pattern_compositions", []):
+        for path, requirement in record.get("requirements", {}).items():
+            constraints = requirement.get("constraints", {})
+            if isinstance(constraints, dict):
+                _field_variables(variables, f"capability/{record['namespace']}/{path}", constraints)
         gate = record.get("gate")
         if gate and type(gate.get("equals")) in {int, float}:
             _put(
@@ -199,6 +215,9 @@ def inventory(model):
                 "threshold",
                 "fixed",
             )
+    profile = model.quality_contract.get("personalization", {}).get("parameters", {})
+    if isinstance(profile, dict):
+        _field_variables(variables, "profile", profile, default_kind="adjustable")
     nodes = {node.id: node for node in model.nodes}
     for name, source in model.outputs.items():
         port = port_for(model, nodes, source).model_dump(mode="json")
@@ -233,7 +252,7 @@ def draft_presentation(graph):
     }
 
 
-def _check_research(key, value, research):
+def _check_research(repository, key, value, research):
     try:
         source = ResearchSource.model_validate(research)
         url = urlsplit(source.url)
@@ -248,15 +267,16 @@ def _check_research(key, value, research):
             raise ValueError("invalid source URL")
     except (ValidationError, ValueError):
         fail("請為建議的超參數或門檻附可追溯的網路研究紀錄：" + key)
+    verify_source(repository, source)
     return source.model_dump(mode="json")
 
 
-def final_presentation(proposal, review):
-    from .blueprints import check_portable
+def final_presentation(repository, proposal, review):
+    from .blueprints import check_portable, visible_design
 
-    keys = {"policy", "skills", "tool_locations", "glossary", "variables"}
+    keys = {"policy", "skills", "tool_locations", "glossary", "variables", "step_decisions"}
     if not isinstance(review, dict) or set(review) != keys:
-        fail("定稿須包括檢核、技能、工具位置、術語及變數分類。")
+        fail("定稿須包括各步驟用途與完成條件、檢核、技能、工具位置、術語及變數分類。")
     graph = proposal["graph"]
     model, _ = validate_blueprint(graph)
     steps, variables, tools = inventory(model)
@@ -292,6 +312,26 @@ def final_presentation(proposal, review):
         raise StudioError("BLUEPRINT_BLOCKED", "請確認交付模式、作用範圍及關鍵節點檢核。") from exc
     if not policy.critical_steps:
         fail("請指定至少一個關鍵節點的輸出檢核。")
+    step_decisions = review["step_decisions"]
+    if not isinstance(step_decisions, dict) or step_decisions.keys() != steps.keys():
+        fail("請逐項說明每個步驟的用途、完成條件、關鍵性及原因。")
+    try:
+        for path, row in steps.items():
+            decision = StepDecision.model_validate(step_decisions[path])
+            if not all(
+                value.strip()
+                for value in (decision.purpose, decision.completion, decision.rationale)
+            ):
+                raise ValueError("missing step decision")
+            row["decision"] = decision.model_dump(mode="json")
+    except (ValidationError, ValueError) as exc:
+        raise StudioError(
+            "BLUEPRINT_BLOCKED", "各步驟的用途、完成條件及原因須填入具體內容。"
+        ) from exc
+    if {
+        path for path, row in steps.items() if row["decision"]["critical"]
+    } != policy.critical_steps.keys():
+        fail("每個判定為關鍵的步驟都須設定機器或人工檢核。")
     for path, checks in policy.critical_steps.items():
         for rule in checks.machine:
             for name in ("min", "max", "expected"):
@@ -322,12 +362,17 @@ def final_presentation(proposal, review):
             fail("變數的單位與範圍須以可讀文字表示：" + name)
         item.update(kind=kind, unit=evidence.get("unit"), range=evidence.get("range"))
         if item["category"] != "other":
-            item["research"] = _check_research(name, item["value"], evidence.get("research"))
+            item["research"] = _check_research(
+                repository, name, item["value"], evidence.get("research")
+            )
     runtime = policy.model_dump(mode="json", exclude_unset=True)
     composed = {
         **graph,
         "quality_contract": {**graph["quality_contract"], "execution_review": runtime},
+        "provenance": {**graph["provenance"], "design": visible_design(proposal["decisions"])},
     }
+    if "lineage" in proposal:
+        composed["provenance"]["lineage"] = proposal["lineage"]
     final, _ = validate_blueprint(composed)
     presentation = {
         "draft_diagram": proposal["draft_design"]["diagram"],
@@ -337,6 +382,8 @@ def final_presentation(proposal, review):
         "tools": {path: {**item, "locus": locations[path]} for path, item in tools.items()},
         "skills": skills,
         "skill_sources": proposal["skill_sources"],
+        "skill_manifest": proposal["skill_files"],
+        "graph_hash": reviewed_graph_hash(final),
         "glossary": glossary,
         "policy": runtime,
         "prefilled_decisions": proposal["decisions"],
@@ -362,7 +409,7 @@ def finalize(studio, project_id, expected_revision, request_id, draft_id, review
         for name, label in (("rules", "業務規則"), ("success", "成功條件"), ("cases", "驗收案例")):
             if not current["decisions"].get(name):
                 fail("定稿缺少" + label + "，請先補入初稿。")
-        graph, presentation, proof = final_presentation(current, review)
+        graph, presentation, proof = final_presentation(studio.repository, current, review)
         final = {
             **current,
             "status": "ready_for_confirmation",

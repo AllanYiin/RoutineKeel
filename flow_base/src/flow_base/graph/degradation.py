@@ -60,6 +60,17 @@ def describe_degradation(workspace, original_id, variant_id):
     }
     if any(retained_gates.get(key) != value for key, value in former_gates.items()):
         raise FlowError("OPTIONAL_DECISION_REQUIRED", "降級不得省略或放寬必要品質 Gate。")
+    previous_review = source.quality_contract.get("execution_review")
+    if previous_review is not None:
+        retained = variant.quality_contract.get("execution_review") or {}
+        if (
+            retained.get("mode") != previous_review["mode"]
+            or retained.get("scope") != previous_review["scope"]
+            or any(retained.get("critical_steps", {}).get(step) != check
+                   for step, check in previous_review["critical_steps"].items()
+                   if step not in omissions)
+        ):
+            raise FlowError("OPTIONAL_DECISION_REQUIRED", "降級須保留其餘步驟的關鍵檢核與交付政策。")
     old_nodes, new_nodes = ({node.id: node for node in graph.nodes} for graph in (source, variant))
     if (
         source.outputs.keys() != variant.outputs.keys()

@@ -346,7 +346,8 @@ def _target(service, workflow_id, pattern_ref, workflow_design_review):
     )
     final = studio_request(root, "finalize_workflow_design", {
         "project_id": pid, "expected_revision": composed["revision"], "request_id": "finalize",
-        "draft_id": composed["proposal_id"], "review": workflow_design_review(composed["proposal"]),
+        "draft_id": composed["proposal_id"],
+        "review": workflow_design_review(composed["proposal"], workspace=root),
     })
     exported = studio_request(
         root,

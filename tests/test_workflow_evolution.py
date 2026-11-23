@@ -159,7 +159,7 @@ def test_compare_fixed_defect_and_holdout_before_switch_and_rollback(
         "export",
         design_id=preview["design_id"],
         review_hash=preview["review_hash"],
-        user_text="照這份設計準備候選",
+        user_text="確認定稿並匯出",
     )
     held = tmp_path / "holdout.json"
     params = {

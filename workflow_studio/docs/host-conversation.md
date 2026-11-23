@@ -37,9 +37,9 @@ uv run --project workflow_studio python -m workflow_studio --workspace <RoutineK
 ### 初稿、參數研究與定稿確認
 
 1. 用 `studio_preview_blueprint` 取得初稿。先展示 `draft_design.diagram`，帶使用者確認工作流步驟與各步輸入輸出。依 `draft_design` 清冊詢問內嵌技能、工具位置與權限、詞彙表、變數及關鍵檢核。
-2. 宿主依 `draft_design.research_requests` 呼叫可用的網頁搜尋，查閱原廠、正式標準或原始研究。搜尋使用工具名、版本及參數名。保留查詢、來源 URL、標題、查閱日期、適用條件、理由及採用值。CLI 可提供已查得的來源。Studio 會核對來源欄位及選值；來源不足的建議保留在初稿。
-3. 用 `studio_finalize_workflow_design` 提交初稿 ID、預期版次、具名請求與 `review`。資料包含 `skills`（技能名稱對應步驟）、`tool_locations`（步驟對應執行位置）、`glossary`（術語對照）、`variables`（分類及研究證據）和 `policy`（模式、範圍、關鍵檢核）。模型或門檻選值改變時，先更新初稿再產生定稿。可調變數的已確認值跟隨藍圖版本，下一版可在 Studio 修改。
-4. 展示定稿 `display_text`，包含底座開頭的輸入檢核、結尾的輸出檢核與交付，以及所有預填內容。用使用者實際的回覆、定稿 ID 及 `review_hash` 呼叫 `studio_export_blueprint`。CLI 對應操作依序為 `prepare_blueprint`、`finalize_workflow_design`、`export_blueprint`。以既有工作流演進入口製作候選時，依序用 `prepare`、`finalize`、`export`。
+2. 宿主依 `draft_design.research_requests` 使用網頁搜尋，帶入工具名、版本及參數名。用 `studio_research_parameter_source` 或 CLI `research_parameter_source` 提交公開第一手 HTTPS 頁面 `url` 與含採用值的原文 `excerpt`。Studio 會擷取實際文字並回傳 `accessed_on` 與 `source_sha256`。研究紀錄也需提供查詢、標題、適用條件、理由及採用值。入口接受支援網域的 HTML、純文字及 Markdown 頁面。證據不足時，建議值留在初稿。
+3. 用 `studio_finalize_workflow_design` 提交初稿 ID、預期版次、具名請求與 `review`。在 `step_decisions` 逐步填寫 `purpose`、`completion`、`critical`、`rationale`。在 `policy` 為所有關鍵步驟設定檢核，並說明模式及範圍。同一份定稿包含 `skills`（技能名稱對應步驟）、`tool_locations`（步驟對應執行位置）、`glossary`（術語對照）及 `variables`（分類及研究證據）。模型或門檻選值改變時，先更新初稿。可調變數的已確認值跟隨藍圖版本。
+4. 展示定稿 `display_text`，包含底座的輸入檢核與輸出交付，以及所有預填內容。請使用者以「確認定稿並匯出」回覆，再將實際回覆、定稿 ID 及 `review_hash` 交給 `studio_export_blueprint`。CLI 對應操作為 `prepare_blueprint`、`finalize_workflow_design`、`export_blueprint`。既有工作流演進依序用 `prepare`、`finalize`、`export`。
 
 交付模式 `deliver_then_refine` 只允許明確標記可容許的機器檢核偏差，交付時列出待修與後續校閱。模式 `stop_on_error` 遇步驟錯誤即停止後續執行。需指定人工檢核時，圖上須有承接該輸出的實際人審節點。拒絕即保存拒絕結果。底座沿用既有的授權、輸入型別與正式交付驗證。
 

@@ -258,6 +258,9 @@ class GraphSession(Session):
             "prompt": node.get("prompt"),
             "outputs": node["outputs"],
         }
+        documents = state["plan"].get("skill_documents", {}).get(node["id"])
+        if documents:
+            task["skill_documents"] = documents
         if kind == "route_review":
             task["prompt"] = "條件資料不足，請在對話選擇此步可以採用的路徑。"
             task["allowed_routes"] = list(node["routes"])

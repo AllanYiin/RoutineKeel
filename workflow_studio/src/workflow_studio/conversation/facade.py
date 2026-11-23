@@ -292,6 +292,25 @@ def dispatch(studio, workspace, action, params, *, runtime_python=None):
         return [asdict(project) for project in studio.projects.list(**p)]
     if action == "preview":
         return preview(workspace, **p)
+    if action == "verify_pattern_admission":
+        from routinekeel_contracts.pattern_composition import PatternComposition
+
+        from ..patterns import evolution
+
+        records = [PatternComposition.model_validate(value) for value in p["compositions"]]
+        rehearsal = p.get("rehearsal")
+        with studio.repository.transaction():
+            target = evolution.get(studio, rehearsal)["target_ref"] if rehearsal else None
+            for record in records:
+                if record.ref == target:
+                    _, pack = evolution.rehearsal_trial(
+                        studio, rehearsal, record.ref, record.hash, record.qualification_hash
+                    )
+                    if (pack["ref"], pack["manifest_hash"]) != (record.pack_ref, record.pack_hash):
+                        raise StudioError("CONTRACT_MISMATCH", "回歸試做與 Pack 不符。")
+                else:
+                    studio.tools.packs.verify_composition(record.model_dump(mode="json"))
+        return {"verified": True}
     if action == "qualify_pattern":
         from ..patterns.qualification import qualify
 
@@ -332,6 +351,10 @@ def dispatch(studio, workspace, action, params, *, runtime_python=None):
         if action == "propose_pattern_improvement":
             return evolution.propose(studio, **p)
         return evolution.record_comparison(studio, **p)
+    if action == "research_parameter_source":
+        from .research import observe_source
+
+        return observe_source(studio.repository, **p)
     pid = p.pop("project_id")
     if action == "finalize_workflow_design":
         from .design_review import finalize

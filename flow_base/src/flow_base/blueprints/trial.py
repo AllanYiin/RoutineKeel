@@ -190,6 +190,10 @@ def exercise(root, workflow, measurements=None):
                     "evidence_kind": "fixture"
                     if any(x["step"] == r["step"] for x in mocks)
                     else "local_execution",
+                    **({"selected_route": r["evidence"]["selected"]}
+                       if r["evidence"].get("kind") == "route" else {}),
+                    **({"fallback_used": r["evidence"].get("fallback_used", [])}
+                       if r["evidence"].get("kind") == "join" else {}),
                 }
                 for r in snapshot["history"]
             ],

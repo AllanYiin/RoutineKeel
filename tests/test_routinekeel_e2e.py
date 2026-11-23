@@ -77,7 +77,7 @@ def test_desktop_interview_to_reversible_version(tmp_path, workflow_design_revie
         request_id="export",
         proposal_id=design["proposal_id"],
         decision="approve",
-        user_text="確認測試設計",
+        user_text="確認定稿並匯出",
         review_hash=design["review_hash"],
     )
     svc = WorkflowService(tmp_path)
@@ -159,7 +159,7 @@ def test_desktop_interview_to_reversible_version(tmp_path, workflow_design_revie
     proposal = evolve(proposal, "prepare", graph=candidate, design={"rules": "保留原文"})
     proposal = evolve(proposal, "finalize", design_id=proposal["design_id"], review=workflow_design_review(proposal))
     proposal = evolve(proposal, "export", design_id=proposal["design_id"],
-                      review_hash=proposal["review_hash"], user_text="確認候選設計")
+                      review_hash=proposal["review_hash"], user_text="確認定稿並匯出")
     held = tmp_path / "holdout.json"
     held.write_text(json.dumps([golden("fresh")]))
     compared = evolve(

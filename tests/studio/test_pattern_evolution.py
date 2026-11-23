@@ -224,6 +224,14 @@ def test_pattern_upgrade_replays_all_dependents_and_preserves_active_workflows(
                 "approve", registry.pattern_status(oldref), evidence=before["qualification_hash"]
             )
         )
+        with pytest.raises(StudioError, match="回歸比較"):
+            registry.decide_pattern(
+                decision(
+                    "approve",
+                    registry.pattern_status(newref),
+                    evidence=after["qualification_hash"],
+                )
+            )
         legacy = registry.get_asset("pattern", oldref).model
         upgraded = registry.get_asset("pattern", newref).model
     feedback = []
@@ -326,7 +334,9 @@ def test_pattern_upgrade_replays_all_dependents_and_preserves_active_workflows(
         assert (
             registry.decide_pattern(
                 decision(
-                    "approve", registry.pattern_status(newref), evidence=after["qualification_hash"]
+                    "approve",
+                    registry.pattern_status(newref),
+                    evidence=after["qualification_hash"],
                 )
             )["status"]
             == "active"

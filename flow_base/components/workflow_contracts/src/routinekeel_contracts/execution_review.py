@@ -77,6 +77,19 @@ def step_paths(graph, prefix=""):
             yield from step_paths(node.body, path + "/")
 
 
+def reviewed_graph_hash(graph):
+    """Bind the design, excluding only metadata introduced by the export transaction."""
+    payload = graph.model_dump(mode="json", exclude_none=True)
+    export_metadata = {
+        "design_review", "project_id", "interview_revision", "proposal_id",
+        "decisions_hash", "skill_sources", "skill_files",
+    }
+    payload["provenance"] = {
+        key: value for key, value in payload["provenance"].items() if key not in export_metadata
+    }
+    return content_hash(payload)
+
+
 def validate_execution_review(graph):
     raw = graph.quality_contract.get("execution_review")
     if "design_review" in graph.provenance:
@@ -84,17 +97,33 @@ def validate_execution_review(graph):
         details = receipt.get("details") if isinstance(receipt, dict) else None
         prefilled = details.get("prefilled_decisions") if isinstance(details, dict) else None
         canonical = graph.model_dump(mode="json", exclude_none=True)
+        quality = {
+            key: value
+            for key, value in graph.quality_contract.items()
+            if key != "execution_review"
+        }
         if (
             not isinstance(prefilled, dict)
             or receipt.get("sha256") != content_hash(details)
             or raw is None
             or details.get("policy") != raw
+            or prefilled.get("quality") != quality
+            or prefilled.get("goal") != graph.workflow.goal
+            or prefilled.get("evolution") != (
+                graph.evolution_policy or {"automatic_promotion": False}
+            )
             or any(
                 prefilled.get(key) != canonical[field]
                 for key, field in (("steps", "nodes"), ("inputs", "inputs"), ("outputs", "outputs"))
             )
         ):
             raise StudioError("GRAPH_INVALID", "工作流圖或檢核與已確認的定稿內容不一致。")
+        if "graph_hash" in details and (
+            details["graph_hash"] != reviewed_graph_hash(graph)
+            or details.get("skill_manifest") != graph.provenance.get("skill_files", {})
+            or details.get("skill_sources") != graph.provenance.get("skill_sources", {})
+        ):
+            raise StudioError("GRAPH_INVALID", "完整工作流契約或技能與定稿指紋不一致。")
     if raw is None and "execution_review" not in graph.quality_contract:
         return
     from .graph_validator import validate_structure

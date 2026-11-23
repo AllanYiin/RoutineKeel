@@ -27,6 +27,11 @@ def fail(message):
     raise StudioError("BLUEPRINT_BLOCKED", message)
 
 
+def visible_design(decisions):
+    graph_fields = {"steps", "inputs", "outputs", "quality", "controls", "review", "capabilities"}
+    return {key: value for key, value in decisions.items() if key not in graph_fields}
+
+
 def check_portable(value):
     if isinstance(value, dict):
         for key, child in value.items():
@@ -373,11 +378,16 @@ def export(
             or review_hash != proposal.get("review_hash")
         ):
             fail("須先顯示完整定稿，並確認該版的定稿指紋。")
-        if "design_review" in proposal and any(
-            word in user_text.casefold()
-            for word in ("不同意", "不要匯出", "先不要", "暫緩", "do not approve")
-        ):
-            fail("使用者回覆表示暫緩或拒絕匯出，請保留定稿。")
+        if "design_review" in proposal:
+            # Require affirmative intent in the actual reply, separately from its
+            # transport decision and the hash identifying the displayed version.
+            reply = user_text.strip().rstrip("。！.!").strip().casefold()
+            if reply not in {
+                "確認定稿並匯出", "同意定稿並匯出", "同意匯出", "確認匯出", "可匯出",
+                "同意這份設計", "確認匯出新版", "確認匯出這份回歸候選",
+                "approve and export", "confirm and export",
+            }:
+                fail("回覆未明確核准匯出，請使用「確認定稿並匯出」或選擇拒絕。")
         files, versions = skill_contents(studio, project_id, proposal["selections"], current=True)
         if versions != proposal["skill_sources"]:
             fail("技能來源版本已變更。")
@@ -410,20 +420,7 @@ def export(
             "interview_revision": expected_revision,
             "proposal_id": proposal_id,
             "decisions_hash": digest(proposal["decisions"]),
-            "design": {
-                k: v
-                for k, v in proposal["decisions"].items()
-                if k
-                not in {
-                    "steps",
-                    "inputs",
-                    "outputs",
-                    "quality",
-                    "controls",
-                    "review",
-                    "capabilities",
-                }
-            },
+            "design": visible_design(proposal["decisions"]),
             "skill_sources": versions,
             "skill_files": proposal["skill_files"],
         }
