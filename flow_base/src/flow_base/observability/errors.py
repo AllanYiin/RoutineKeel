@@ -9,6 +9,16 @@ from pydantic import ValidationError
 STANDARD = {
     'WORKFLOW_CHECK_FAILED': ('configuration', 'error', '關鍵輸出檢核未通過', '步驟輸出超出這版工作流確認的驗收條件。',
                               ['查看失敗步驟及其檢核紀錄。', '檢查輸入後回修該步驟。'], 'manual', ['step', 'check_ids']),
+    'DOCUMENT_QUERY': ('input', 'error', '文件查詢條件需要修正', '查詢文字、方式或文件範圍未通過檢查。',
+                       ['核對查詢文字及選取的文件。', '修正查詢條件後重試。'], 'after_fix', ['validation_issue']),
+    'DOCUMA_UNAVAILABLE': ('dependency', 'error', 'Documa 尚未就緒', '找不到受信的本機 Documa 執行檔。',
+                           ['確認已安裝 Documa。', '核對宿主設定中的本機執行檔路徑後重試。'], 'after_fix', ['dependency_status']),
+    'DOCUMA_FAILED': ('execution', 'error', 'Documa 文件操作失敗', '本機 Documa 未能完成本階段的解析或查詢。',
+                      ['確認文件格式、可讀性及本機解析器。', '核對 Documa 回報後重試原步驟。'], 'after_fix', ['step']),
+    'DOCUMA_SKILL_LOAD': ('environment', 'error', 'Documa 技能載入失敗', 'Documa 未能索引或載入藍圖所用的技能。',
+                          ['確認本機 Documa 與技能相依資料。', '修正技能來源或環境後重新建置候選。'], 'after_fix', ['skill', 'reason']),
+    'MODEL_OUTPUT_INVALID': ('execution', 'error', '模型回傳格式不符', '已保存回執，模型回傳未符合節點輸出埠或素材契約。',
+                             ['核對模型步驟的輸出定義及回執識別。', '確認修正與預算後再提交。'], 'manual', ['step', 'receipt']),
     'BINDING_STALE': ('environment', 'error', '環境綁定需要重驗', '工具、版本、權限或收據已改變。',
                       ['查看被鎖定的 Adapter 與目前環境。', '重新資格檢查後再建置或更新。'], 'after_fix', ['lock_hash', 'environment_fingerprint']),
     'CONTRACT_MISMATCH': ('configuration', 'error', '來源契約不一致', '目前資料、版本或交付埠與已確認的契約不同。',
@@ -80,6 +90,7 @@ GROUPS = {
     'PROCESS_START_FAILED': '''PROCESS_START SUPERVISOR_IDENTITY SUPERVISOR_START''',
     'WORKER_TIMEOUT': '''PROCESS_TIMEOUT''',
     'WORKER_CRASHED': '''PROCESS_FAILED''',
+    'MODEL_OUTPUT_INVALID': '''MODEL_REVIEW_INVALID MODEL_REVISION_INVALID''',
     'STATE_CONFLICT': '''BUSY DELIVERY_CONFLICT HUMAN_REVIEW_PRESENT IDEMPOTENCY_CONFLICT LLM_UNCERTAIN
         OUTPUT_EXISTS PROCESS_CANCELLED RUN_CANCEL_REQUESTED RUN_CONTEXT_MISMATCH RUN_CONTEXT_REQUIRED
         STATE_CONFLICT TASK_AMBIGUOUS TASK_DUPLICATE TASK_RESTART INTERRUPTED
@@ -104,6 +115,8 @@ for canonical, names in GROUPS.items():
         ALIASES[name] = canonical
 
 SPECIFIC = {
+    'MODEL_REVIEW_INVALID': ('已保存回執，模型審查或批評缺少必要結論、理由或待修項。', ['核對審查規則及回執識別。', '修正模型輸出設定後再送出審查。']),
+    'MODEL_REVISION_INVALID': ('已保存回執，修訂成果的資料型別與原候選不同。', ['保留原候選，核對修訂步驟的資料型別。', '確認回執及用量後決定是否重試。']),
     'WORKFLOW_UPDATE_INVALID': ('流程 ZIP、更新紀錄或備份未通過完整性與安全檢查。', ['保留現有資料，取得正確的流程發行 ZIP 後重試；備份損壞請交維護者查核。']),
     'WORKFLOW_UPDATE_CONFLICT': ('附件、目標版本或套件內容已改變，不能直接套用或回復。', ['重新預覽新版 ZIP，核對流程識別碼與版本；不要手動覆蓋設定或成果。']),
     'WORKFLOW_UPDATE_PENDING': ('上次流程更新尚未完成，底座已暫停載入套件。', ['執行 recover-workflow-update 復原，再重新預覽與更新。']),

@@ -237,19 +237,10 @@ def verify(ws, key, resolution, cases, *, build_id=None, coverage=None, offline=
         else:
             plan = compile_plan(src, resolution)
             from ..graph.capabilities import validate_bindings
+            from .bundled_skills import load_bundled_skills
 
             capability_evidence = validate_bindings(ws.root, resolution["bindings"])
-            skill_index = {row["id"]: row for row in src["skills"]["skills"]}
-            for node in plan["steps"]:
-                used = list(node["skills"])
-                for name in used:
-                    for child in skill_index[name].get("uses", []):
-                        if child not in used:
-                            used.append(child)
-                node["skill_text"] = {
-                    skill: files["skills/" + skill + "/SKILL.md"].decode("utf-8-sig")
-                    for skill in used
-                }
+            load_bundled_skills(ws.root, plan, src, files)
             ir, registry = studio_ir(src, plan)
         atomic_json(dest / "workflow.ir.json", ir)
         atomic_json(dest / "tool-signatures.json", registry)

@@ -15,6 +15,17 @@ def register(server, workspace, result):
     def studio_list_projects(include_archived: bool = False) -> dict:
         return call("list", include_archived=include_archived)
 
+    @server.tool(description="Use Documa's trusted graph skill catalog for one task.")
+    def studio_load_skills(task: str, skill_names: list[str] | None = None, max_tokens: int | None = None) -> dict:
+        return call("load_skills", task=task, skill_names=skill_names or [], max_tokens=max_tokens)
+
+    @server.tool(description="Search indexed document evidence for a versioned Studio source.")
+    def studio_search_document(
+        project_id: str, source_id: str, relative: str, query: str, version: int | None = None, route: str = "auto",
+    ) -> dict:
+        return call("search_document", project_id=project_id, source_id=source_id,
+                    relative=relative, query=query, version=version, route=route)
+
     @server.tool()
     def studio_get_project(project_id: str) -> dict:
         return call("get", project_id=project_id)

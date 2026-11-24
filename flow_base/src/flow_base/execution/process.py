@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from filelock import FileLock
+from routinekeel_contracts.documa import DOCUMA_CONFIG
 
 from flow_base.observability.recovery import SecondaryOperation
 
@@ -35,7 +36,7 @@ COMPUTE_ENV = frozenset({'CUDA_VISIBLE_DEVICES', 'NVIDIA_VISIBLE_DEVICES',
 def worker_environment(source=None):
     """Pass only operating-system and compute controls; never inherit credentials."""
     source = os.environ if source is None else source
-    allowed = (WINDOWS_ENV if os.name == 'nt' else POSIX_ENV) | COMPUTE_ENV
+    allowed = (WINDOWS_ENV if os.name == 'nt' else POSIX_ENV) | COMPUTE_ENV | DOCUMA_CONFIG
     result = {key: value for key, value in source.items()
               if key.upper() in allowed and isinstance(value, str)}
     result.update({'HF_HUB_OFFLINE': '1', 'TOKENIZERS_PARALLELISM': 'false',

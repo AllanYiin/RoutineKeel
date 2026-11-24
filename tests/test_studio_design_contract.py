@@ -146,7 +146,12 @@ def test_final_review_requires_complete_researched_inventory_and_exact_confirmat
     assert resumed["questions"] == [] and resumed["next_actions"][0] == "export_blueprint"
     shown = final["design_review"]
     assert "底座 · 檢核輸入" in shown["final_diagram"]
-    assert "底座 · 檢核與交付輸出" in shown["final_diagram"]
+    assert "底座 · 建立文件索引" in shown["final_diagram"]
+    assert "底座 · 檢核輸出" in shown["final_diagram"]
+    assert "底座 · 整理交付結果" in shown["final_diagram"]
+    assert "rk_output -->|符合交付條件| rk_delivery" in shown["final_diagram"]
+    assert shown["base_steps"]["version"] == 1
+    assert shown["base_steps"]["boundaries"]["base.delivery.prepare"]["outputs"]["archive"] == "string"
     assert "機器檢核" in shown["final_diagram"]
     assert shown["tools"]["upper"]["parameters"]["temperature"] == 0.2
     assert shown["glossary"] == review["glossary"]

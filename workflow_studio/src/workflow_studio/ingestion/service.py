@@ -5,6 +5,8 @@ from dataclasses import asdict
 from pathlib import Path
 from uuid import uuid4
 
+from routinekeel_contracts.documa import DOCUMENT_EXTENSIONS
+
 from ..contracts import StudioError
 from ..project.models import canonical_json, validate_name
 from ..project.service import ProjectService, now
@@ -65,9 +67,18 @@ class SourceService:
             total += len(payload)
             if len(payload) > self.limits.max_file_bytes or total > self.limits.max_total_bytes:
                 raise StudioError("INPUT_INVALID", "來源大小超過限制。")
-            preview = (previews or {}).get(relative) or preview_file(
-                relative, payload, self.limits, allow_empty=allow_empty
-            )
+            document = {}
+            if Path(relative).suffix.lower() in DOCUMENT_EXTENSIONS:
+                from .documents import index_source
+
+                preview, document, derived = index_source(
+                    self.repository.root, relative, payload, self.limits.preview_chars
+                )
+                blobs.update(derived)
+            else:
+                preview = (previews or {}).get(relative) or preview_file(
+                    relative, payload, self.limits, allow_empty=allow_empty
+                )
             digest = hashlib.sha256(payload).hexdigest()
             blobs[digest] = payload
             records.append(
@@ -76,6 +87,7 @@ class SourceService:
                     "sha256": digest,
                     "size": len(payload),
                     "preview": asdict(preview),
+                    **({"documa": document} if document else {}),
                     "observed_mtime_ns": (metadata or {}).get(relative),
                 }
             )
@@ -199,9 +211,31 @@ class SourceService:
         record = next((r for r in source.manifest["files"] if r["path"] == relative), None)
         if record is None:
             raise StudioError("SOURCE_NOT_FOUND", "來源沒有此檔案。")
+        return self._blob(record["sha256"])
+
+    def _blob(self, fingerprint):
         row = self.repository.connection.execute(
-            "SELECT content FROM studio_source_blobs WHERE sha256=?", (record["sha256"],)
+            "SELECT content FROM studio_source_blobs WHERE sha256=?", (fingerprint,)
         ).fetchone()
-        if row is None or hashlib.sha256(row[0]).hexdigest() != record["sha256"]:
+        if row is None or hashlib.sha256(row[0]).hexdigest() != fingerprint:
             raise StudioError("SOURCE_CORRUPT", "來源副本指紋不符，請重新匯入。")
         return row[0]
+
+    def search_document(
+        self, project_id, source_id, relative, query, *, version=None, route="auto"
+    ):
+        from .documents import search_source
+
+        source = self.get(project_id, source_id, version=version)
+        record = next((item for item in source.manifest["files"] if item["path"] == relative), None)
+        if not record or "documa" not in record:
+            raise StudioError("SOURCE_NOT_FOUND", "此來源版本沒有 Documa 文件索引。")
+        result = search_source(
+            self.repository.root,
+            relative,
+            self._blob(record["sha256"]),
+            self._blob(record["documa"]["index_sha256"]),
+            query,
+            route=route,
+        )
+        return {"source_id": source_id, "version": source.version, "path": relative, **result}

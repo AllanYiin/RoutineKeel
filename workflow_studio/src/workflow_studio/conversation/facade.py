@@ -266,6 +266,8 @@ def record_chat_replies(
 
 
 def preview(workspace, relative):
+    from routinekeel_contracts.documa import DOCUMENT_EXTENSIONS
+
     from ..ingestion.security import reject_links, safe_relative
 
     name = safe_relative(relative)
@@ -294,6 +296,10 @@ def preview(workspace, relative):
         suffix = path.suffix.lower()
         if suffix in {".mp3", ".wav", ".mp4", ".webm", ".mov"}:
             return {**local, "kind": "local", "text": "在本機播放器開啟原檔。"}
+        if suffix in DOCUMENT_EXTENSIONS:
+            from ..ingestion.documents import preview_document
+
+            return {**local, **asdict(preview_document(root, path, limits.preview_chars))}
         return {
             **local,
             **asdict(preview_file(name, read_file(path, root, limits.max_file_bytes), limits)),
@@ -336,6 +342,10 @@ def dispatch(studio, workspace, action, params, *, runtime_python=None):
                 else:
                     studio.tools.packs.verify_composition(record.model_dump(mode="json"))
         return {"verified": True}
+    if action == "load_skills":
+        from routinekeel_contracts.documa import load_skills
+
+        return load_skills(workspace, **p)
     if action == "qualify_pattern":
         from ..patterns.qualification import qualify
 
@@ -399,6 +409,8 @@ def dispatch(studio, workspace, action, params, *, runtime_python=None):
         return extractor.export_extraction(studio, workspace, pid, p["extraction_id"])
     if action == "source":
         return studio.sources.get(pid, p["source_id"]).manifest
+    if action == "search_document":
+        return studio.sources.search_document(pid, **p)
     if action in {"prepare_blueprint", "export_blueprint", "get_blueprint"}:
         from . import blueprints
 

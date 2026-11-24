@@ -214,6 +214,8 @@ class WorkflowService:
                 require(report['blueprint']['status'] == 'complete', '正式成果未交付')
                 result.update(output=str(report["output"]), run_id=report['run_id'])
                 if report.get("delivery_status"): result["delivery_status"]=report["delivery_status"]
+                if "result_delivery" in report:
+                    result["result_delivery"] = report["result_delivery"]
         return result
 
     def preview_workflow_update(self, archive, *, task=None):

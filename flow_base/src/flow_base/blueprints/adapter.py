@@ -118,8 +118,18 @@ class BlueprintAdapter(BaseAdapter):
         return target
 
     def publish_outputs(self, terminal, output, workflow):
+        from routinekeel_contracts.base_steps import DESIGN_KEY
+
         response = read_json(terminal)
         outputs = response.get("outputs")
+        versioned_delivery = (
+            self.plan_data["format"] == 2
+            and DESIGN_KEY in self.plan_data["graph"]["quality_contract"]
+        )
+        if versioned_delivery:
+            from ..outputs import clear_previous_named_results
+
+            clear_previous_named_results(output)
         if outputs is not None:
             folder = output / "artifacts"
             atomic_json(folder / "results.json", outputs)
@@ -134,4 +144,11 @@ class BlueprintAdapter(BaseAdapter):
             business = response.get("result_status","not_evaluated")
             report.update(status=business if outputs is not None else status, graph_result_status=business,
                           graph_delivery_status="eligible" if business=="accepted" else "withheld")
+            if versioned_delivery:
+                from ..core.run_context import current
+                from ..outputs import prepare_result_delivery
+
+                delivery = prepare_result_delivery(output, current().run_id, outputs if business == "accepted" else None)
+                if delivery:
+                    report["result_delivery"] = delivery
         return report

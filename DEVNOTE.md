@@ -2,31 +2,36 @@
 
 ## SNAPSHOT — 當前狀態
 
-最後更新：2026-11-24T22:06+08:00
+最後更新：2026-11-24T23:22+08:00
 交接狀態：verified
 
 ### 目標與授權範圍
 
-依 devloop 實作藍圖缺口補強與接續建置 Stage 0–6。
+依 /prompts:devloop 執行底座通用步驟與 Documa 修改規格 Stage 0–6。
 
 ### 目前進度
 
-Stage 0–6 均已完成。本輪在固定驗收快照完成可續做的藍圖補強、資格鎖定、案例補件、隔離試做與安裝／升級接續。已核對操作文件與本機最終候選。
+底座通用步驟 Stage 0–6 均已完成。暫緩交付與前次成果分隔、異常模型回執正常結束、Documa 與模型診斷補齊。最終固定快照 1,314 個不同測例通過，隔離安裝後實際交付勾稽成果。
+
+藍圖補強 Stage 0–6 亦已完成，包含資格鎖定、案例補件、隔離試做及安裝／升級續接。驗收與回退記錄見 `docs/specs/blueprint-completion.md`。
 
 ### 下一步
 
-本輪開發與本機驗收無待辦。共用工作樹的其他並行修改與正式發布各依原有流程處理。
+本輪授權的開發與本機驗收無待辦。正式發布、私人已安裝環境及正式模型品質驗收另依原授權。
 
 ### DECISIONS
 
 - 預檢缺口屬候選試做，藍圖設計與匯入依原契約繼續。底座保存補強工作並自動續行。
 - 有效工具與案例證據可獨立補強；新業務版本、宿主副作用及既有版本升級沿既有核准與回歸入口。
 - 本機候選以 HEAD 加本輪改動製作固定快照，保留共用工作樹的並行修改。
+- 清除前次具名成果只作用於本次暫存副本，正式上一版及其回退入口保留。
 
 ### LANDMINES
 
 - Windows 候選底座與 MCP 可用，Studio 冷啟動依賴準備在測試環境逾時。Linux 實際冷啟動及最終 wheel 交付路徑通過。
 - 回退到底座 v6 前先留存 v7 資料副本，並使用已實測還原的遷移前備份。
+- 模型測試使用本機宿主測試回執，正式模型品質依實際綁定及授權驗收。
+- 本輪 Windows 封裝使用兩個獨立 wheel 環境；完整原生啟動器冷啟動與非 PDF／DOCX 解析品質保留各環境驗收。
 
 ### 證據索引
 
@@ -35,12 +40,21 @@ Stage 0–6 均已完成。本輪在固定驗收快照完成可續做的藍圖�
 - workflow_studio/docs/host-conversation.md
 - dist/blueprint-completion-final-by5dkfp_/evidence.json
 - dist/blueprint-completion-audit-p9w74nc7/dist/candidate-completion-final/release/SHA256SUMS
+- docs/specs/base-steps/verification.md
+- workflow_studio/todo.md
+- dist/base-steps-devloop-final-audit.json
+- dist/base-steps-devloop-final-integrity.json
+- dist/base-steps-final-snapshot-ib7yhhrs/dist/candidate-base-steps-devloop-final/release/SHA256SUMS
 
 ### VALIDATION
 
 - 固定快照回歸 — PASS：依實際 JUnit 去重後 1,299 個不同測例通過，包含 Studio 566、Linux 81、工作流 105，以及 MCP、封包與資料還原補測。
 - 最終本機 ZIP 與 wheel — PASS：五個封包雜湊及本輪 wheel 原始碼核對一致。最終獨立環境實際執行 Studio 與便攜能力兩條交付路徑。
 - Windows Studio 原生冷啟動 — NOT_RUN：底座啟動及 MCP 安裝通過，Studio 依賴準備超過測試時限；Linux 已覆蓋完整發行包路徑。
+- 底座通用步驟 Stage 0–2 — PASS：29、72、5 項。命令及回滾見 docs/specs/base-steps/verification.md。
+- 底座通用步驟 Stage 3–4 — PASS：真實 Documa 4 項，模型回執及 Graph 30 項。見 dist/base-steps-devloop-stage3.xml、dist/base-steps-devloop-stage4.xml。
+- 底座通用步驟 Stage 5 最終快照 — PASS：1,314 個不同測例，涵蓋 Windows Studio、底座、工作流、Linux 平台補測及跨宿主。見 dist/base-steps-devloop-final-audit.json。
+- 底座通用步驟 Stage 6 文件與交接 — PASS：文件連結、SVG、白話檢查、隔離 Studio guide／底座 catalog 及 Git whitespace 檢查通過。
 
 # HISTORY
 
@@ -611,8 +625,43 @@ Windows 及 WSL 實測逐一核對 1,190 個唯一測例，補驗逾時與所有
 完成可執行案例、素材、Studio 修訂與底座候選試做接續。驗證首次安裝、工作程序恢復及既有工作流的回歸比較升級。Stage 5 已補 Linux、字幕依賴及媒體實測，固定快照和冷啟動仍在驗收。
 
 
+## [2026-11-24T21:57+08:00] 底座通用步驟與 Documa 整合
+
+<!-- devnote-review:a4ccaea6bf786beb9e57157e -->
+
+Studio 定稿加入版本化底座步驟和資料埠。底座將輸出品質檢核與交付組裝拆開，加入規則勾稽、文件索引、圖技能載入和批評修訂通路。Windows 專項、MCP、交付及兩環境 wheel 驗證通過。正式模型供應商呼叫保留待宿主驗證。
+
+
+## [2026-11-24T22:01+08:00] 補記 Studio 全量與定稿重跑
+
+<!-- devnote-review:102d40a679e8d6928bc7f99c -->
+
+全量首輪跨程序使用不同的開發中契約，兩個 Pattern 定稿匯入被擋。固定最終程式後兩項均重跑通過。
+
+
 ## [2026-11-24T22:06+08:00] 藍圖補強 Stage 5–6 回歸與本機候選
 
 <!-- devnote-review:11e633695762acfb5492289e -->
 
 逐案例核對 1,299 個通過證據。從解壓候選實跑 Studio 匯出、MCP 續接、資格鎖定、試做、安裝及正式執行，核對最終候選與兩份操作指南。
+
+
+## [2026-11-24T22:55+08:00] 底座通用步驟 Stage 0–2
+
+<!-- devnote-review:a6f12fc67399b36c4e68158e -->
+
+完成基線、定稿至正式交付及勾稽驗收。具名成果暫存清理有新測例，既有正式交付保留。
+
+
+## [2026-11-24T22:58+08:00] 底座通用步驟 Stage 3–4
+
+<!-- devnote-review:0efa6715fd99a3a3bd2bfbe6 -->
+
+核對 Documa 索引重建及缺少執行檔分支，並修復格式錯誤的模型回執無法正常結束的情形。
+
+
+## [2026-11-24T23:22+08:00] 底座通用步驟 Stage 5–6 結案
+
+<!-- devnote-review:b3a87fd8d0a5213ee74a0e44 -->
+
+補齊中文診斷並重建本機候選。固定快照回歸、平台補測、兩套隔離 wheel 真實交付及文件檢查均通過。

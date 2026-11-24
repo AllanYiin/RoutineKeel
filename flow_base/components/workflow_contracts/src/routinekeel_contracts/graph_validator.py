@@ -281,9 +281,11 @@ def validate_blueprint(payload, *, dependencies=None, route_guards=None):
         dependencies=tracked,
         route_guards=route_guards,
     )
+    from .base_steps import validate_base_steps
     from .execution_review import validate_execution_review
     from .pattern_composition import validate_pattern_records
 
     validate_pattern_records(graph, order, tracked)
+    validate_base_steps(graph)
     validate_execution_review(graph)
     return graph, order

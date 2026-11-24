@@ -110,6 +110,11 @@ def write_delivery_index(output, report):
              '實際成果位於 [artifacts/](../artifacts/)。領域驗收以 report.json 與流程的審閱資料為準。',
              'scripts/ 僅在任務確實交付腳本時存在；產出腳本不代表已執行。', '',
              '[機器可讀報告](../report.json) · [交付清單](../deliverables.json)', '']
+    if delivery := report.get('result_delivery'):
+        from urllib.parse import quote
+
+        lines.extend(['[具名成果連結](../' + quote(delivery['links']) + ') · '
+                      '[下載成果 ZIP](../' + quote(delivery['archive']) + ')', ''])
     usage = report.get('token_usage')
     if usage:
         from .usage import usage_lines
@@ -130,6 +135,82 @@ def write_delivery_index(output, report):
         'schema_version': 1, 'output_layout': LAYOUT, 'flow_id': report.get('flow_id'),
         'job_id': report.get('job_id'), 'run_id': report.get('run_id'), 'status': status,
         'report': 'report.json', 'files': files})
+
+
+def clear_previous_named_results(stage):
+    """Remove inherited generated results from a staging copy before writing this Run's data."""
+    from .blueprints.sessions import ASSET, refs
+
+    folder = Path(stage) / 'artifacts'
+    reject_links(folder)
+    results = folder / 'results.json'
+    reject_links(results)
+    if not results.is_file():
+        return
+    try:
+        previous = read_json(results)
+    except ValueError:
+        previous = {}
+    for token in set(refs(previous)):
+        if match := ASSET.fullmatch(token):
+            artifact = folder / token.removeprefix('asset:')
+            reject_links(artifact)
+            if artifact.is_file() and sha256(artifact) == match[1]:
+                artifact.unlink()
+    results.unlink()
+
+
+def prepare_result_delivery(stage, run_id, outputs):
+    """Create relative links and a portable archive of this Run's named results."""
+    import tempfile
+    import zipfile
+
+    from .blueprints.sessions import ASSET, refs
+
+    stage = Path(stage)
+    validate_tree(stage)
+    artifacts = stage / 'artifacts'
+    manifest = artifacts / 'result-links.json'
+    links = artifacts / 'result-links.md'
+    bundle = artifacts / 'delivery.zip'
+    if outputs is None:
+        for path in (manifest, links, bundle):
+            path.unlink(missing_ok=True)
+        return None
+    named = {}
+    paths = {'artifacts/results.json', 'artifacts/result-links.json', 'artifacts/result-links.md'}
+    lines = ['# 具名成果', '', '[具名輸出的 JSON](results.json)', '']
+    for name, value in sorted(outputs.items()):
+        files = []
+        for token in sorted(set(refs(value))):
+            if not ASSET.fullmatch(token):
+                raise FlowError('DELIVERY_INVALID', '具名輸出含無效素材引用')
+            files.append('artifacts/' + token.removeprefix('asset:'))
+        named[name] = {'file_paths': files, 'values_path': 'artifacts/results.json', 'key': name}
+        paths.update(files)
+        lines.extend(['## ' + name, ''])
+        lines.extend('- [素材 ' + str(index) + '](' + Path(file).name + ')'
+                     for index, file in enumerate(files, 1))
+        if not files:
+            lines.append('- 在 [具名輸出的 JSON](results.json) 查看 `' + name + '`。')
+        lines.append('')
+    atomic_json(manifest, {'schema_version': 1, 'run_id': run_id, 'root': 'delivery', 'outputs': named})
+    atomic_bytes(links, ('\n'.join(lines) + '\n').encode('utf-8'))
+    with tempfile.NamedTemporaryFile(dir=artifacts, suffix='.zip', delete=False) as handle:
+        temporary = Path(handle.name)
+    try:
+        with zipfile.ZipFile(temporary, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+            for relative in sorted(paths):
+                archive.write(stage / relative, arcname=relative)
+        with zipfile.ZipFile(temporary) as archive:
+            if archive.testzip() is not None:
+                raise FlowError('DELIVERY_INVALID', '成果 ZIP 無法通過完整性檢查')
+        temporary.replace(bundle)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return {'links': links.relative_to(stage).as_posix(), 'link_index': manifest.relative_to(stage).as_posix(),
+            'archive': bundle.relative_to(stage).as_posix(),
+            'manifest': 'delivery-manifest.json'}
 
 
 def publish_named_outputs(stage, workflow, artifacts, layout):

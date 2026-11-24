@@ -91,26 +91,38 @@ def reviewed_graph_hash(graph):
 
 
 def validate_execution_review(graph):
+    from .base_steps import DESIGN_KEY, design_steps
+
     raw = graph.quality_contract.get("execution_review")
     if "design_review" in graph.provenance:
         receipt = graph.provenance["design_review"]
         details = receipt.get("details") if isinstance(receipt, dict) else None
         prefilled = details.get("prefilled_decisions") if isinstance(details, dict) else None
+        reviewed_quality = prefilled.get("quality") if isinstance(prefilled, dict) else None
         canonical = graph.model_dump(mode="json", exclude_none=True)
         quality = {
             key: value
             for key, value in graph.quality_contract.items()
             if key != "execution_review"
         }
+        if isinstance(reviewed_quality, dict) and DESIGN_KEY not in reviewed_quality:
+            quality.pop(DESIGN_KEY, None)
         if (
             not isinstance(prefilled, dict)
             or receipt.get("sha256") != content_hash(details)
             or raw is None
             or details.get("policy") != raw
-            or prefilled.get("quality") != quality
+            or reviewed_quality != quality
             or prefilled.get("goal") != graph.workflow.goal
             or prefilled.get("evolution") != (
                 graph.evolution_policy or {"automatic_promotion": False}
+            )
+            or (
+                (DESIGN_KEY in graph.quality_contract or "base_steps" in details)
+                and (
+                    DESIGN_KEY not in graph.quality_contract
+                    or details.get("base_steps") != design_steps(graph)
+                )
             )
             or any(
                 prefilled.get(key) != canonical[field]

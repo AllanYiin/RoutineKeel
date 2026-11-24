@@ -42,7 +42,7 @@ uv run --project workflow_studio python -m workflow_studio --workspace <RoutineK
 1. 用 `studio_preview_blueprint` 取得初稿。在對話中先展示第一張 `draft_design.diagram`，圖上只顯示工作流步驟與分支。依 `review_sections` 四組清單在對話中逐項展示目標、輸入與交付、步驟與例外、技能工具與變數、業務規則和驗收的實際提案值。使用者可逐組校閱、一起確認，或直接指出要刪改、暫緩的內容。以 `studio_record_replies` 記錄實際答覆，重新預覽變更的初稿。暫緩或拒絕須有新的使用者答覆才能解除。
 2. 宿主依 `draft_design.research_requests` 使用網頁搜尋，帶入工具名、版本及參數名。用 `studio_research_parameter_source` 或 CLI `research_parameter_source` 提交公開第一手 HTTPS 頁面 `url` 與含採用值的原文 `excerpt`。Studio 會擷取實際文字並回傳 `accessed_on` 與 `source_sha256`。研究紀錄也需提供查詢、標題、適用條件、理由及採用值。入口接受支援網域的 HTML、純文字及 Markdown 頁面。證據不足時，建議值留在初稿。
 3. 完成初稿所有章節的展示及討論後，詢問使用者是否同意全部預填並回覆「初稿可進入定稿」。用 `studio_finalize_workflow_design` 提交相同初稿 ID、預期版次、具名請求、`review`、實際回覆 `draft_reply` 及 `shown_sections`。`shown_sections` 為已展示章節 ID 到 `review_sections[id].sha256` 的對照，由宿主轉交。在 `step_decisions` 逐步預填 `purpose`、`completion`、`critical`、`rationale`。在 `policy` 為所有關鍵步驟設定檢核，並說明模式及範圍。定稿另填 `skills`、`tool_locations`、`glossary` 及 `variables`。模型或門檻選值改變時，先更新初稿。可調變數的已確認值跟隨藍圖版本。
-4. 在對話中展示第二張流程圖 `design_review.final_diagram` 和本版全部 `review_sections`。圖上分別標示底座的「檢核輸入」「檢核與交付輸出」、自訂步驟、人工等待、檢核及失敗去向。展示定稿新增和沿用的預填內容後，請使用者另一次確認全數採用並回覆「確認定稿並匯出」。將實際回覆、定稿 ID、`review_hash` 及本版 `shown_sections` 交給 `studio_export_blueprint`。兩張圖與章節內容以白話在對話顯示，保留必要的設定原值。檔案連結供備查。CLI 對應操作為 `prepare_blueprint`、`finalize_workflow_design`、`export_blueprint`。既有工作流演進依序用 `prepare`、`finalize`、`export`，沿用相同校閱契約。
+4. 在對話中展示第二張流程圖 `design_review.final_diagram` 和本版全部 `review_sections`。圖上分別標示底座的「檢核輸入」「檢核輸出」「整理交付結果」及條件式「建立文件索引」、自訂步驟、人工等待、檢核及失敗去向。展示定稿新增和沿用的預填內容後，請使用者另一次確認全數採用並回覆「確認定稿並匯出」。將實際回覆、定稿 ID、`review_hash` 及本版 `shown_sections` 交給 `studio_export_blueprint`。兩張圖與章節內容以白話在對話顯示，保留必要的設定原值。檔案連結供備查。CLI 對應操作為 `prepare_blueprint`、`finalize_workflow_design`、`export_blueprint`。既有工作流演進依序用 `prepare`、`finalize`、`export`，沿用相同校閱契約。
 
 跨對話續編時，用 `studio_get_project` 讀取 `design_progress` 的目前階段及 `next_action`，用 `studio_next_questions` 取得同一階段的提示或待答問題。舊版未匯出的設計如果缺少初稿校閱契約，會指向重新預覽。已保存的使用者答覆可沿用。
 
@@ -59,6 +59,39 @@ uv run --project workflow_studio python -m workflow_studio --workspace <RoutineK
 工具替代變更了原交付或業務規則時，在 Studio 依原藍圖建立並確認衍生版本。匯出後由原補強工作接收新版本，再驗證受影響的項目。耗時試做時從 `status` 回報實際案例進度，最後依底座收據區分已驗證候選、待升級比較和已安裝。完整工作區的操作與回復例子見 `flow_base/blueprint-install.md`，原始碼儲存庫位於 `flow_base/docs/blueprint-install.md`。
 
 設計階段用完整預填減少使用者輸入，初稿與定稿各保留一次實際確認。使用者只回答部分內容時，保存已答覆項目，繼續呈現尚待校閱的項目。執行中只有藍圖指定的人工作業、關鍵校閱或需授權的動作才等待使用者，其餘步驟在自動契約檢查後繼續。
+
+### 底座通用步驟
+
+RK-NEXT 藍圖 v2 的初稿提供 `draft_design.base_step_catalog`。宿主依工作流需求，以能力 ID、版本 `1`、資料埠及參數引用可選步驟。Studio 定稿時為最外層補上底座執行邊界，將使用到的通用步驟與資料契約保存於 `design_review.base_steps`，連同流程圖綁定 `review_hash`。子流程由其父節點展開。
+
+| 底座邊界步驟 | 時機與輸入 | 輸出 |
+| --- | --- | --- |
+| **檢核輸入** `base.input.check` | 取得具名輸入與藍圖輸入埠，檢查必填欄位、型別和素材引用。 | 已檢核的 `inputs` 與 `inputs_hash`。 |
+| **建立文件索引** `base.document.index` | 輸入有特殊文件時，於開跑前用本機 Documa 解析。 | `document_indexes`，以來源素材引用為鍵，保存 Documa IR、ContextIR、解析器及圖索引摘要。 |
+| **檢核輸出** `base.output.check` | 所有具名輸出可取得後，核對資料埠及檔案，執行品質契約。 | `assessment_id`、品質結論及交付資格。未具交付資格時保留可用預覽與證據。 |
+| **整理交付結果** `base.delivery.prepare` | 取得通過檢核的具名成果與評估 ID。 | 版本化持久交付、可點選的成果連結、機器可讀索引、ZIP 與交付清單。 |
+
+可選步驟可置於任何符合資料依賴的工作流位置。Studio 設定各步驟的門檻、來源、失敗分支和人工等待點。
+
+| 可選底座步驟 | 輸入 | 輸出 |
+| --- | --- | --- |
+| **擬定勾稽計畫** `base.reconciliation.plan` | `parameters.rules`，指定兩側 JSON Pointer、比較方式及容差。 | `plan` 物件。相同版本與規則只建置一次，之後重用有指紋的本機快取。 |
+| **執行勾稽** `base.reconciliation.run` | `plan` 物件與本次 `left`、`right` JSON。 | `matched` 布林值與 `report` 物件。支援等值、計數、十進位加總與逐鍵比對。可區分差異與輸入錯誤。 |
+| **查詢文件索引** `base.document.search` | `indexes` 物件、`query` 字串，可選 `route`。 | `matches` 陣列，含文件來源、區塊 ID、摘錄與可用的圖路徑。 |
+| **載入技能** `base.skill.load` | `task` 字串，以及可選的 `skill_names`、`max_tokens`。 | `bundle` 物件，含 Documa 載入狀態、選用技能、圖依賴、來源及 token 預算。 |
+| **模型審查** `base.model.judge` | `candidate` JSON 與 `rubric` 物件。 | `verdict` 物件，含 `passed`、`rationale`、`findings`。 |
+| **批評者** `base.model.critic` | `candidate` JSON 與 `rubric` 物件。 | `critique` 物件，含 `passed`、`rationale`、`findings`。未通過時須具體指出待修項。 |
+| **修訂者** `base.model.reviser` | 同一份 `candidate` JSON 與批評者的 `critique`。 | `candidate` JSON。批評通過時直接傳遞原成果，否則呼叫已綁定模型修訂。 |
+
+數據與報表工作流若有可互證的資料或彙總，設計時加入勾稽計畫與執行勾稽，確認比較基準後再定稿。規則的 `operation` 可選 `equals`、`count`、`sum` 或 `keyed`。`left` 與 `right` 是指向兩側資料的 JSON Pointer，空字串指向整份值。`sum` 可用 `left_field` 和 `right_field` 指向各列數值。`keyed` 用 `left_key`、`right_key` 指定各列唯一鍵，並可比較指定欄位。Studio 可用 `matched` 設定關鍵機器檢核或分支。模型步驟使用宿主清冊中的同名能力、串流與用量回執，工作流可依 `verdict.passed` 分支。若需多輪回修，使用既有 `repeat_until` 宣告上限及失敗去向。
+
+### Documa 文件與技能
+
+特殊文件包含 PDF、Word、Excel、PowerPoint、HTML、郵件與 Notebook。Runtime 使用本機 `documa`，也可由宿主透過 `ROUTINEKEEL_DOCUMA` 指定絕對執行檔路徑。必要的解析器缺失、格式不支援或 Documa 報錯時會回報原階段失敗。新定稿藍圖若要讓下游使用索引，在最外層 `inputs` 宣告 `document_indexes` 為 `object`，以 `input://document_indexes` 綁定查詢節點的 `indexes`。此值由底座產生。非文件執行得到空物件。
+
+Studio 匯入特殊文件時保存 Documa 預覽及索引指紋。使用 `studio_search_document` 查詢已匯入的 `source_id`、`relative` 與指定 `version`，也可選擇 `graph-first` 路徑。CLI 對應 `interview search_document`。
+
+宿主先在自己管理的 Documa 技能目錄配置受信來源與索引，再把 `ROUTINEKEEL_DOCUMA_SKILL_STORE` 指向其 store。Studio 用 `studio_load_skills` 或 `interview load_skills`，執行圖用 `base.skill.load`。三者使用同一個 Documa loader。遇到 `needs_narrowing` 時依 Documa 的候選與原因處理。藍圖內附的 `skills/` 保存確認過的來源版本與檔案。重新建置帶技能的 v1 藍圖時，底座以暫存的 Documa catalog 依其技能依賴載入。技能文字本身無法授權外部動作。
 
 Studio CLI 支援 `interview next_batch|reply_batch` 及既有單題操作，參數透過 `--payload` 傳入。底座 CLI 使用相同操作名。另有 `interview stream` 可逐行接收含 text 的 JSON 文字增量，立即輸出 delta，正常收束時才輸出 completed。此入口不會保存回答。
 

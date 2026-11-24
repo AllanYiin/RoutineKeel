@@ -11,10 +11,12 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 from referencing import Registry
 from referencing.exceptions import Unresolvable
+from routinekeel_contracts.base_steps import MODEL_STEPS
 from routinekeel_contracts.graph import ForEach, GraphPort, Repeat, Task
 from routinekeel_contracts.graph_validator import compatible, validate_blueprint
 
 from ..runtime import FlowError, digest
+from .base_steps import LOCAL_STEPS
 
 BUILTINS = {"text.copy": "string", "text.upper": "string", "json.identity": "json"}
 
@@ -171,7 +173,15 @@ def validate_bindings(workspace, bindings, *, offline=False):
 def resolve_task(node, workspace, *, offline=False):
     if node.side_effect == "unresolved":
         unavailable("請先釐清此能力的副作用。")
-    if node.capability in BUILTINS:
+    if node.capability in LOCAL_STEPS:
+        description = {
+            "provider": "builtin", "tool": node.capability, "version": "1",
+            "inputs": {k: v.port.model_dump() for k, v in node.inputs.items()},
+            "outputs": {k: v.model_dump() for k, v in node.outputs.items()},
+            "permissions": [], "side_effect": "none", "network": False, "platforms": [sys.platform],
+            "resources": {"network": False, "model_calls": 0, "cost_micro_usd": 0},
+        }
+    elif node.capability in BUILTINS:
         if node.parameters:
             raise FlowError("GRAPH_UNSUPPORTED", "此內建工具只接受已宣告的輸入埠。")
         if node.capability_version != "1" or node.permissions or node.side_effect != "none":
@@ -247,6 +257,13 @@ def resolve_task(node, workspace, *, offline=False):
             ):
                 unavailable("本機安裝的原生元件與受信清冊不符。")
             description.update(provider="native", distribution=operation.dist.name)
+        if node.capability in MODEL_STEPS:
+            resources = description.get("resources") or {}
+            if (description["provider"] != "desktop_host"
+                or type(resources.get("model_calls")) is not int or resources["model_calls"] < 1
+                or type(resources.get("cost_micro_usd")) is not int or resources["cost_micro_usd"] < 0
+                or (record.get("network", True) and node.side_effect != "external")):
+                unavailable("模型步驟須綁定有模型呼叫、成本上限與相符授權的宿主能力。")
     return {**description, "fingerprint": digest(description)}
 
 
@@ -287,6 +304,8 @@ def resolve_graph(payload, workspace, *, offline=False, admission=None, allow_wa
             if isinstance(node, Task):
                 try:
                     rule = requirements.get(key)
+                    if rule is not None and node.capability in LOCAL_STEPS | MODEL_STEPS:
+                        unavailable("底座通用步驟使用其固定的能力契約。")
                     if rule is None:
                         binding = resolve_task(node, workspace, offline=offline)
                         locus = "host_mediated" if binding["provider"] == "desktop_host" else "local_runtime"

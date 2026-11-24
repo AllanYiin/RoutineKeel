@@ -3,6 +3,15 @@
 import uuid
 from datetime import UTC, datetime
 
+from routinekeel_contracts.base_steps import (
+    CRITIC,
+    DESIGN_KEY,
+    DOCUMENT_INDEXES,
+    JUDGE,
+    MODEL_STEPS,
+    REVISER,
+    ModelReview,
+)
 from routinekeel_contracts.references import parse_reference
 
 from ..blueprints.sessions import ASSET, Session, refs
@@ -74,7 +83,11 @@ class GraphSession(Session):
                     inputs = {**defaults, **inputs}
                 data = session.assets.ingest(inputs, directory, runtime.workspace_root, known_assets)
                 require(isinstance(data, dict) and data.keys() <= ports.keys(), "輸入含有未知埠")
+                derive_indexes = DESIGN_KEY in plan["graph"]["quality_contract"] and owner_session is None
+                require(not derive_indexes or DOCUMENT_INDEXES not in data, "文件索引由底座派生")
                 for name, port in ports.items():
+                    if derive_indexes and name == DOCUMENT_INDEXES:
+                        continue
                     require(name in data or not port.get("required", True), "缺少必要輸入：" + name)
                     if name in data:
                         checked_value(data[name], port)
@@ -104,9 +117,19 @@ class GraphSession(Session):
                 if profile is not None:
                     require(not (profile["settings"].keys() & state["config"].keys()),"工作設定與指定的設定版本重複")
                     state.update(profile=profile,config={**profile["settings"],**state["config"]})
+                if derive_indexes:
+                    from .documents import index_documents
+
+                    indexes = index_documents(runtime, session.assets, data)
+                    state[DOCUMENT_INDEXES] = indexes
+                    if DOCUMENT_INDEXES in ports:
+                        data[DOCUMENT_INDEXES] = indexes
+                        state["inputs_hash"] = digest(data)
                 atomic_json(session.path, state)
-                if "execution_review" in plan["graph"]["quality_contract"]:
+                if derive_indexes or "execution_review" in plan["graph"]["quality_contract"]:
                     session.checkpoint(state, None, "input_checked", inputs_hash=state["inputs_hash"])
+                if state.get(DOCUMENT_INDEXES):
+                    session.checkpoint(state, None, "documents_indexed", count=len(state[DOCUMENT_INDEXES]))
             return session.advance(state)
 
     @staticmethod
@@ -195,12 +218,35 @@ class GraphSession(Session):
         return deps
 
     def complete_node(self, state, node, outputs, evidence):
-        require(outputs.keys() == node["outputs"].keys(), "節點輸出埠不符")
-        for name, port in node["outputs"].items():
-            checked_value(outputs[name], port)
-        for reference in set(refs(outputs)):
-            self.assets.resolve(reference)
         record = state["nodes"][node["id"]]
+        capability = node.get("capability")
+        try:
+            require(
+                isinstance(outputs, dict) and outputs.keys() == node["outputs"].keys(),
+                "節點輸出埠不符",
+            )
+            for name, port in node["outputs"].items():
+                checked_value(outputs[name], port)
+            for reference in set(refs(outputs)):
+                self.assets.resolve(reference)
+        except FlowError:
+            if capability not in MODEL_STEPS or evidence.get("kind") != "host_receipt":
+                raise
+            self.reject_model_output(state, node["id"], evidence, "MODEL_OUTPUT_INVALID")
+            return
+        if capability in {JUDGE, CRITIC}:
+            from pydantic import ValidationError
+
+            try:
+                ModelReview.model_validate(outputs["verdict" if capability == JUDGE else "critique"])
+            except ValidationError:
+                self.reject_model_output(state, node["id"], evidence, "MODEL_REVIEW_INVALID")
+                return
+        if capability == REVISER:
+            previous = self.value(state, node["inputs"]["candidate"]["source"])
+            if type(previous) is not type(outputs["candidate"]):
+                self.reject_model_output(state, node["id"], evidence, "MODEL_REVISION_INVALID")
+                return
         policy = state["plan"]["graph"]["quality_contract"].get("execution_review")
         if policy:
             from ..quality import step_checks
@@ -236,6 +282,13 @@ class GraphSession(Session):
                                         if row["status"] != "pass"]}
                if "output_checks" in record else {}),
         )
+
+    def reject_model_output(self, state, node_id, evidence, code):
+        record = state["nodes"][node_id]
+        record.update(status="failed", error=code)
+        if "receipt" in evidence:
+            record["receipt"] = evidence["receipt"]
+        self.checkpoint(state, node_id, code.lower())
 
     def wait_for(self, state, node, kind, values):
         record = state["nodes"][node["id"]]
@@ -288,6 +341,12 @@ class GraphSession(Session):
                 if kind == "authorize_external"
                 else "等待宿主工具回執。",
             )
+            if node.get("capability") in MODEL_STEPS:
+                task["instructions"] = {
+                    JUDGE: "依 rubric 評估候選成果，回傳 verdict 的 passed、rationale、findings。",
+                    CRITIC: "依 rubric 找出可修正的問題，回傳 critique 的 passed、rationale、findings。",
+                    REVISER: "依 critique 修訂候選成果，保留未被指出的內容及輸出資料型態。",
+                }[node["capability"]]
         record["status"] = "waiting"
         state["pending_tasks"][identity] = task
         self.checkpoint(state, node["id"], "waiting", task_id=identity)
@@ -385,6 +444,15 @@ class GraphSession(Session):
             return
         tool = node["capability"]
         binding = state["bindings"][key]
+        from .base_steps import LOCAL_STEPS, execute_local_step
+
+        if tool in LOCAL_STEPS and binding["provider"] == "builtin":
+            outputs, evidence = execute_local_step(self, tool, values, node["parameters"])
+            self.complete_node(state, node, outputs, evidence)
+            return
+        if tool == REVISER and values["critique"]["passed"]:
+            self.complete_node(state, node, {"candidate": values["candidate"]}, {"kind": "revision_not_required"})
+            return
         if binding["provider"] == "portable_local":
             from .qualification import execute_local
 
@@ -531,6 +599,8 @@ class GraphSession(Session):
             "revision": digest(state),
             "nodes": nodes,
         }
+        if state.get(DOCUMENT_INDEXES):
+            result[DOCUMENT_INDEXES] = state[DOCUMENT_INDEXES]
         if any(p.get("claimed") for p in waits):
             result.update(code="RECONCILE_REQUIRED", next_action="reconcile")
         if status == "complete":
@@ -794,6 +864,7 @@ class GraphSession(Session):
                 "dispatch": {
                     "tool": task["scope"]["tool"],
                     "arguments": task["inputs"],
+                    **({"instructions": task["instructions"]} if "instructions" in task else {}),
                     **(
                         {"parameters": task["scope"]["parameters"]}
                         if "parameters" in task["scope"]

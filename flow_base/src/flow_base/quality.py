@@ -321,8 +321,10 @@ def corrected_observations(graph, nodes, outputs):
 
 
 def assess(runtime, state, outputs):
+    from routinekeel_contracts.base_steps import DESIGN_KEY
+
     graph = state["plan"]["graph"]
-    if "execution_review" in graph["quality_contract"]:
+    if {"execution_review", DESIGN_KEY} & graph["quality_contract"].keys():
         from routinekeel_contracts.graph_validator import validate_blueprint
 
         design, _ = validate_blueprint(graph)

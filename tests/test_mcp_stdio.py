@@ -102,7 +102,9 @@ def test_stdio_requires_two_review_turns_and_returns_both_diagrams(tmp_path, wor
             final = finalized["result"]
             diagram = final["design_review"]["final_diagram"]
             assert "底座 · 檢核輸入" in diagram
-            assert "底座 · 檢核與交付輸出" in diagram
+            assert "底座 · 檢核輸出" in diagram
+            assert "底座 · 整理交付結果" in diagram
+            assert "base.delivery.prepare" in final["review_sections"]["process"]["display_text"]
             assert "工作流 · copy" in diagram
             approval = {
                 "project_id": project["project_id"], "expected_revision": final["revision"],
@@ -164,6 +166,7 @@ def test_stdio_negotiation_queue_tool_set_and_path_boundary(workspace):
                              'update_workflow', 'rollback_workflow_update', 'recover_workflow_update',
                              'install_workflow', 'blueprint_task', 'blueprint_completion',
                              'studio_create_project', 'studio_list_projects', 'studio_get_project',
+                             'studio_load_skills', 'studio_search_document',
                              'studio_update_project', 'studio_archive_project', 'studio_restore_project',
                              'studio_next_question', 'studio_submit_answer', 'studio_pause_interview',
                              'studio_resume_interview', 'studio_preview_source', 'studio_start_interview',

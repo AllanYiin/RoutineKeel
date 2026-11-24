@@ -1,5 +1,17 @@
 # Workflow Compiler & Studio 階段清單
 
+## 底座通用步驟與 Documa
+
+依[分階段開發計畫](../docs/specs/base-steps/implementation-plan.md)及[實測紀錄](../docs/specs/base-steps/verification.md)驗收。Stage 編號屬此項變更。
+
+- [x] Stage 0 建立可重跑的基線。
+- [x] Stage 1 打通定稿到正式成果。
+- [x] Stage 2 驗證報表勾稽與計畫重用。
+- [x] Stage 3 驗證 Documa 文件與技能入口。
+- [x] Stage 4 驗證模型審查與有限回修。
+- [x] Stage 5 補齊整合、回歸與邊界測試。
+- [x] Stage 6 完成文件與交接。
+
 ## 現行宿主互動工作
 
 - 已移除舊網頁流程、MCP 引導入口與專屬測試，保留通用服務、既有 Tk 及資料庫相容性。

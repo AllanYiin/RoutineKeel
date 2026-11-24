@@ -6,6 +6,15 @@ from datetime import date
 from urllib.parse import urlsplit
 
 from pydantic import Field, JsonValue, ValidationError
+from routinekeel_contracts.base_steps import (
+    BOUNDARIES,
+    DESIGN_KEY,
+    DOCUMENT_INDEXES,
+    TASKS,
+    VERSION,
+    catalog,
+    design_steps,
+)
 from routinekeel_contracts.execution_review import ExecutionReview, reviewed_graph_hash, step_paths
 from routinekeel_contracts.graph_validator import port_for, validate_blueprint, validate_structure
 from routinekeel_contracts.models import Contract
@@ -51,7 +60,20 @@ def fail(message):
 def _diagram(model, *, final):
     lines = ["flowchart TD"]
     if final:
-        lines.extend(['  rk_input["底座 · 檢核輸入"]', '  rk_output["底座 · 檢核與交付輸出"]'])
+        for graph_id, capability in (
+            ("rk_input", "base.input.check"),
+            ("rk_documa", "base.document.index"),
+            ("rk_output", "base.output.check"),
+            ("rk_delivery", "base.delivery.prepare"),
+        ):
+            lines.append(f'  {graph_id}["底座 · {BOUNDARIES[capability][0]}"]')
+        lines.extend(
+            [
+                "  rk_input -->|含文件| rk_documa",
+                "  rk_output -->|符合交付條件| rk_delivery",
+                '  rk_output -. 交付未通過 .-> rk_preview["保留可用預覽與評估"]',
+            ]
+        )
     labels = {path: "step_" + str(index) for index, (path, _) in enumerate(step_paths(model), 1)}
     checks = model.quality_contract.get("execution_review", {}).get("critical_steps", {})
     if final and checks:
@@ -74,7 +96,11 @@ def _diagram(model, *, final):
                 marker += " · 機器檢核"
             if review.get("human"):
                 marker += " · 須人工校閱"
-            label = "工作流 · " + path + marker if final else path + marker
+            capability = getattr(node, "capability", None)
+            if final and capability in TASKS:
+                label = f"底座 · {TASKS[capability][0]} · {path}{marker}"
+            else:
+                label = "工作流 · " + path + marker if final else path + marker
             lines.append(f'  {labels[path]}["{label}"]')
             if review.get("human") or any(
                 not rule.get("tolerate") for rule in review.get("machine", [])
@@ -89,7 +115,9 @@ def _diagram(model, *, final):
             if prefix and not dependencies[node.id]:
                 lines.append(f"  {labels[prefix[:-1]]} -. 子流程 .-> {labels[path]}")
             if final and not prefix and not dependencies[node.id]:
-                lines.append(f"  rk_input --> {labels[path]}")
+                lines.extend(
+                    [f"  rk_input -->|無文件| {labels[path]}", f"  rk_documa --> {labels[path]}"]
+                )
             if hasattr(node, "body"):
                 render(node.body, path + "/")
         if final and not prefix:
@@ -135,7 +163,7 @@ def inventory(model):
             f"input/{name}",
             None,
             "other",
-            "run_input",
+            "derived" if name == DOCUMENT_INDEXES and port.type == "object" else "run_input",
             port=port.model_dump(mode="json"),
         )
     for path, node in step_paths(model):
@@ -246,6 +274,7 @@ def draft_presentation(graph):
     return {
         "presentation_version": PRESENTATION_VERSION,
         "diagram": _diagram(model, final=False),
+        "base_step_catalog": catalog(),
         "steps": steps,
         "variables": variables,
         "tools": tools,
@@ -331,9 +360,10 @@ def review_sections(proposal):
                 "失敗或中斷後的處理": decisions["recovery"],
                 **(
                     {
+                        "底座通用步驟與資料契約": final.get("base_steps", {}),
                         "每步用途與完成條件": {
                             path: step["decision"] for path, step in final["steps"].items()
-                        }
+                        },
                     }
                     if final
                     else {}
@@ -566,7 +596,11 @@ def final_presentation(repository, proposal, review):
     runtime = policy.model_dump(mode="json", exclude_unset=True)
     composed = {
         **graph,
-        "quality_contract": {**graph["quality_contract"], "execution_review": runtime},
+        "quality_contract": {
+            **graph["quality_contract"],
+            "execution_review": runtime,
+            DESIGN_KEY: VERSION,
+        },
         "provenance": {**graph["provenance"], "design": visible_design(proposal["decisions"])},
     }
     if "lineage" in proposal:
@@ -575,6 +609,7 @@ def final_presentation(repository, proposal, review):
     presentation = {
         "draft_diagram": proposal["draft_design"]["diagram"],
         "final_diagram": _diagram(final, final=True),
+        "base_steps": design_steps(final),
         "steps": steps,
         "variables": variables,
         "tools": {

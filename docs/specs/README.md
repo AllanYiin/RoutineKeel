@@ -7,6 +7,7 @@ v1.3.0 Stage 17–26 延伸 Pack／Pattern、跨環境綁定及改版回歸。�
 | 查詢項目 | 文件 |
 | --- | --- |
 | 藍圖版本、資料埠、分支與有限迭代 | [Graph v2 契約](blueprint-graph-v2.md) |
+| 底座通用步驟、勾稽、Documa 與模型回修 | [技術規格](base-steps/technical.md) · [白話規格](base-steps/user.md) · [分階段開發計畫](base-steps/implementation-plan.md) · [驗收紀錄](base-steps/verification.md) |
 | 建置、臨時工作區驗收及安裝 | [藍圖安裝](../../flow_base/docs/blueprint-install.md) |
 | 交付品質、回饋、升級與回退 | [品質判定](../../flow_base/docs/graph-quality.md) · [版本演進](../../flow_base/docs/workflow-evolution.md) |
 | 本機自動測試、首次啟動與待驗收項目 | [整合驗收報告](../test-report-next.md) |

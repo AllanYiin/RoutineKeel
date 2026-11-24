@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 488" role="img" aria-labelledby="title desc">
+  <title id="title">RoutineKeel 通用步驟模組架構</title>
+  <desc id="desc">對話或 CLI 進入 Studio，Studio 與底座使用相同契約。底座先試做候選再安裝，正式執行使用 Documa 與宿主模型，合格成果持久保存。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 8 4 0 8z" fill="#38516a"/></marker>
+  </defs>
+  <rect width="960" height="488" fill="#f4f7fa"/>
+  <g font-family="Microsoft JhengHei, Noto Sans CJK TC, sans-serif" fill="#172b3f">
+    <text x="28" y="41" font-size="25" font-weight="bold">RoutineKeel 通用步驟模組架構</text>
+    <g fill="#ffffff" stroke="#a5b5c5" stroke-width="1.5">
+      <rect x="28" y="78" width="185" height="87" rx="9"/>
+      <rect x="269" y="78" width="215" height="87" rx="9"/>
+      <rect x="555" y="78" width="377" height="87" rx="9"/>
+      <rect x="269" y="210" width="215" height="86" rx="9" fill="#e8f1f9" stroke="#326990"/>
+      <rect x="555" y="210" width="377" height="86" rx="9"/>
+      <rect x="28" y="362" width="235" height="88" rx="9"/>
+      <rect x="321" y="362" width="195" height="88" rx="9"/>
+      <rect x="555" y="362" width="377" height="88" rx="9" fill="#e8f1f9" stroke="#326990"/>
+    </g>
+    <g stroke="#38516a" stroke-width="2" fill="none" marker-end="url(#arrow)">
+      <path d="M214 121H258"/>
+      <path d="M485 121H545"/>
+      <path d="M378 166V200"/>
+      <path d="M485 252H545"/>
+      <path d="M743 166V200"/>
+      <path d="M743 297V352"/>
+      <path d="M568 286 254 351"/>
+      <path d="M642 297 505 352"/>
+    </g>
+    <g font-size="18" font-weight="bold">
+      <text x="45" y="110">宿主對話／CLI</text>
+      <text x="285" y="110">Workflow Studio</text>
+      <text x="572" y="110">底座 Builder</text>
+      <text x="285" y="242">共享版本化契約</text>
+      <text x="572" y="242">Graph Runtime</text>
+      <text x="45" y="395">本機 Documa</text>
+      <text x="338" y="395">宿主模型</text>
+      <text x="572" y="395">本機正式交付</text>
+    </g>
+    <g font-size="15">
+      <text x="45" y="138">設計與確認</text>
+      <text x="285" y="138">自訂步驟、定稿圖與藍圖</text>
+      <text x="572" y="138">候選套件 → 臨時工作區實跑 → 正式安裝</text>
+      <text x="285" y="270">固定 ID、資料埠、確認指紋</text>
+      <text x="572" y="270">檢核輸入 → 執行步驟 → 檢核輸出</text>
+      <text x="45" y="424">文件解析、圖查詢、技能依賴</text>
+      <text x="338" y="424">審查、修訂、回執</text>
+      <text x="572" y="424">整理成果 → 版本保存 → 連結及 ZIP</text>
+    </g>
+  </g>
+</svg>
