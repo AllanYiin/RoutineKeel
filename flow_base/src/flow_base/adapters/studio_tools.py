@@ -358,7 +358,7 @@ def register(server, workspace, result):
         design: dict | None = None,
         skills: list[dict] | None = None,
     ) -> dict:
-        """Show all review sections, including step data contracts. Build preflight applies to building."""
+        """Show the returned Mermaid section verbatim and all review sections. Build preflight applies to building."""
         return call(
             "prepare_blueprint",
             project_id=project_id,
@@ -380,7 +380,7 @@ def register(server, workspace, result):
         draft_reply: str | None = None,
         shown_sections: dict[str, str] | None = None,
     ) -> dict:
-        """Relay draft approval and section hashes. Set each undecided tool_locations entry to 'deferred'."""
+        """Relay draft approval and all section hashes, including diagram. Use 'deferred' for open tool locations."""
         return call(
             "finalize_workflow_design", project_id=project_id, expected_revision=expected_revision,
             request_id=request_id, draft_id=draft_id, review=review, draft_reply=draft_reply,
@@ -398,7 +398,7 @@ def register(server, workspace, result):
         review_hash: str | None = None,
         shown_sections: dict[str, str] | None = None,
     ) -> dict:
-        """Relay the user's actual decision and the IDs and SHA-256 values of all displayed final sections."""
+        """Relay the user's decision and every final section hash, including the Mermaid section shown verbatim."""
         return call(
             "export_blueprint",
             project_id=project_id,

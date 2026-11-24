@@ -22,7 +22,8 @@ _THRESHOLD = re.compile(
     r"threshold|tolerance|cutoff|minimum|maximum|timeout|^min_|^max_|^limit", re.I
 )
 _LOCI = {"local_runtime", "host_mediated", "external_service", "deferred"}
-PRESENTATION_VERSION = 2
+PRESENTATION_VERSION = 3
+REVIEWABLE_PRESENTATION_VERSIONS = (2, PRESENTATION_VERSION)
 
 
 class ResearchSource(Contract):
@@ -48,11 +49,15 @@ def fail(message):
     raise StudioError("BLUEPRINT_BLOCKED", message)
 
 
-def _diagram(model, *, final):
+def render_workflow_diagram(model, *, final):
+    """Render a validated graph using the same workflow edges in both review views."""
     lines = ["flowchart TD"]
     if final:
         lines.extend(['  rk_input["底座 · 檢核輸入"]', '  rk_output["底座 · 檢核與交付輸出"]'])
-    labels = {path: "step_" + str(index) for index, (path, _) in enumerate(step_paths(model), 1)}
+    labels = {
+        path: "step_" + path.replace("_", "_u").replace("-", "_h").replace("/", "_s")
+        for path, _ in step_paths(model)
+    }
     checks = model.quality_contract.get("execution_review", {}).get("critical_steps", {})
     if final and checks:
         lines.append('  rk_stop["停止並保存檢核證據"]')
@@ -93,7 +98,7 @@ def _diagram(model, *, final):
             if hasattr(node, "body"):
                 render(node.body, path + "/")
         if final and not prefix:
-            for value in graph.outputs.values():
+            for value in sorted(set(graph.outputs.values())):
                 lines.append(f"  {labels[parse_reference(value).owner]} --> rk_output")
 
     render(model)
@@ -245,7 +250,7 @@ def draft_presentation(graph):
     steps, variables, tools = inventory(model)
     return {
         "presentation_version": PRESENTATION_VERSION,
-        "diagram": _diagram(model, final=False),
+        "diagram": render_workflow_diagram(model, final=False),
         "steps": steps,
         "variables": variables,
         "tools": tools,
@@ -304,6 +309,24 @@ def step_contract_checklist(graph, steps):
 
     visit(graph)
     return checklist
+
+
+def diagram_review_section(proposal):
+    final = proposal.get("design_review")
+    diagram = final["final_diagram"] if final else proposal["draft_design"]["diagram"]
+    return {
+        "title": "工作流程圖",
+        "display_text": f"```mermaid\n{diagram}\n```",
+        "sha256": digest(
+            {
+                "stage": "final" if final else "draft",
+                "project_id": proposal["project_id"],
+                "revision": proposal["revision"],
+                "section": "diagram",
+                "values": diagram,
+            }
+        ),
+    }
 
 
 def review_sections(proposal):
@@ -368,7 +391,7 @@ def review_sections(proposal):
         ),
     }
     stage = "final" if final else "draft"
-    return {
+    sections = {
         key: {
             "title": title,
             "display_text": json.dumps(values, ensure_ascii=False, indent=2),
@@ -384,20 +407,25 @@ def review_sections(proposal):
         }
         for key, (title, values) in groups.items()
     }
+    return {"diagram": diagram_review_section(proposal), **sections}
 
 
 def review_text(proposal):
     final = proposal.get("design_review")
-    diagram = final["final_diagram"] if final else proposal["draft_design"]["diagram"]
     reply = "確認定稿並匯出" if final else "初稿可進入定稿"
-    lines = ["待校閱的設計提案", f"```mermaid\n{diagram}\n```"]
+    sections = proposal["review_sections"]
+    lines = [
+        "待校閱的設計提案。請原樣呈現本版流程圖；如需修改流程，請更新藍圖後重新預覽。",
+        sections["diagram"]["display_text"],
+    ]
     if proposal["confirmed"]:
         lines += [
             "### 已答覆的訪談需求",
             json.dumps(proposal["confirmed"], ensure_ascii=False, indent=2),
         ]
-    for section in proposal["review_sections"].values():
-        lines += ["### " + section["title"], section["display_text"]]
+    for key, section in sections.items():
+        if key != "diagram":
+            lines += ["### " + section["title"], section["display_text"]]
     lines.append(
         "請逐組校閱以上所有預填內容。想調整時，直接說明要刪減、修改或稍後決定的項目。"
         f"若全數同意，回覆「{reply}」。未答覆的項目仍待校閱。"
@@ -409,6 +437,12 @@ def require_shown_sections(proposal, shown_sections):
     sections = proposal.get("review_sections")
     if not sections:
         fail("這份設計缺少預填校閱清單，請重新預覽初稿。")
+    diagram_required = (
+        proposal.get("draft_design", {}).get("presentation_version") == PRESENTATION_VERSION
+    )
+    if diagram_required or "diagram" in sections:
+        if sections.get("diagram") != diagram_review_section(proposal):
+            fail("工作流程圖與本版校閱內容不一致，請重新預覽。")
     expected = {key: item["sha256"] for key, item in sections.items()}
     if shown_sections != expected:
         supplied = shown_sections if isinstance(shown_sections, dict) else {}
@@ -426,7 +460,8 @@ def design_progress(state):
         return None
     if not proposal or (
         proposal.get("revision") != state["revision"]
-        or proposal.get("draft_design", {}).get("presentation_version") != PRESENTATION_VERSION
+        or proposal.get("draft_design", {}).get("presentation_version")
+        not in REVIEWABLE_PRESENTATION_VERSIONS
     ):
         return {
             "stage": "draft_stale" if proposal else "draft_required",
@@ -574,7 +609,7 @@ def final_presentation(repository, proposal, review):
     final, _ = validate_blueprint(composed)
     presentation = {
         "draft_diagram": proposal["draft_design"]["diagram"],
-        "final_diagram": _diagram(final, final=True),
+        "final_diagram": render_workflow_diagram(final, final=True),
         "steps": steps,
         "variables": variables,
         "tools": {
@@ -617,7 +652,8 @@ def finalize(
             current.get("proposal_id") != draft_id
             or current.get("revision") != expected_revision
             or current.get("status") != "design_review_required"
-            or current.get("draft_design", {}).get("presentation_version") != PRESENTATION_VERSION
+            or current.get("draft_design", {}).get("presentation_version")
+            not in REVIEWABLE_PRESENTATION_VERSIONS
         ):
             fail("請先展示最新的工作流初稿，定稿須對應同一版本。")
         if state["phase"] == "paused":

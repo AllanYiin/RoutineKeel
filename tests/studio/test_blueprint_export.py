@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from flow_base.core.service import WorkflowService
 from workflow_studio.contracts import StudioError
+from workflow_studio.conversation.design_review import require_shown_sections
 from workflow_studio.conversation.facade import dispatch
 from workflow_studio.service import StudioService
 
@@ -45,7 +46,7 @@ def approved(proposal):
     }
 
 
-def finalize(studio, root, proposal, review):
+def finalize(studio, root, proposal, review, **overrides):
     return dispatch(
         studio,
         root,
@@ -60,6 +61,7 @@ def finalize(studio, root, proposal, review):
             "shown_sections": {
                 key: item["sha256"] for key, item in proposal["review_sections"].items()
             },
+            **overrides,
         },
     )
 
@@ -125,6 +127,56 @@ def test_real_importer_round_trip_immutable_export_and_reopen(tmp_path, workflow
     payload.write_text(json.dumps({"inputs": {"message": "a", "needs_review": True}}))
     waiting = runtime.run_workflow_sync({"task": "routing", "source": payload})["blueprint"]
     assert waiting["pending"]["skill_documents"] == {"review": {"SKILL.md": "請只在交付時校閱"}}
+
+
+def test_canonical_diagram_is_required_at_both_review_gates(tmp_path, workflow_design_review):
+    with StudioService.open_workspace(tmp_path) as studio:
+        state, params = draft(studio, tmp_path)
+        first = dispatch(studio, tmp_path, "prepare_blueprint", params)
+        params["graph"]["nodes"].reverse()
+        initial = dispatch(
+            studio,
+            tmp_path,
+            "prepare_blueprint",
+            {**params, "expected_revision": first["revision"], "request_id": "reordered"},
+        )
+        diagram = initial["draft_design"]["diagram"]
+        assert diagram == first["draft_design"]["diagram"]
+        assert "step_route -->|true| step_manual" in diagram
+        assert "step_route -->|false| step_copy" in diagram
+        assert "step_manual --> step_done" in diagram
+        assert "step_copy --> step_done" in diagram
+        section = initial["review_sections"]["diagram"]
+        assert section["display_text"] == f"```mermaid\n{diagram}\n```"
+        resumed = dispatch(studio, tmp_path, "next_batch", {"project_id": state["project_id"]})
+        assert resumed["review_sections"]["diagram"] == section
+        assert resumed["text"].count(section["display_text"]) == 1
+
+        review = workflow_design_review(initial)
+        omitted = approved(initial)["shown_sections"]
+        del omitted["diagram"]
+        incomplete = {**initial, "review_sections": dict(initial["review_sections"])}
+        del incomplete["review_sections"]["diagram"]
+        with pytest.raises(StudioError, match="與本版校閱內容不一致"):
+            require_shown_sections(incomplete, omitted)
+        legacy = {
+            **incomplete,
+            "draft_design": {**initial["draft_design"], "presentation_version": 2},
+        }
+        require_shown_sections(legacy, omitted)
+        with pytest.raises(StudioError, match="工作流程圖"):
+            finalize(studio, tmp_path, initial, review, shown_sections=omitted)
+        final = finalize(studio, tmp_path, initial, review)
+        final_diagram = final["design_review"]["final_diagram"]
+        assert "step_route -->|true| step_manual" in final_diagram
+        assert "step_route -->|false| step_copy" in final_diagram
+        assert "step_done --> rk_output" in final_diagram
+        stale = approved(final)
+        stale["shown_sections"]["diagram"] = section["sha256"]
+        with pytest.raises(StudioError, match="工作流程圖"):
+            dispatch(studio, tmp_path, "export_blueprint", stale)
+        result = dispatch(studio, tmp_path, "export_blueprint", approved(final))
+        assert result["status"] == "exported"
 
 
 def test_declined_stale_incomplete_or_private_design_never_delivered(

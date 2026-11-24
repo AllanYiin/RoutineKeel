@@ -39,10 +39,10 @@ uv run --project workflow_studio python -m workflow_studio --workspace <RoutineK
 
 ### 初稿、參數研究與定稿確認
 
-1. 用 `studio_preview_blueprint` 取得初稿。在對話中先展示第一張 `draft_design.diagram`，圖上只顯示工作流步驟與分支。依 `review_sections` 四組清單在對話中逐項展示目標、輸入與交付、步驟與例外、技能工具與變數、業務規則和驗收的實際提案值。使用者可逐組校閱、一起確認，或直接指出要刪改、暫緩的內容。以 `studio_record_replies` 記錄實際答覆，重新預覽變更的初稿。暫緩或拒絕須有新的使用者答覆才能解除。
+1. 用 `studio_preview_blueprint` 取得初稿。先原樣展示 `review_sections.diagram.display_text` 的 Mermaid 區塊，圖上只顯示工作流步驟與分支。再逐項展示其餘四組校閱章節的實際提案值。使用者可逐組校閱、一起確認，或直接指出要刪改、暫緩的內容。用 `studio_record_replies` 記錄實際答覆，修改藍圖後交回 Studio 重新出圖。暫緩或拒絕須有新的使用者答覆才能解除。
 2. 宿主依 `draft_design.research_requests` 使用網頁搜尋，帶入工具名、版本及參數名。用 `studio_research_parameter_source` 或 CLI `research_parameter_source` 提交公開第一手 HTTPS 頁面 `url` 與含採用值的原文 `excerpt`。Studio 會擷取實際文字並回傳 `accessed_on` 與 `source_sha256`。研究紀錄也需提供查詢、標題、適用條件、理由及採用值。入口接受支援網域的 HTML、純文字及 Markdown 頁面。證據不足時，建議值留在初稿。
 3. 完成初稿所有章節的展示及討論後，詢問使用者是否同意全部預填並回覆「初稿可進入定稿」。用 `studio_finalize_workflow_design` 提交相同初稿 ID、預期版次、具名請求、`review`、實際回覆 `draft_reply` 及 `shown_sections`。`shown_sections` 為已展示章節 ID 到 `review_sections[id].sha256` 的對照，由宿主轉交。在 `step_decisions` 逐步預填 `purpose`、`completion`、`critical`、`rationale`。在 `policy` 為所有關鍵步驟設定檢核，並說明模式及範圍。定稿另填 `skills`、`tool_locations`、`glossary` 及 `variables`。模型或門檻選值改變時，先更新初稿。可調變數的已確認值跟隨藍圖版本。
-4. 在對話中展示第二張流程圖 `design_review.final_diagram` 和本版全部 `review_sections`。圖上分別標示底座的「檢核輸入」「檢核與交付輸出」、自訂步驟、人工等待、檢核及失敗去向。展示定稿新增和沿用的預填內容後，請使用者另一次確認全數採用並回覆「確認定稿並匯出」。將實際回覆、定稿 ID、`review_hash` 及本版 `shown_sections` 交給 `studio_export_blueprint`。兩張圖與章節內容以白話在對話顯示，保留必要的設定原值。檔案連結供備查。CLI 對應操作為 `prepare_blueprint`、`finalize_workflow_design`、`export_blueprint`。既有工作流演進依序用 `prepare`、`finalize`、`export`，沿用相同校閱契約。
+4. 在對話中原樣展示本版 `review_sections.diagram.display_text`，再展示其餘定稿章節。圖上分別標示底座的「檢核輸入」「檢核與交付輸出」、自訂步驟、人工等待、檢核及失敗去向。展示定稿新增和沿用的預填內容後，請使用者另一次確認全數採用並回覆「確認定稿並匯出」。將實際回覆、定稿 ID、`review_hash` 及本版 `shown_sections` 交給 `studio_export_blueprint`。初稿定稿都須轉交當版的 `diagram` 章節指紋及其餘章節指紋。檔案連結供備查。CLI 對應操作為 `prepare_blueprint`、`finalize_workflow_design`、`export_blueprint`。既有工作流演進依序用 `prepare`、`finalize`、`export`，沿用相同校閱契約。
 
 跨對話續編時，用 `studio_get_project` 讀取 `design_progress` 的目前階段及 `next_action`，用 `studio_next_questions` 取得同一階段的提示或待答問題。舊版未匯出的設計如果缺少初稿校閱契約，會指向重新預覽。已保存的使用者答覆可沿用。
 
