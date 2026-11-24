@@ -18,8 +18,20 @@ Pack 是設計及驗收案例的發行單位。可重用 Pattern 會在 Studio �
 | Text 1.0.0 | 自然改寫、保留數字與引用、指定人工校閱。需符合該環境的宿主模型品質與核准規則。 |
 | Data 1.0.0 | CSV 讀取契約、以識別鍵及 Decimal 核對資料、正式交付 Gate。 |
 | Data Adapter 1.0.0 | 獨立的本機 Python wheel。對明確提供的 CSV 文字及表格做確定性讀取和勾稽。 |
+| Translation Review 1.0.0 | 翻譯初稿的批評與修訂子代理。可嵌在現有翻譯者之後。 |
+| Translation Review Loop 1.0.0 | 修訂後交回批評者複審，最多兩輪。達上限仍未通過時等待人工處理。 |
 
 可選 Pack 與 Data Adapter 位於具名候選的 `domain-packs/` 並附獨立 `SHA256SUMS`。只有要在實際環境執行讀取與勾稽時，才準備需要的 Adapter。舊底座及原有範例沿用 `release/` 的套件和校驗清單。
+
+### 翻譯子代理試做
+
+範例工作流為「翻譯者 → 批評者 → 修訂者」。`text.translation_review@1.0.0` 僅封裝批評者與修訂者。Studio 在 `translation` 任務有 `translation_quality_review` 意圖、可提供原文、初稿和目標語言且允許宿主處理時，會建議這個 Pattern。採用後，將 `source` 與 `target_language` 接到工作流輸入，`draft` 接翻譯者輸出，最後交付接到修訂者的 `result`。
+
+兩個能力的節點參數各自保存 `agent_role`、`context_scope` 和 `instructions`。宿主 Adapter 應依角色委派獨立子代理，傳入當次所需資料。批評者產出結構化 `issues`，修訂者同時取得原文並逐項核對批評後再改稿。角色定義由版本化 Pack 持久保存，每次執行依待辦和檢查點交接。
+
+需要修訂後回審時，Studio 可依 `translation_iterative_review` 意圖建議 `text.translation_review_loop@1.0.0`。把翻譯者的輸出接到 `state`，其物件包含 `source`、`draft` 和 `target_language`。每輪由批評者檢查當前譯文。批評者接受時保留當前譯文，否則交修訂者更新 `draft`。兩輪後仍未獲批評者接受時暫停並等待人工處理。通過的 `result` 物件中的 `draft` 為最終譯文。
+
+本機驗收以 `uv run --locked --project workflow_studio --group dev python -m pytest tests/studio/test_translation_review_rwp.py tests/studio/test_translation_review_loop.py -q` 執行。案例涵蓋漏譯期限、數值誤譯、正確初稿與空白資料。隔離回放檢查設計建議、採用、嵌入、三步接線、第二輪回審及上限處理。正式建置仍需要目標環境中的實際宿主 Adapter 與資格收據。
 
 ### 宿主觀察與疑難排除
 
