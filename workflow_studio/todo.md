@@ -1,5 +1,18 @@
 # Workflow Compiler & Studio 階段清單
 
+## 現行宿主互動工作
+
+- 已移除舊網頁流程、MCP 引導入口與專屬測試，保留通用服務、既有 Tk 及資料庫相容性。
+- 新方向以 [宿主對話逐層確認規格](specs/redesign-host-reasoning.md) 為準。
+- [ ] 設計並實作逐層狀態、問題／答案契約及確認紀錄。
+- [ ] 接入 Claude Code 與 Codex，分別完成真實宿主驗收。
+- [ ] 實作藍圖包匯出與完整性檢查。
+- [ ] 依後續決策設計轉換器與底座首次安裝。
+
+## 既有套件階段紀錄
+
+以下保留原套件的歷史進度，不代表新的宿主流程已完成。
+
 RK-NEXT v1.3.0 的 [Stage 17 資產契約](../docs/development/stage-17-report.md)及
 [Stage 18 Registry](../docs/development/stage-18-report.md)已通過 Windows 專項。
 [Stage 19 子圖擷取](../docs/development/stage-19-report.md)已由已安裝工作流實際驗證。

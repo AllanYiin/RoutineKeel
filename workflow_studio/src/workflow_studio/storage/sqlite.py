@@ -83,7 +83,11 @@ class SQLiteRepository:
             if SCHEMA_VERSION >= 14:
                 required |= {"studio_release_reconciliations"}
             if SCHEMA_VERSION >= 15:
-                required |= {"studio_interviews", "studio_interview_revisions"}
+                required |= {
+                    "studio_guided_sessions",
+                    "studio_interviews",
+                    "studio_interview_revisions",
+                }
             if SCHEMA_VERSION >= 16:
                 required |= {
                     "studio_domain_packs",

@@ -479,3 +479,117 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
   正式發布仍須 main／人工 workflow_dispatch／publish_release=true，且新增 Studio 成功依賴。
 - YAML 解析及矩陣／發布依賴檢查通過；本機 ci_environment 確認 Runtime 無 Studio 可匯入。
   Ruff check／format 通過。CI 執行結果待實際 run 證據，真人／模型與交付 Gate 仍未完成。
+## 三平台 CI 修正與持久操作事件
+
+- PR #9 的第一次 run 44236192522：底座三平台成功；Studio Windows 518 passed／1 failed，
+  macOS／Ubuntu 各 398 passed／121 failed。實際日誌與修正說明見 platform-acceptance.md。
+- `3924c6d` 修正 Verifier 對 POSIX Python symlink 的解析，WSL 實際重現離開 venv 後確認恢復；
+  Windows 舊模板測試先正規化 Git 換行，再分別驗證 LF／CRLF 舊套件。相關本機 16 passed／40.54 秒，
+  模板 3 passed／6.14 秒。第二次 run 44245189603 的逐平台證據同樣見 platform-acceptance.md。
+- 原規格 §10.1 的生成／驗證完成及待核准事件先由五項測試重現缺漏，再補入既有 EventStore；
+  完成事件與建置／報告／狀態同交易，失敗保存最後確認階段，不在事件中複製原始例外或來源資料。
+- 額外注入建置結果讀回失敗，重現完成與失敗並存；將結果讀回納入提交交易後，
+  test_operation_events／test_compiler／test_verifier／test_model_repair／test_build_reviews
+  **48 passed，78.99 秒**。機器 JUnit：`dist/posix-repro/operation-final-regression.xml`。
+- 事件第一版啟動的完整本機非桌面回歸 **534 passed、3 deselected，811.20 秒**，
+  JUnit 為 `dist/posix-repro/full-studio.xml`；本機 FFmpeg 可用，所以未跳過六個 P2 工程測試。
+  這輪 collection 早於額外的結果讀回負例；最後交易補強由上述 48 項覆蓋，最新 commit 的完整回歸以後續 CI 為準。
+- 此次沒有 schema 遷移、不補造舊事件、不授予核准、不改底座。詳細契約及強制終止限制見
+  operation-events.md；新事件仍須隨最新程式版本取得完整三平台回歸。
+
+## 交付文件與入門案例預備
+
+- 新增 user-guide、developer-guide、privacy-and-model-usage、known-issues、upgrade-and-rollback；
+  更新架構、來源格式與 README，移除已過時的 Stage 0／影片尚未實作描述。
+- 五份文件分別以 technical-documentation-writer 的 doc_quality_audit（tutorial／reference／how-to／reference／migration-guide）
+  檢查，均 100/100；這只證明結構訊號齊全，不代表內容或產品已放行。37 份 README／docs 的本機連結與 code fence 檢查無錯誤。
+- examples/first-copy 由 UI model 依指南建立專案、匯入／推導／採用、試做、具名工程核准、隔離發布、
+  重開還原，再用第二份輸入由獨立 Runtime 執行成功、registered_requests=0，原始範例 bytes 保持不變。
+  機器證據：`dist/documentation-check/d2d2e405b96c4081b77fa30aea8a587a/result.json`。
+- 指南中的 status／help 及 Python Service 建案範例實際執行，schema=14、version=0.1.0。
+  沒有啟動原生視窗，未執行真人操作、正式安裝器或整包升級回退；Stage 13 仍未完成。
+- 後續已完成 Windows 新環境安裝預檢：兩個實際 wheel、鎖定且驗 hash 的依賴、非 editable、
+  互相隔離的 Studio／Runtime；入門案例試做／發布及第二份輸入的底座獨立執行通過。
+  117 個檔案的同版本工作區副本可重開並再次試做，原工作區不變。
+  命令、wheel 指紋、初輪檢查程式錯誤及限制見 installation-preflight.md；正式安裝器仍待。
+
+## Studio 候選 ZIP 與啟動器
+
+- `tools/release.py --project studio` 新增明確選取的 Studio ZIP；未帶參數仍建立原有三個底座／流程包。
+  既有 manifest／Runtime／workflow 算法沒有改動。發行產物及私人環境仍不進 Git。
+- 新包重用底座 bootstrap 建立 Runtime `.venv`，再以具名鎖準備 `.studio-venv`；依賴由 uv.lock 匯出且驗 hash。
+  兩個環境會檢查 Python prefix／版本／import／互不依賴，第二次啟動重用既有環境。
+  更新失敗保存失敗目錄並還原舊 Studio 環境，不覆蓋專案資料。提供 Windows bat／PowerShell、POSIX sh／command 入口。
+- source.zip 只取 Git 清單並明確排除私密設定／狀態／成果／快取／specs 與連結；原測試機文件路徑替換。
+  測試先重現「被誤追蹤的 outputs/private.txt 仍會入包」，補排除後通過。
+  wheel 成員及 bytes 逐項對照追蹤來源，拒絕未追蹤、被改寫或含測試機路徑的內容。
+- installer／inventory 單元測試：**12 passed、1 POSIX symlink skipped，0.71 秒**。
+  第一輪 mock 擋到 platform 的內部 subprocess，修正測試的固定 OS／CPU 後再測，未改產品平台判斷。
+- 實際候選 ZIP 在 Windows、含空白／中文的新目錄完成 prepare-only、重複 status、bat status、
+  安裝環境的來源匯入／試做／工程核准／發布／重開，以及第二輸入由獨立 Runtime 執行，模型呼叫 0。
+  改動 wheel 後啟動器拒絕，原環境 marker 不變。機器證據：`dist/studio-install-evidence-final/distribution.json`。
+  本次驗證時 source_dirty=true（提交前候選），不得冒充已提交版本；CI 改用 --require-clean。
+- 第一個自動安裝試驗放在 sandbox 的超長 Temp 路徑，uv 無法保存 interpreter cache；
+  增加驗證工具的 --work-dir 並在工作樹 dist 建立較短的新目錄後通過。未繞過 sandbox 或宣稱任意路徑長度可用。
+- 初次底座相容測試只有 Studio 單元件的 dist/workspace，缺少底座流程 fixture，產生 16 個 setup error；
+  依既有程序重新執行預設建置後，output_layout／bootstrap／powershell_bootstrap
+  **20 passed、19 平台條件 skipped，26.20 秒**，原有三 ZIP 皆建立成功。
+- Ruff check／format **178 檔**、YAML 解析及 39 份文件連結／fence 檢查通過。
+  新三平台 CI 加入真正 ZIP 安裝／反覆啟動／損毀拒絕驗證；原生 UI、真人、真實模型與最終交付仍未完成。
+
+## 停用回饋與下一步操作引導
+
+- 依使用者「不直覺、做一下就卡住」的回饋，新增共用下一步／原因對照與唯一主要動作。
+  原前置條件、資料外傳範圍、驗證與核准不放寬；被阻擋的點擊只說明原因，不呼叫服務。
+- 修正檔案／貼上文字後未選取來源，以及資料夾替換用錯選擇器、來源動作使用過期預覽 ID 的問題。
+  無候選、未保存、外部衝突、缺本次金鑰、案例不足、試做失敗與審核阻擋各有可理解的方向。
+- ui_guidance／source_selection／project_edits／ui_workflow／manual_and_settings／folder_review／ui_readability：
+  **83 passed、1 virtual-display gate skipped、3 native GUI deselected，13.63 秒**。
+  這是控制器／模型證據；新捲動容器與實際 disabled 滑鼠事件仍須 CI 虛擬顯示器驗證。
+- CI 新增 Linux 獨立 Xvfb／CJK 字型環境，檢查灰色按鈕的實際事件、匯入預覽、進階收合、Tab 焦點、
+  小視窗捲動及主要按鈕可見性，並保存合成畫面截圖。未重新控制使用者目前的 Windows 視窗。
+
+## 來源說明的工作臺入口
+
+- 原 FR-02 的 describe 服務已存在，但工作臺無操作入口；現在於進階來源管理新增說明編輯及預覽摘要。
+  使用開啟表單時的 project_id／version 提交，過期、跨專案、超長資料拒絕，對話框不因拒絕而關閉。
+- 修改只新增來源版本，原檔 bytes、content hash、舊版本及發布檔案保留；成功清除本機舊 build／approval／候選快取。
+  來源版本變動後，舊案例核准不能再次發布。
+- source_descriptions／source_selection／ui_guidance／project_edits：**58 passed、1 虛擬顯示器 Gate skipped，4.63 秒**。
+  該 Gate 已擴充實際來源說明表單與衝突草稿保留，待最新 CI；沒有操作使用者的 Windows 視窗。
+- run44279614920 已驗證新表單保存與衝突保留；後續小視窗焦點檢查失敗。
+  失敗截圖沒有焦點框，Xvfb 未在 transient 關閉後恢復 root focus；測試改為明確啟用虛擬視窗並
+  先斷言實際 focus_get，再驗證 Tab 及完整可見性。未放寬裁切邊界，也未在產品中強制搶使用者焦點。
+
+## 不完整目標的草稿路徑
+
+- 只填名稱即可保存專案；部分目標可儲存、重開與匯入來源，不強迫一次填完所有欄位。
+  建立可執行候選、試做與發布前仍需完整目標。AI 整理保留可用，能先提出補充問題。
+- project_edits／ui_guidance／discovery：**60 passed、1 explicit virtual-display skip，2.39 秒**。
+  包含不完整成功條件的真實 Discovery 服務與資料庫重開，結果為 needs_clarification，原目標未被改寫；
+  Provider 使用合成回應，沒有付費呼叫，不代表真實模型品質。
+- 941f5df 的 run44281896651 虛擬 Tk 步驟已成功，驗證名稱起案、分次保存與後續匯入；
+  後續保留 AI 釐清入口的修正仍須最新 CI。Windows 完整測試尚在執行。
+- 941f5df 獨立 Windows 整包安裝通過，證據 dist/draft-install-evidence/distribution.json；
+  source_dirty=false、重用、案例重播、獨立 Runtime 與損毀包拒絕皆通過。使用者原視窗未動。
+
+## 包內文件連結
+
+- 檢查實際 ZIP 時發現，測試機路徑遮罩將 `https://` 的 `s:/` 誤認為磁碟路徑。
+  兩個回歸案例先重現失敗；修正為只辨識獨立磁碟代號，保留 HTTP(S) 網址並繼續遮罩本機路徑。
+  實際套件與內嵌 source.zip 皆核對網址保留、測試機路徑移除。
+- 移除只在儲存庫成立、在安裝包中無目標的故障矩陣連結，改明列儲存庫檔案位置。
+- distribution_package／distribution_bootstrap：**13 passed、1 POSIX symlink skip，0.51 秒**，
+  `dist/distribution-link-regression.xml`。GitHub Actions 帳戶限制尚未排除，此修正先留本機驗證，未觸發新 CI。
+
+## 移除舊網頁引導流程（2026-11-20）
+
+- 依作者明確確認，移除整個舊 `guided/`、CLI `mcp` 指令、`StudioService.guided()`、Studio MCP extra 及三個專屬測試檔；同步核對鎖檔。
+- 移除 Claude Code 在 Studio 工作區註冊的 `routinekeel-studio` 舊入口。沒有建立新的宿主入口。
+- 保留 v015 遷移及既有資料。新增兩項回歸：舊指令在開啟工作區前被拒，以及舊專案／狀態資料重開後保持原值。
+- 定向回歸：`test_retired_host_entry.py`、`test_smoke.py`、`test_projects.py`、`test_project_edits.py`、`test_migrations.py`、`test_distribution_package.py`、`test_distribution_bootstrap.py`，以開發 venv 執行 `python -B -m pytest ... -q -p no:cacheprovider`，**57 passed、1 skipped，46.26 秒**。略過項目要求 POSIX symlink，Windows 不適用。
+- Ruff check 通過；format check 為 179 files already formatted；本次修改範圍的 `git diff --check` 通過。`uv lock --check --offline --no-cache` 通過，43 個套件。
+- 隔離建置 wheel 成功，檢查 108 個成員，不含舊 `guided/`、`cards.html` 或 Studio MCP extra。CLI `status` 可正常開啟工作區並回傳 schema 15。
+- 曾啟動完整 Studio 套件，在既有 Runtime 的 20 種故障注入案例期間主動停止，**未取得全套終態，不宣稱完整回歸通過**。本次以受影響的入口、專案、儲存遷移與打包定向回歸作為清理驗證。
+- 新方向只保留宿主對話逐層確認與藍圖包；本機 Codex 已實際送出選擇題並收到人類回覆。完整 Studio 新流程、Claude Code／Codex 端對端操作及外觀一致性尚未驗收。
+- 既有 Tk 與通用服務保留；沒有修改底座或已安裝流程。本節記錄提交前的本機驗證，提交與推送結果以 Git 紀錄為準。
