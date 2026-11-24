@@ -2,6 +2,33 @@
 
 原始藍圖是設計資料。底座讀取設計與工具綁定，建置出另一個檔案 `workflow.zip`，內含候選工作流的 manifest 與 wheel。驗收時，底座把這個候選包放入臨時工作區，再由 Runtime 執行案例。使用者的工作區此時仍找不到該流程。通過後，正式安裝會再核對同一份候選包與驗收收據，才將它放入使用者的 workflows 目錄。
 
+## 讓底座接手補強
+
+使用者要求把藍圖轉成工作流時，宿主使用 MCP `blueprint_completion` 的 `start`，或底座 CLI 的 `blueprint-completion start`。傳入工作區內的 `archive` 或既有 `draft_id`，附上這次請求的 `request_id`。底座保存工作 ID、診斷工具與案例、執行已具充分證據的補強，條件齊備便啟動候選包的隔離試做。預設 `intent="build"` 交付通過的候選。使用者明確要求安裝時使用 `intent="install"`，底座依驗收結果安裝，或接續既有版本的比較與升級。
+
+```powershell
+flow_base --workspace . blueprint-completion start --archive "blueprints/workflow.zip" --payload request.json
+flow_base --workspace . blueprint-completion status --work-id <補強工作識別碼>
+```
+
+上例的 `request.json` 內容可為 `{"request_id":"install-from-chat-01","intent":"install"}`。CLI 的 `--archive` 接受使用者明確指定的附件。MCP 啟動與補件使用工作區內的路徑。保存回傳的 `work_id`，可在另一輪對話、CLI 或 MCP 重連後查詢同一件工作。
+
+| 目前狀態 | 宿主接續動作 |
+| --- | --- |
+| `qualifying`、`trial_queued`、`trialing`、`installing` | 用 `status` 查證實際進度。試做程序中斷時，帶上當前修訂與新請求 ID 呼叫 `advance`。 |
+| `needs_source`、`needs_input` | 使用缺口的 `id`、`scope_hash` 和 `actions` 選擇下一步。先說明底座已完成的部分，再請使用者補必要素材、回覆或授權。 |
+| `needs_update` | 依 `update.action` 接續既有演進提案。提交獨立比較案例，展示比較結果並取得具體核准後再 `activate_update`。 |
+| `verified`、`installed` | 回報已驗證候選或安裝位置、版本與逐案例證據。 |
+
+提交補件時使用 `submit`，帶上當前 `expected_revision`、新的 `request_id` 及指定缺口的資料。對既有請求使用相同內容及識別碼可取回原結果。核對版本衝突時，先以 `status` 重讀最新修訂。可用 `pause`、`resume`、`cancel`、`archive` 管理同一工作，`history` 查閱實際補強與驗收紀錄。
+
+- 工具待辦會提供候選、權限與資格收據。底座可以自動驗證純本機候選。需要使用者選擇或拒絕時用 `select_adapter` 或 `decline_adapter` 提交實際答覆。宿主資格驗證仍依具體範圍另取得授權，並透過受信清冊提交實際證據。清冊更新後用 `recheck` 接續。
+- 可用 `complete_case` 補上缺少的輸入與獨立預期輸出。案例對應原藍圖的驗收意圖。若藍圖在 `quality_contract.case_recipes` 提供同一案例序號的明確斷言，底座可自動產生案例。斷言支援具名輸入的 `identity`、`uppercase`，以及明列的 `value`。已確認案例或業務規則要改時，先由 Studio 匯出帶來源關聯的新修訂，再用 `preview_revision` 與 `adopt_revision` 核對並採用。
+- 用 `attach_fixture` 複製工作區內的素材，回傳名稱、大小、內容指紋及可供案例引用的位置。若要補進案例指定的位置，一併提供缺口、範圍指紋與 `requested_path`。已存在的同名不同內容會保留，並提示核對原素材。
+- 隔離試做失敗會保留案例、檢查階段和錯誤證據。修正輸入、綁定或已確認案例後，底座重驗再接續。必要驗證、實際候選試做及安裝前重驗均須符合正式安裝條件。
+
+開發回滾與版本證據見原始碼儲存庫的 `docs/specs/blueprint-completion.md`。遷移到 v7 前底座會建立有指紋的舊資料備份。需要回到只支援 v6 的底座時，先保留現有 v7 資料，再於獨立位置還原並驗證備份。既有工作流升級後的回復走原更新收據。
+
 RK-NEXT 開發版的底座及 Studio 隨附同一份 `routinekeel-contracts` 驗證器。試做成功的收據記錄 `validation.status=PASS` 與 `policy_version`。若缺少驗證器則記錄 `NOT_RUN`，契約或 wheel RECORD 檢查失敗則記錄 `FAIL`，草稿保留。安裝前會從候選 ZIP 重驗 IR、工具簽名與 wheel。舊草稿可以重新試做取得新版收據；已安裝的流程繼續使用原本的 Runtime 入口。
 
 `resolve-blueprint --draft-id <ID> --offline` 會回傳各節點需要的能力、版本、埠、權限、指紋及缺口。底座可直接辨識內建的純資料操作。嵌入宿主可將已連接的 MCP client 交給 `flow_base.adapters.host_inventory.observe_tools`，以實際 tools/list 結果及宿主既有授權產生限時觀測。宿主在工作區外維護該觀測，並以 `ROUTINEKEEL_HOST_CATALOG` 指向它。權限與有效期由宿主維護，藍圖提供的 probe 自述無法授予操作權限。一般使用者不需逐步確認工具清冊。無可信記錄的外部工具會列為缺口。測試中的宿主替身與真實 MCP 清單觀測分開驗收。
@@ -10,7 +37,7 @@ Graph v2 可在 Studio 預覽階段先查能力及案例。匯入後，`resolve-
 
 Graph v2 的桌面宿主工具可在受信清冊提供 `parameters_schema`，採 JSON Schema Draft 2020-12 的物件契約。底座依契約驗證節點參數，並將參數與輸入一起綁定到待辦、核准及操作指紋。領取待辦後，宿主收到 `dispatch.arguments` 與 `dispatch.parameters`。宿主負責將兩者交給宣告該契約的工具。
 
-使用者在對話附上 Studio 訪談 ZIP 並說「安裝這個工作流」。宿主以工作區父目錄的底座操作。四次呼叫可分屬不同對話。
+需要個別檢視或手動控制建置時，使用下列分段入口。每次呼叫都可由不同對話接續。
 
 對外操作會顯示本次工具、實際參數、範圍與資源資訊，使用者可在目前對話同意或拒絕。核准綁定待辦、資料指紋及版本。宿主領取後只能用同一 idempotency key 查核；斷線或缺少獨立回執時顯示 RECONCILE_REQUIRED，保留待辦。驗收工作區另有拋棄式宿主回執目錄，模擬案例不會在正式宿主留下執行或付款紀錄。
 

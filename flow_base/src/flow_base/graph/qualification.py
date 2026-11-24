@@ -21,8 +21,13 @@ from ..blueprints.installer import draft_dir, read_archive
 from ..blueprints.source import inspect_blueprint
 from ..execution.process import worker_environment
 from ..runtime import FlowError
-from .locking import persist_lock, write_receipts
-from .portable import graph_requirements, local_entry, resolve_requirement
+from .locking import find_receipt, persist_lock, write_receipts
+from .portable import (
+    automatic_probe,
+    graph_requirements,
+    local_entry,
+    resolve_requirement,
+)
 
 
 @dataclass(frozen=True)
@@ -67,7 +72,7 @@ def _source(ws, draft_id):
     return graph
 
 
-def _plan(ws, graph, draft_id, selections):
+def _plan(ws, graph, draft_id, selections, *, offline=False, case_supplies=None):
     rules = graph_requirements(graph)
     tasks = _tasks(graph)
     if (
@@ -79,7 +84,7 @@ def _plan(ws, graph, draft_id, selections):
         raise FlowError("INVALID_CONFIGURATION", "請指定藍圖中各必要能力的目標 Adapter。")
     choices = {}
     for key, adapter in sorted(selections.items()):
-        decision, candidates = resolve_requirement(key, tasks[key], rules[key], ws.root)
+        decision, candidates = resolve_requirement(key, tasks[key], rules[key], ws.root, offline=offline)
         choice = candidates.get(adapter) if isinstance(adapter, str) else None
         if not choice or not choice[0]["allowed"] or choice[1] is None:
             raise FlowError(decision["code"], "選擇的 Adapter 未觀測到或現時無權使用。")
@@ -87,7 +92,10 @@ def _plan(ws, graph, draft_id, selections):
     suites = graph.quality_contract.get("adapter_cases", {})
     if not isinstance(suites, dict):
         raise FlowError("INVALID_CONFIGURATION", "Adapter 案例須以工作節點或需求識別碼索引。")
-    cases = {key: suites.get(key, suites.get(rules[key].id, [])) for key in choices}
+    cases = {
+        key: suites.get(key, suites.get(rules[key].id)) or (case_supplies or {}).get(key, [])
+        for key in choices
+    }
     public = {
         "blueprint_hash": draft_id,
         "graph_hash": graph_fingerprint(graph),
@@ -132,19 +140,39 @@ def execute_local(binding, node, inputs, parameters):
     return outputs
 
 
+def _adapter_cases(node, raw_cases):
+    if not isinstance(raw_cases, list) or not 2 <= len(raw_cases) <= 20:
+        raise ValueError("invalid suite")
+    cases = [AdapterCase.model_validate(item) for item in raw_cases]
+    positives = [case for case in cases if case.expected is not None]
+    if (
+        len({case.id for case in cases}) != len(cases)
+        or len({content_hash(case.inputs) for case in positives}) < 2
+        or any((case.expected is None) == (case.expected_error is None) for case in cases)
+        or any(case.inputs.keys() != node.inputs.keys() for case in cases)
+        or any(case.expected.keys() != node.outputs.keys() for case in positives)
+    ):
+        raise ValueError("invalid suite")
+    return cases
+
+
+def validate_adapter_cases(ws, draft_id, key, raw_cases):
+    graph = _source(ws, draft_id)
+    rule = graph_requirements(graph).get(key)
+    suites = graph.quality_contract.get("adapter_cases", {})
+    if rule is None or suites.get(key, suites.get(rule.id)):
+        raise FlowError("INVALID_CONFIGURATION", "已確認的 Adapter 案例須經藍圖修訂。")
+    try:
+        _adapter_cases(_tasks(graph)[key], raw_cases)
+        if len(canonical_json(raw_cases)) > 2 * 1024**2:
+            raise ValueError("suite exceeds limit")
+    except (ValidationError, TypeError, ValueError) as exc:
+        raise FlowError("INVALID_CONFIGURATION", "請提供獨立預期值與至少兩組不同的 Adapter 輸入。") from exc
+
+
 def _measure(node, binding, raw_cases, limit_ms=None):
     try:
-        cases = [AdapterCase.model_validate(item) for item in raw_cases]
-        positives = [case for case in cases if case.expected is not None]
-        if (
-            not 2 <= len(cases) <= 20
-            or len({case.id for case in cases}) != len(cases)
-            or len({content_hash(case.inputs) for case in positives}) < 2
-            or any((case.expected is None) == (case.expected_error is None) for case in cases)
-            or any(case.inputs.keys() != node.inputs.keys() for case in cases)
-            or any(case.expected.keys() != node.outputs.keys() for case in positives)
-        ):
-            raise ValueError("invalid suite")
+        cases = _adapter_cases(node, raw_cases)
     except (ValidationError, TypeError, ValueError):
         return ({"status": "NOT_RUN", "code": "TRIAL_CASES_REQUIRED"}, {"status": "NOT_RUN"})
     raw = canonical_json(
@@ -269,33 +297,76 @@ def qualify_bindings(ws, draft_id, selections, review):
         or not review.evidence.strip()
     ):
         raise FlowError("USER_CONFIRMATION_REQUIRED", "請核對並確認這次資格檢查的作用範圍。")
-    reports = {}
+    reports = {
+        key: _report(ws, proposal, key, candidate, transport, tasks[key], rules[key], cases[key], review.evidence)
+        for key, (candidate, transport) in choices.items()
+    }
+    return _finish(ws, graph, proposal, rules, choices, reports)
+
+
+def _report(ws, proposal, key, candidate, transport, node, rule, cases, evidence):
+    if candidate["locus"] == "local_runtime" and not transport["network"]:
+        conformance, behavior = _measure(node, transport, cases, rule.constraints.max_latency_ms)
+    else:
+        conformance, behavior = _host_measure(ws.root, proposal, key, candidate, cases)
+    statuses = {conformance["status"], behavior["status"]}
+    verdict = "FAIL" if "FAIL" in statuses else "NOT_RUN" if "NOT_RUN" in statuses else "PASS"
+    return {
+        "graph_hash": proposal["graph_hash"],
+        "blueprint_hash": proposal["blueprint_hash"],
+        "node": key,
+        "adapter": candidate["adapter"],
+        "verdict": verdict,
+        "environment_fingerprint": candidate["environment_fingerprint"],
+        "conformance": conformance,
+        "behavior": behavior,
+        "case_hash": proposal["case_hashes"][key],
+        "review_hash": content_hash([proposal["request_hash"], evidence]),
+    }
+
+
+def _individual_scope(proposal, node):
+    body = {
+        **{key: proposal[key] for key in ("blueprint_hash", "graph_hash")},
+        "adapters": {node: proposal["adapters"][node]},
+        "case_hashes": {node: proposal["case_hashes"][node]},
+        "local_only": proposal["adapters"][node]["locus"] == "local_runtime",
+    }
+    return {**body, "request_hash": content_hash(body)}
+
+
+def complete_bindings(ws, draft_id, selections, attempted, *, offline=False, case_supplies=None):
+    """Probe pure local candidates or consume trusted, previously authorized host observations."""
+    graph = _source(ws, draft_id)
+    proposal, tasks, rules, choices, cases = _plan(
+        ws, graph, draft_id, selections, offline=offline, case_supplies=case_supplies,
+    )
+    outcomes, reports = {}, {}
+    for key, (candidate, transport) in choices.items():
+        scope = _individual_scope(proposal, key)
+        previous = attempted.get(key, {})
+        report = find_receipt(ws.root, proposal, key, candidate)
+        if report is None and automatic_probe(candidate, transport):
+            if previous.get("request_hash") == scope["request_hash"] and previous.get("report"):
+                report = previous["report"]
+            else:
+                report = _report(ws, scope, key, candidate, transport, tasks[key], rules[key], cases[key],
+                                 "local read-only qualification policy")
+        if report is None and candidate["locus"] == "host_mediated":
+            report = _report(ws, scope, key, candidate, transport, tasks[key], rules[key], cases[key],
+                             "host-controlled authorization evidence")
+        outcomes[key] = {"request_hash": scope["request_hash"], "scope": scope, "report": report}
+        if report is not None:
+            reports[key] = report
+    result = _finish(ws, graph, proposal, rules, choices, reports, offline=offline, case_supplies=case_supplies)
+    return {**result, "outcomes": outcomes}
+
+
+def _finish(ws, graph, proposal, rules, choices, reports, *, offline=False, case_supplies=None):
     bindings = {}
-    for node_id, (candidate, transport) in choices.items():
-        if candidate["locus"] == "local_runtime" and not transport["network"]:
-            conformance, behavior = _measure(
-                tasks[node_id], transport, cases[node_id], rules[node_id].constraints.max_latency_ms
-            )
-        else:
-            conformance, behavior = _host_measure(
-                ws.root, proposal, node_id, candidate, cases[node_id]
-            )
-        statuses = {conformance["status"], behavior["status"]}
-        verdict = "FAIL" if "FAIL" in statuses else "NOT_RUN" if "NOT_RUN" in statuses else "PASS"
-        report = {
-            "graph_hash": proposal["graph_hash"],
-            "blueprint_hash": draft_id,
-            "node": node_id,
-            "adapter": candidate["adapter"],
-            "verdict": verdict,
-            "environment_fingerprint": candidate["environment_fingerprint"],
-            "conformance": conformance,
-            "behavior": behavior,
-            "case_hash": proposal["case_hashes"][node_id],
-            "review_hash": content_hash([proposal["request_hash"], review.evidence]),
-        }
-        reports[node_id] = report
-        if verdict == "PASS":
+    for node_id, report in reports.items():
+        if report["verdict"] == "PASS":
+            candidate = choices[node_id][0]
             rule = rules[node_id]
             bindings[node_id] = EnvironmentBinding(
                 requirement_id=rule.id,
@@ -313,7 +384,9 @@ def qualify_bindings(ws, draft_id, selections, review):
     workflow = graph.workflow
     lock = None
     if bindings.keys() == rules.keys():
-        confirmation = _plan(ws, graph, draft_id, selections)[0]
+        draft_id = proposal["blueprint_hash"]
+        selections = {node: pair[0]["adapter"] for node, pair in choices.items()}
+        confirmation = _plan(ws, graph, draft_id, selections, offline=offline, case_supplies=case_supplies)[0]
         if confirmation["request_hash"] != proposal["request_hash"]:
             raise FlowError("BINDING_STALE", "試做期間 Adapter、權限或環境已更新。")
         selected = EnvironmentLock(

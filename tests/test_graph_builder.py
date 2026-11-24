@@ -97,12 +97,18 @@ def test_graph_gates_preserve_uninstalled_candidate(tmp_path, fault):
     assert not svc.workspace.discover(read_only=True)
 
 
-def test_desktop_design_export_and_builder_use_same_graph_and_receipt(tmp_path, workflow_design_review):
+@pytest.mark.parametrize("with_gaps", [False, True], ids=["ready", "needs-completion"])
+def test_desktop_design_export_and_builder_use_same_graph_and_receipt(
+    tmp_path, workflow_design_review, with_gaps
+):
     from flow_base.studio import studio_request
     from routinekeel_contracts.builder import fingerprint
 
     graph = data_graph()
     graph["quality_contract"]["success_criteria"] = ["文字一致"]
+    if with_gaps:
+        graph["nodes"][0]["capability"] = "unregistered"
+        graph["quality_contract"]["golden_cases"] = ["保留原文並交付大寫文字"]
     project = studio_request(tmp_path, "create", {"name": "文字工作", "task": "產生兩種文字"})
     pid = project["project_id"]
     proposal = studio_request(
@@ -116,9 +122,18 @@ def test_desktop_design_export_and_builder_use_same_graph_and_receipt(tmp_path, 
             "design": {"rules": "保留原文"},
         },
     )
-    assert proposal["build_preflight"] == {
-        "status": "ready", "blocks_blueprint_export": False, "capability_gaps": [], "build_gaps": []
-    }
+    preflight = proposal["build_preflight"]
+    assert proposal["build_preflight_guidance"]["scope"] == "candidate_trial"
+    assert proposal["build_preflight_guidance"]["completion_tool"] == "blueprint_completion"
+    if with_gaps:
+        assert preflight["status"] == "blocked"
+        assert preflight["blocks_blueprint_export"] is False
+        assert preflight["capability_gaps"][0]["node"] == "upper"
+        assert preflight["build_gaps"][0]["code"] == "TRIAL_CASE_NOT_EXECUTABLE"
+    else:
+        assert preflight == {
+            "status": "ready", "blocks_blueprint_export": False, "capability_gaps": [], "build_gaps": []
+        }
     proposal = studio_request(tmp_path, "finalize_workflow_design", {
         "project_id": pid, "expected_revision": proposal["revision"], "request_id": "finalize",
         "draft_id": proposal["proposal_id"], "review": workflow_design_review(proposal),
@@ -143,6 +158,13 @@ def test_desktop_design_export_and_builder_use_same_graph_and_receipt(tmp_path, 
     draft = svc.install_workflow(archive=exported["path"])
     assert draft["draft_id"] == exported["sha256"]
     bindings = svc.resolve_blueprint_capabilities(draft["draft_id"])
+    if with_gaps:
+        assert proposal["status"] == "ready_for_confirmation"
+        assert proposal["build_preflight"] == preflight
+        assert draft["status"] == "draft"
+        assert bindings["build_status"] == "blocked"
+        assert svc.install_workflow(draft_id=draft["draft_id"])["builds"] == []
+        return
     build = svc.install_workflow(
         draft_id=draft["draft_id"], resolution={"capability_fingerprint": bindings["fingerprint"]}
     )

@@ -63,6 +63,11 @@ def create_server(workspace: Path | str):
             member=member, offset=offset))
 
     @server.tool()
+    def blueprint_completion(operation: str, work_id: str | None = None, payload: dict | None = None) -> dict:
+        """Start, inspect, or resume a blueprint's completion in this workspace."""
+        return result(lambda: service.blueprint_completion(operation, work_id, payload))
+
+    @server.tool()
     def blueprint_task(session_id: str, operation: str = 'next', payload: dict | None = None) -> dict:
         """Read the next pinned task, claim an external action, submit evidence, or revise a step."""
         return result(lambda: service.blueprint_task(session_id, operation, payload))

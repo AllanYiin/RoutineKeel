@@ -82,8 +82,9 @@ def test_failed_local_comparison_retains_observed_usage(tmp_path):
     assert denied["measurement"] == "local_trial" and denied["cost_micro_usd"] == 0
 
 
+@pytest.mark.parametrize("with_completion", [False, True], ids=["existing-entry", "completion"])
 def test_compare_fixed_defect_and_holdout_before_switch_and_rollback(
-    tmp_path, monkeypatch, workflow_design_review,
+    tmp_path, monkeypatch, workflow_design_review, with_completion,
 ):
     base = data_graph()
     base["nodes"][0]["capability"] = "text.copy"
@@ -141,6 +142,17 @@ def test_compare_fixed_defect_and_holdout_before_switch_and_rollback(
     assert rejected["phase"] == "rejected"
     candidate["workflow"].update(version="1.1.0", revision=2)
     candidate["nodes"][0]["capability"] = "text.upper"
+    if with_completion:
+        candidate["quality_contract"].update(
+            golden_cases=["確認已知文字的原文與大寫"],
+            case_recipes={"1": {
+                "inputs": {"text": "OK"},
+                "assertions": {
+                    "original": {"input": "text", "operation": "identity"},
+                    "upper": {"input": "text", "operation": "uppercase"},
+                },
+            }},
+        )
     changed_goal = copy.deepcopy(candidate)
     changed_goal["workflow"]["goal"] = "其他目標"
     with pytest.raises(FlowError, match="目標"):
@@ -172,6 +184,30 @@ def test_compare_fixed_defect_and_holdout_before_switch_and_rollback(
         "defect_cases": [{**case("bad"), "feedback_id": event["feedback_id"]}],
         "limits": {"review_count": 0, "cost_micro_usd": 0, "model_calls": 0},
     }
+    if with_completion:
+        from test_blueprint_completion import wait_completion
+
+        started = svc.blueprint_completion("start", payload={
+            "draft_id": exported["candidate_key"], "request_id": "complete-update", "intent": "install",
+        })
+        pending = wait_completion(svc, started)
+        assert pending["status"] == "needs_update"
+        held.write_text(json.dumps([case("fresh")]))
+        compared = svc.blueprint_completion("submit", pending["work_id"], {
+            "request_id": "compare-from-completion", "expected_revision": pending["revision"],
+            "action": "compare_update", "scope_hash": pending["update"]["scope_hash"], "comparison": params,
+        })
+        assert compared["update"]["phase"] == "compared"
+        assert compared["update"]["comparison"]["candidate"]["case_count"] == 3
+        assert svc.describe_workflow("graph_copy")["version"] == "1.0.0"
+        installed = svc.blueprint_completion("submit", compared["work_id"], {
+            "request_id": "activate-from-completion", "expected_revision": compared["revision"],
+            "action": "activate_update", "scope_hash": compared["update"]["scope_hash"],
+            "user_text": "正式採用通過回歸的版本",
+        })
+        assert installed["installation"]["update_id"]
+        assert svc.describe_workflow("graph_copy")["version"] == "1.1.0"
+        return
     held.write_text(json.dumps([case("bad")]))
     with pytest.raises(FlowError, match="重疊"):
         act(exported, "compare", "overlap", **params)

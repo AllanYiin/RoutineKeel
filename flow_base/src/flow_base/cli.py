@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from flow_base.observability.recovery import SecondaryOperation
 
 from . import __version__
+from .blueprints import COMPLETION_OPERATIONS
 from .core.service import WorkflowService
 from .core.types import PlanRequest, StartRequest, SubmitRequest
 from .diagnostics import cli_error
@@ -117,6 +118,11 @@ def parser():
     c.add_argument('--cases', type=Path)
     c.add_argument('--build-id')
     c.add_argument('--install-hash')
+    c = commands.add_parser('blueprint-completion', help='補強藍圖並續做候選工作流')
+    c.add_argument('operation', choices=COMPLETION_OPERATIONS)
+    c.add_argument('--work-id')
+    c.add_argument('--archive', type=Path)
+    c.add_argument('--payload', type=Path)
     c = commands.add_parser('blueprint-task', help='取得待辦、回傳結果或退回重做')
     c.add_argument('session_id')
     c.add_argument('operation', choices=['next','status','authorize','decline','claim','stream_delta','complete','reconcile','revise','retry','cancel'], nargs='?', default='next')
@@ -463,6 +469,11 @@ def main(argv=None):
                 resolution=read_json(args.resolution) if args.resolution else None,
                 cases=read_json(args.cases) if args.cases else None, build_id=args.build_id,
                 install_hash=args.install_hash, member=args.member, offset=args.offset)
+        elif command == 'blueprint-completion':
+            payload = read_json(args.payload) if args.payload else {}
+            if args.archive:
+                payload = {**payload, 'archive': str(args.archive.resolve())}
+            result = service.blueprint_completion(args.operation, args.work_id, payload)
         elif command == 'blueprint-task':
             result = service.blueprint_task(args.session_id, args.operation,
                                            read_json(args.payload) if args.payload else None)

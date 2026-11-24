@@ -29,7 +29,7 @@ def preflight_graph(graph, workspace, *, offline=False):
     try:
         verify_pattern_admission(graph, workspace)
     except FlowError as error:
-        build_gaps.append({"code": error.code, "reason": str(error)})
+        build_gaps.append({"code": error.code, "reason": str(error), "stage": "pattern_admission"})
         admission_failed = True
     build_gaps.extend(
         {"code": "GRAPH_UNSUPPORTED", "node": key, "reason": "Graph Builder 尚未支援此原生能力。"}
@@ -44,10 +44,10 @@ def preflight_graph(graph, workspace, *, offline=False):
     }
 
 
-def build_graph(source, requested, cases, workspace, *, attachments=None):
+def build_graph(source, requested, cases, workspace, *, attachments=None, coverage=None, offline=False):
     graph = source["graph"]
     verify_pattern_admission(graph, workspace)
-    resolved = resolve_graph(graph, workspace)
+    resolved = resolve_graph(graph, workspace, offline=offline)
     require(
         resolved["status"] == "ready",
         "有未綁定的能力：" + str([g["node"] for g in resolved["gaps"]]),
@@ -57,6 +57,10 @@ def build_graph(source, requested, cases, workspace, *, attachments=None):
         "請先取得目前能力清單並綁定相同指紋",
     )
     required = graph["quality_contract"].get("golden_cases")
+    if coverage is not None:
+        from ..blueprints.completion_cases import trial_cases
+
+        required = trial_cases(workspace, graph, coverage)
     locks = {
         binding["lock_hash"] for binding in resolved["bindings"].values() if "lock_hash" in binding
     }

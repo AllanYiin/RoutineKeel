@@ -344,7 +344,7 @@ def test_v005_binding_migration_keeps_a_verified_restore_point(tmp_path, monkeyp
     service = WorkflowService(tmp_path)
     runtime = service.workspace.runtime
     with monkeypatch.context() as patch:
-        patch.setattr(migrations, "MIGRATIONS", migrations.MIGRATIONS[:-1])
+        patch.setattr(migrations, "MIGRATIONS", migrations.MIGRATIONS[:5])
         runtime.initialize()
     fresh = WorkflowService(tmp_path).workspace.runtime
     fresh.initialize()

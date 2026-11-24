@@ -124,6 +124,31 @@ async def call(client, tool_name, **arguments):
     return json.loads(response.content[0].text)
 
 
+def test_blueprint_completion_cli_to_mcp_reconnect(tmp_path):
+    from test_blueprint_completion import gap_archive
+
+    archive = gap_archive(tmp_path / "design.zip")
+    request = tmp_path / "completion.json"
+    atomic_json(request, {"request_id": "cli-completion"})
+    initial = cli(tmp_path, "blueprint-completion", "start", "--archive", archive, "--payload", request)["result"]
+    work_id = initial["work_id"]
+
+    async def exercise():
+        async with client_for(tmp_path) as client:
+            state = (await call(client, "blueprint_completion", operation="status", work_id=work_id))["result"]
+            assert state == initial
+            args = {"expected_revision": state["revision"], "request_id": "mcp-recheck"}
+            refreshed = (await call(client, "blueprint_completion", operation="recheck", work_id=work_id,
+                                    payload=args))["result"]
+            assert refreshed["gaps"] == initial["gaps"]
+        async with client_for(tmp_path) as client:
+            replay = (await call(client, "blueprint_completion", operation="recheck", work_id=work_id,
+                                 payload=args))["result"]
+            assert replay == refreshed
+
+    asyncio.run(exercise())
+
+
 def test_stdio_negotiation_queue_tool_set_and_path_boundary(workspace):
     source = workspace / 'input.txt'
     source.write_text('mcp input', encoding='utf-8')
@@ -137,7 +162,7 @@ def test_stdio_negotiation_queue_tool_set_and_path_boundary(workspace):
                              'submit_workflow', 'get_workflow_status',
                              'get_workflow_result', 'cancel_workflow', 'preview_workflow_update',
                              'update_workflow', 'rollback_workflow_update', 'recover_workflow_update',
-                             'install_workflow', 'blueprint_task',
+                             'install_workflow', 'blueprint_task', 'blueprint_completion',
                              'studio_create_project', 'studio_list_projects', 'studio_get_project',
                              'studio_update_project', 'studio_archive_project', 'studio_restore_project',
                              'studio_next_question', 'studio_submit_answer', 'studio_pause_interview',

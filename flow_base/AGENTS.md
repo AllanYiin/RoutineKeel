@@ -8,6 +8,8 @@
 
 ## 共用工具情境
 
+- 要求將藍圖轉成可試做或可安裝的工作流時，使用 `blueprint-completion` 或 MCP `blueprint_completion`。依實際缺口與修訂接續補強，正式安裝須持有同一候選的必要驗證與試做收據。
+
 - 使用情境為 scene_b_shared_tool；錯誤需可複製、可追查、可重試。
 - 輸入、輸出、快取與版本的既有契約保持相容。
 - flow_id 與 job_id 可延續，每次執行建立新 run_id。

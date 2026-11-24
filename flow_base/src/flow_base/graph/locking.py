@@ -50,6 +50,32 @@ def write_receipts(workspace, graph_hash, reports):
             )
 
 
+def find_receipt(workspace, proposal, node, adapter):
+    runtime = _runtime(workspace)
+    runtime.initialize()
+    with closing(runtime.connect()) as db:
+        rows = db.execute(
+            "SELECT receipt,body FROM adapter_qualifications WHERE graph_hash=? AND node=? AND verdict='PASS'",
+            (proposal["graph_hash"], node),
+        ).fetchall()
+    for row in rows:
+        report = json.loads(row["body"])
+        if (
+            report.get("blueprint_hash") == proposal["blueprint_hash"]
+            and report.get("graph_hash") == proposal["graph_hash"]
+            and report.get("node") == node
+            and report.get("adapter") == adapter["adapter"]
+            and report.get("environment_fingerprint") == adapter["environment_fingerprint"]
+            and report.get("case_hash") == proposal["case_hashes"][node]
+            and report.get("verdict") == "PASS"
+            and report.get("conformance", {}).get("status") == "PASS"
+            and report.get("behavior", {}).get("status") == "PASS"
+            and content_hash(report) == row["receipt"]
+        ):
+            return report
+    return None
+
+
 def persist_lock(workspace, lock, reports, *, current=True):
     runtime = _runtime(workspace)
     runtime.initialize()

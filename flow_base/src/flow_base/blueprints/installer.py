@@ -206,15 +206,16 @@ def pack(directory, src, plan, raw, resolution, ir, registry):
     return path
 
 
-def verify(ws, key, resolution, cases):
+def verify(ws, key, resolution, cases, *, build_id=None, coverage=None, offline=False):
     folder = draft_dir(ws, key)
     raw = read_archive(folder / "source.zip")
     src, files = inspect_blueprint(raw)
     require(src["source_hash"] == key, "草稿來源已變更")
-    build = uuid.uuid4().hex
+    build = build_id or uuid.uuid4().hex
+    require(re.fullmatch(r"[0-9a-f]{32}", build), "建置識別碼無效")
     dest = folder / "builds" / build
     reject_links(dest)
-    dest.mkdir(parents=True)
+    dest.mkdir(parents=True, exist_ok=build_id is not None)
     atomic_json(dest / "resolution.json", resolution)
     validation = {"policy_version": POLICY_VERSION, "status": "NOT_RUN"}
     try:
@@ -225,7 +226,9 @@ def verify(ws, key, resolution, cases):
             from ..graph.degradation import check_degradation
 
             check_degradation(ws, key, src["graph"]["provenance"].get("degraded_delivery"))
-            plan, ir, registry, cases = build_graph(src, resolution, cases, ws.root, attachments=files)
+            plan, ir, registry, cases = build_graph(
+                src, resolution, cases, ws.root, attachments=files, coverage=coverage, offline=offline,
+            )
             gaps = trial_case_gaps(cases, ir["outputs"])
             require(not gaps, "；".join(dict.fromkeys(gap["reason"] for gap in gaps)))
             capability_evidence = registry["bindings"]
@@ -251,6 +254,11 @@ def verify(ws, key, resolution, cases):
         atomic_json(dest / "workflow.ir.json", ir)
         atomic_json(dest / "tool-signatures.json", registry)
         atomic_json(dest / "cases.json", cases)
+        if coverage is not None:
+            from ..evolution.comparison import case_content
+
+            atomic_json(dest / "completion-cases.json", coverage)
+            case_input_hash = digest(case_content(ws.root, cases))
         path = pack(dest, src, plan, raw, resolution, ir, registry)
         require(isinstance(cases, list) and 1 <= len(cases) <= 20, "需要 1–20 組驗收案例")
         require(len(encoded(cases)) <= 2 * 1024**2, "案例描述太大")
@@ -270,6 +278,8 @@ def verify(ws, key, resolution, cases):
                     {"version": 1, "expires_at": "2099-01-01T00:00:00+00:00", "tools": {}},
                 )
             stage_fixtures(ws.root, trial, cases)
+            if coverage is not None:
+                require(digest(case_content(trial, cases)) == case_input_hash, "試做素材在匯入期間已變更。")
             _, members, _modes, _ = _read_archive(path)
             task = trial / src["manifest"]["id"]
             task.mkdir()
@@ -303,6 +313,7 @@ def verify(ws, key, resolution, cases):
                     "flow_base.blueprints.trial",
                     str(trial),
                     task.name,
+                    str(dest / "trial-progress.json"),
                 ],
                 cwd=trial,
                 env=worker_environment() | {"ROUTINEKEEL_HOST_CATALOG": str(trial_catalog)},
@@ -318,7 +329,7 @@ def verify(ws, key, resolution, cases):
                 proc.returncode == 0 and evidence.get("passed"),
                 "候選包驗證失敗：" + evidence.get("error", ""),
             )
-            shutil.copytree(trial / "evidence", dest / "trials")
+            shutil.copytree(trial / "evidence", dest / "trials", dirs_exist_ok=build_id is not None)
         record = {
             "status": "verified",
             "validation": validation,
@@ -333,6 +344,10 @@ def verify(ws, key, resolution, cases):
             "evidence": evidence,
         }
         record["builder_receipt"] = admission(ir, record["archive_sha256"], validation, evidence)
+        if coverage is not None:
+            record["completion_cases"] = {
+                "coverage_hash": digest(coverage), "cases_hash": digest(cases), "input_hash": case_input_hash,
+            }
         record["install_hash"] = digest(record)
         atomic_json(dest / "verification.json", record)
         return record
@@ -372,6 +387,18 @@ def checked_candidate(ws, dest, expected):
         record["archive_sha256"] == h and record["workflow_id"] == manifest.id,
         "候選包已變更",
     )
+    if record.get("completion_cases"):
+        from ..evolution.comparison import case_content
+
+        cases = read_json(dest / "cases.json")
+        require(
+            record["completion_cases"] == {
+                "coverage_hash": digest(read_json(dest / "completion-cases.json")),
+                "cases_hash": digest(cases),
+                "input_hash": digest(case_content(ws.root, cases)),
+            },
+            "補強驗收案例或涵蓋證據已變更。",
+        )
     with tempfile.TemporaryDirectory(prefix="rk-install-check-") as temp:
         package = Path(temp)
         for name, body in files.items():

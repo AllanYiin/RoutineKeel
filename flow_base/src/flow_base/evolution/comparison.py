@@ -37,17 +37,19 @@ def unique(cases):
     return list(by_key.values())
 
 
-def replay(service, key, cases):
+def replay(service, key, cases, *, coverage=None):
     from ..runtime import FlowError
 
     try:
         binding = service.resolve_blueprint_capabilities(key)
         require(binding["status"] == "ready", "比較所需工具有缺口")
-        build = service.install_workflow(
-            draft_id=key,
-            resolution={"capability_fingerprint": binding["fingerprint"]},
-            cases=cases,
-        )
+        resolution = {"capability_fingerprint": binding["fingerprint"]}
+        if coverage is None:
+            build = service.install_workflow(draft_id=key, resolution=resolution, cases=cases)
+        else:
+            from ..blueprints.installer import verify
+
+            build = verify(service.workspace, key, resolution, cases, coverage=coverage)
     except FlowError as exc:
         from ..blueprints.installer import draft_dir
 
@@ -95,6 +97,53 @@ def replay(service, key, cases):
     }
 
 
+def _candidate_coverage(service, key, work_id):
+    from ..blueprints.completion_store import CompletionStore
+    from ..blueprints.installer import checked_candidate, draft_dir
+
+    work = CompletionStore(service.workspace.runtime).read(work_id)
+    require(work["status"] == "needs_update" and work["draft_id"] == key, "候選與補強工作不符。")
+    candidate = work["candidate"]
+    folder = draft_dir(service.workspace, key) / "builds" / candidate["build_id"]
+    record, *_ = checked_candidate(service.workspace, folder, candidate["install_hash"])
+    return read_json(folder / "completion-cases.json") if record.get("completion_cases") else None
+
+
+def _baseline_coverage(service, state, graph):
+    from routinekeel_contracts.graph_trials import trial_case_gaps
+
+    from ..blueprints.installer import checked_candidate, draft_dir
+    from ..package_updates import _read_archive
+
+    if not trial_case_gaps(graph["quality_contract"].get("golden_cases"), graph["outputs"]):
+        return None
+    folder = draft_dir(service.workspace, state["base_source_hash"]) / "builds"
+    reject_links(folder)
+    for path in sorted(folder.glob("*/verification.json"), reverse=True):
+        reject_links(path)
+        candidate = read_json(path)
+        if candidate.get("status") != "verified" or not candidate.get("completion_cases"):
+            continue
+        archive = path.parent / "workflow.zip"
+        if not archive.is_file():
+            continue
+        manifest, *_ = _read_archive(archive)
+        if manifest.sha256 != state["base_wheel_hash"]:
+            continue
+        record, manifest, *_ = checked_candidate(service.workspace, path.parent, candidate["install_hash"])
+        if manifest.sha256 == state["base_wheel_hash"] and record["draft_id"] == state["base_source_hash"]:
+            return read_json(path.parent / "completion-cases.json")
+    require(False, "正式版缺少可對應已安裝內容的案例證據，請補齊回歸來源。")
+
+
+def _regression_cases(root, graph, coverage):
+    if coverage is None:
+        return unique(graph["quality_contract"]["golden_cases"])
+    from ..blueprints.completion_cases import trial_cases
+
+    return unique(trial_cases(root, graph, coverage))
+
+
 def compare(service, folder, state, baseline, params):
     source = service.install_workflow(draft_id=state["candidate_key"])["source"]
     require(
@@ -102,8 +151,14 @@ def compare(service, folder, state, baseline, params):
         == {"base_source_hash": state["base_source_hash"], "improvement_id": state["proposal_id"]},
         "候選藍圖與改善提案或原版本不符",
     )
-    old = unique(baseline["quality_contract"]["golden_cases"])
-    new = unique(source["graph"]["quality_contract"]["golden_cases"])
+    workspace = service.workspace.root
+    old_coverage = _baseline_coverage(service, state, baseline)
+    new_coverage = (
+        _candidate_coverage(service, state["candidate_key"], params["completion_work_id"])
+        if "completion_work_id" in params else None
+    )
+    old = _regression_cases(workspace, baseline, old_coverage)
+    new = _regression_cases(workspace, source["graph"], new_coverage)
     evidence_ids = {event["feedback_id"] for event in state["evidence"]}
     defect_cases = params["defect_cases"]
     require(
@@ -127,7 +182,6 @@ def compare(service, folder, state, baseline, params):
         "未見資料須為本機案例 JSON",
     )
     held = unique(read_json(selected))
-    workspace = service.workspace.root
     seen = {digest(case_content(workspace, c["inputs"])) for c in old + new + defects}
     require(
         held and not any(digest(case_content(workspace, c["inputs"])) in seen for c in held),
@@ -150,10 +204,10 @@ def compare(service, folder, state, baseline, params):
     )
     base_key = state["base_source_hash"]
     prior = {
-        group: replay(service, base_key, unique(old + extra))
+        group: replay(service, base_key, unique(old + extra), coverage=old_coverage)
         for group, extra in (("fixed", []), ("defects", defects), ("holdout", held))
     }
-    candidate = replay(service, state["candidate_key"], full)
+    candidate = replay(service, state["candidate_key"], full, coverage=new_coverage)
     require(digest(case_content(workspace, full)) == corpus_hash, "比較期間案例素材已改變")
     report = {
         "base": prior,

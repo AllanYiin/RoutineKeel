@@ -78,6 +78,11 @@ class WorkflowService:
         return {'source': read_json(folder / 'blueprint.json'),
                 'builds': [read_json(p) for p in sorted(folder.glob('builds/*/verification.json'))]}
 
+    def blueprint_completion(self, operation, work_id=None, payload=None):
+        from ..blueprints.completion import completion
+
+        return completion(self, operation, work_id, payload)
+
     def resolve_blueprint_capabilities(self, draft_id, *, offline=False):
         from ..blueprints.installer import draft_dir, read_archive
         from ..blueprints.source import inspect_blueprint, require

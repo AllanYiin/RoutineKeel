@@ -7,7 +7,7 @@ from importlib.metadata import entry_points
 
 from pydantic import ValidationError
 from routinekeel_contracts.bindings import ImplementationAdapter
-from routinekeel_contracts.domain_assets import content_hash
+from routinekeel_contracts.domain_assets import CapabilityRequirement, content_hash
 from routinekeel_contracts.graph_validator import compatible
 from routinekeel_contracts.pattern_composition import PatternComposition
 
@@ -189,6 +189,40 @@ def _contract_matches(adapter, node, rule, offline):
     ) and all(compatible(adapter.outputs[key], port) for key, port in node.outputs.items())
 
 
+def automatic_probe(candidate, binding):
+    if binding is None:
+        return False
+    resources = binding.get("resources") or {}
+    return (
+        candidate["allowed"]
+        and candidate["locus"] == "local_runtime"
+        and candidate["cost_micro_usd"] == 0
+        and not candidate["permission_scope"]
+        and binding["side_effect"] == "none"
+        and binding["network"] is False
+        and not resources.get("network")
+        and not resources.get("model_calls")
+    )
+
+
+def replacement_candidates(key, node, workspace, *, offline=False):
+    """Find observed implementations with the same declared ports and authority."""
+    version = node.capability_version
+    if version.isdecimal():
+        version += ".0.0"
+    try:
+        rule = CapabilityRequirement(
+            id=node.id, capability=node.capability, version=version, required=True, portability="flexible",
+        )
+    except ValidationError:
+        return []
+    decision, _ = resolve_requirement(key, node, rule, workspace, offline=offline)
+    return [
+        item for item in decision["candidates"]
+        if (item["tool"], item["provider_version"]) != (node.capability, node.capability_version)
+    ]
+
+
 def resolve_requirement(key, node, rule, workspace, *, offline=False):
     candidates = []
     matches = {}
@@ -255,6 +289,9 @@ def resolve_requirement(key, node, rule, workspace, *, offline=False):
         "status": status,
         "code": code,
         "candidates": candidates,
+        "automatic_candidates": [
+            item["adapter"] for item in candidates if automatic_probe(item, matches[item["adapter"]][1])
+        ],
         "installation_allowed": False,
         "catalog_unavailable": catalog_unavailable,
         "fallback_contract": rule.fallback_contract,

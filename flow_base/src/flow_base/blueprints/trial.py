@@ -10,7 +10,8 @@ from .sessions import ASSET, Session
 from .source import require
 
 
-def fixture_path(root, name):
+def fixture_destination(root, name):
+    require(isinstance(name, str), "驗收素材路徑須為文字")
     rel = Path(name)
     require(
         not rel.is_absolute() and not rel.drive and len(rel.parts)>1 and rel.parts[0]=="fixtures"
@@ -19,6 +20,11 @@ def fixture_path(root, name):
     )
     src = root / rel
     reject_links(src)
+    return src
+
+
+def fixture_path(root, name):
+    src = fixture_destination(root, name)
     require(src.is_file() and src.stat().st_size<=512*1024**2,"驗收素材無效")
     return src
 
@@ -60,12 +66,16 @@ def matches(actual, expected, assets):
     return actual == expected
 
 
-def exercise(root, workflow, measurements=None):
+def exercise(root, workflow, measurements=None, progress=None, progress_path=None):
     from ..core.service import WorkflowService
 
     service = WorkflowService(root)
     results = []
     for index, case in enumerate(read_json(root / "cases.json")):
+        if progress is not None:
+            progress.update(case=index + 1, phase="prepare")
+            if progress_path is not None:
+                atomic_json(progress_path, progress)
         request = root / f"input-{index}.json"
         require(
             isinstance(case.get("inputs"), dict) and case.get("expected"),
@@ -81,6 +91,10 @@ def exercise(root, workflow, measurements=None):
             "環境或流程驗證失敗",
         )
         report = service.run_workflow_sync(options)
+        if progress is not None:
+            progress["phase"] = "exercise"
+            if progress_path is not None:
+                atomic_json(progress_path, progress)
         view = report["blueprint"]
         session = Session(service.workspace.runtime, view["session_id"])
         is_graph = read_json(session.path)["plan"].get("format") == 2
@@ -161,6 +175,10 @@ def exercise(root, workflow, measurements=None):
                 "review_count":sum(t["kind"] in {"human","review","authorize_external","iteration_review","route_review"} for t in mocks),
                 **usage,"result_status":view.get("result_status"),"output_hash":digest(view.get("outputs"))})
         require(view["status"] == "complete", "驗收案例仍有未完成步驟")
+        if progress is not None:
+            progress["phase"] = "compare"
+            if progress_path is not None:
+                atomic_json(progress_path, progress)
         require(
             set(view["outputs"]) == set(case["expected"])
             and matches(view["outputs"], case["expected"], session.assets),
@@ -214,8 +232,13 @@ def exercise(root, workflow, measurements=None):
 if __name__ == "__main__":
     trial, task = Path(sys.argv[1]), sys.argv[2]
     measurements=[]
+    progress = {}
+    progress_path = Path(sys.argv[3]) if len(sys.argv) > 3 else None
     try:
-        atomic_json(trial / "result.json", exercise(trial, task, measurements))
+        atomic_json(trial / "result.json", exercise(trial, task, measurements, progress, progress_path))
     except Exception as exc:  # noqa: BLE001 -- the verifier subprocess must report any candidate failure as a failed trial
-        atomic_json(trial / "result.json", {"passed": False, "error": str(exc)[:1000],"measurements":measurements})
+        atomic_json(trial / "result.json", {
+            "passed": False, "error": str(exc)[:1000], "code": getattr(exc, "code", type(exc).__name__),
+            "measurements": measurements, **progress,
+        })
         sys.exit(1)

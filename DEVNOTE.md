@@ -2,46 +2,45 @@
 
 ## SNAPSHOT — 當前狀態
 
-最後更新：2026-11-23T11:32+08:00
+最後更新：2026-11-24T22:06+08:00
 交接狀態：verified
 
 ### 目標與授權範圍
 
-修正 Workflow Studio 規格稽核缺口，並讓整合包以空白底座啟動。
+依 devloop 實作藍圖缺口補強與接續建置 Stage 0–6。
 
 ### 目前進度
 
-修正與本機驗證完成。Studio 稽核修正見 363f130。整合包收錄兩個待安裝範例 ZIP，布局與測試隨本交接提交。發行候選位於 dist/candidate-uninstalled-examples/release/。
+Stage 0–6 均已完成。本輪在固定驗收快照完成可續做的藍圖補強、資格鎖定、案例補件、隔離試做與安裝／升級接續。已核對操作文件與本機最終候選。
 
 ### 下一步
 
-本機候選已建置。對外發布前依發行流程確認平台驗收及發布授權。
+本輪開發與本機驗收無待辦。共用工作樹的其他並行修改與正式發布各依原有流程處理。
 
 ### DECISIONS
 
-- 整合包的 workflows、share_states、share_logs 初始空白。範例沿用現成分包，置於 examples/workflows，使用者選擇後解壓至 RoutineKeel 根目錄。開發用 dist/workspace 可直接用既有已裝好的測試布局。
-- 定稿包含每步用途、完成條件、關鍵性及理由，並封存已顯示的藍圖、品質規則和技能指紋。網頁研究先由宿主搜尋，Studio 擷取支援的 HTTPS 文字來源並核對原文和採用值。
-- 更正交付重新評估原生產節點，必要人審須重新取得。Pack 停用阻擋新建置與安裝，Pattern 控制邊以隔離測具驗證，改版須有回歸比較。
+- 預檢缺口屬候選試做，藍圖設計與匯入依原契約繼續。底座保存補強工作並自動續行。
+- 有效工具與案例證據可獨立補強；新業務版本、宿主副作用及既有版本升級沿既有核准與回歸入口。
+- 本機候選以 HEAD 加本輪改動製作固定快照，保留共用工作樹的並行修改。
 
 ### LANDMINES
 
-- 本輪驗證於 Windows。macOS、真人宿主與真實模型驗收尚待。來源核對接受支援網域的 HTML、純文字與 Markdown。
-- 本輪範例安裝沿用 ZIP 解壓。沒有 SQLite schema 遷移。回退發行布局可還原 tools/release.py 的全包組裝與相應測試指引。
+- Windows 候選底座與 MCP 可用，Studio 冷啟動依賴準備在測試環境逾時。Linux 實際冷啟動及最終 wheel 交付路徑通過。
+- 回退到底座 v6 前先留存 v7 資料副本，並使用已實測還原的遷移前備份。
 
 ### 證據索引
 
-- tools/release.py
-- tests/test_release_layout.py
-- tests/test_studio_design_contract.py
+- docs/specs/blueprint-completion.md
+- flow_base/docs/blueprint-install.md
 - workflow_studio/docs/host-conversation.md
-- dist/candidate-uninstalled-examples/release/versions.json
+- dist/blueprint-completion-final-by5dkfp_/evidence.json
+- dist/blueprint-completion-audit-p9w74nc7/dist/candidate-completion-final/release/SHA256SUMS
 
 ### VALIDATION
 
-- 全包、首次空白 catalog、單獨啟用複製流程與快取 — PASS：dist/uninstalled-examples-layout.xml，15 passed。實際解壓候選 ZIP，空工作區無狀態檔，選擇複製分包後 catalog 只列該流程，並實際執行與重跑。
-- 發行包與流程更新 — PASS：dist/uninstalled-examples-release.xml，87 passed。兩個內嵌分包與獨立分包位元相同。
-- 定稿、交付、Graph、Pattern 與整合回歸 — PASS：dist/studio-audit-base.xml 38 passed，dist/studio-audit-studio.xml 29 passed，dist/studio-audit-graph.xml 81 passed，另驗證經 join 轉送的交付更正會重做原節點檢核。
-- 公開真實原文擷取 — PASS：Studio CLI 從 Python 官方 3.12 文件擷取測試引文，回傳查閱日期與來源 SHA-256。
+- 固定快照回歸 — PASS：依實際 JUnit 去重後 1,299 個不同測例通過，包含 Studio 566、Linux 81、工作流 105，以及 MCP、封包與資料還原補測。
+- 最終本機 ZIP 與 wheel — PASS：五個封包雜湊及本輪 wheel 原始碼核對一致。最終獨立環境實際執行 Studio 與便攜能力兩條交付路徑。
+- Windows Studio 原生冷啟動 — NOT_RUN：底座啟動及 MCP 安裝通過，Studio 依賴準備超過測試時限；Linux 已覆蓋完整發行包路徑。
 
 # HISTORY
 
@@ -589,3 +588,31 @@ Windows 及 WSL 實測逐一核對 1,190 個唯一測例，補驗逾時與所有
 <!-- devnote-review:99b992b521885deced8e3ae1 -->
 
 將已驗證的修正拆為 Studio 稽核與空白底座發行布局兩項提交。保留既有測試紀錄。
+
+
+## [2026-11-24T21:03+08:00] 藍圖補強 Stage 0 基線
+
+<!-- devnote-review:4a11d23a31bceba307a7783e -->
+
+實測預檢同時有能力與案例缺口，仍可完成定稿、匯出與匯入草稿。關聯回歸 47 項通過。
+
+
+## [2026-11-24T21:11+08:00] 藍圖補強 Stage 1–2 續做與自動資格驗證
+
+<!-- devnote-review:1be1d7c92615c0a101797eb5 -->
+
+加上可恢復的補強資料與 CLI／MCP 入口，接上安全本機資格驗證及環境鎖定。Stage 1 關聯 24 項、Stage 2 關聯 46 項均通過。
+
+
+## [2026-11-24T21:46+08:00] 藍圖補強 Stage 3–4 補件、隔離試做與正式交付
+
+<!-- devnote-review:6001ccb198b0f7ab8209d0d3 -->
+
+完成可執行案例、素材、Studio 修訂與底座候選試做接續。驗證首次安裝、工作程序恢復及既有工作流的回歸比較升級。Stage 5 已補 Linux、字幕依賴及媒體實測，固定快照和冷啟動仍在驗收。
+
+
+## [2026-11-24T22:06+08:00] 藍圖補強 Stage 5–6 回歸與本機候選
+
+<!-- devnote-review:11e633695762acfb5492289e -->
+
+逐案例核對 1,299 個通過證據。從解壓候選實跑 Studio 匯出、MCP 續接、資格鎖定、試做、安裝及正式執行，核對最終候選與兩份操作指南。

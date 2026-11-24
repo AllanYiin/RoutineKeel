@@ -70,6 +70,11 @@ def design_preflight(proposal, workspace):
             context = gap.get("node") or (f"案例 {gap['case']}" if "case" in gap else "建置")
             lines.append(f"- {context}｜{gap['reason']}")
     proposal["build_preflight"] = result
+    proposal["build_preflight_guidance"] = {
+        "scope": "candidate_trial",
+        "completion_tool": "blueprint_completion",
+        "message": "依目前定稿與確認狀態繼續設計。藍圖匯出後由底座接手補強與試做。",
+    }
     proposal["display_text"] += "\n".join(lines)
 
 
