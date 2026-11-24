@@ -305,6 +305,10 @@ V018 = (
 
 
 V019 = (
+    """CREATE TABLE IF NOT EXISTS studio_guided_sessions (
+        project_id TEXT PRIMARY KEY REFERENCES studio_projects(project_id),
+        version INTEGER NOT NULL CHECK(version > 0), state_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL)""",
     """CREATE TABLE IF NOT EXISTS studio_interviews (
         session_id TEXT PRIMARY KEY, project_id TEXT NOT NULL UNIQUE REFERENCES studio_projects(project_id))""",
     """CREATE TABLE IF NOT EXISTS studio_interview_revisions (
