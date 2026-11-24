@@ -21,7 +21,7 @@ _MODEL_PARAMETER = re.compile(
 _THRESHOLD = re.compile(
     r"threshold|tolerance|cutoff|minimum|maximum|timeout|^min_|^max_|^limit", re.I
 )
-_LOCI = {"local_runtime", "host_mediated", "external_service"}
+_LOCI = {"local_runtime", "host_mediated", "external_service", "deferred"}
 PRESENTATION_VERSION = 2
 
 
@@ -250,8 +250,60 @@ def draft_presentation(graph):
         "variables": variables,
         "tools": tools,
         "research_requests": research_requests(variables),
-        "next_questions": ["確認內嵌技能及工具配置", "校閱術語及變數", "確認關鍵檢核與交付方式"],
+        "next_questions": [
+            "校閱逐步輸入輸出合約",
+            "確認內嵌技能、能力需求及執行限制",
+            "校閱術語及變數",
+            "確認關鍵檢核與交付方式",
+        ],
     }
+
+
+def step_contract_checklist(graph, steps):
+    checklist = {}
+
+    def visit(body, prefix=""):
+        consumers = {}
+
+        def record(source, target):
+            consumers.setdefault(source, []).append(target)
+
+        for name, source in body["outputs"].items():
+            record(source, f"{prefix[:-1] or '工作流'}交付 / {name}")
+        for node in body["nodes"]:
+            path = prefix + node["id"]
+            row = steps[path]
+            for name, binding in row["inputs"].items():
+                record(binding["source"], f"{path} / {name}")
+            references = {}
+            if node["kind"] == "switch":
+                references["分支判斷"] = node["condition"]["source"]
+            if "iteration_input" in row:
+                references["迭代輸入"] = row["iteration_input"]
+            for route, outputs in row.get("branches", {}).items():
+                for name, source in outputs.items():
+                    references[f"分支 {route} / {name}"] = source
+            for name, source in row.get("fallbacks", {}).items():
+                references[f"備援 / {name}"] = source
+            for name, source in references.items():
+                record(source, f"{path} / {name}")
+            checklist[path] = {
+                "輸入": row["inputs"],
+                "其他資料來源": references,
+                "輸出": {},
+                **({"完成條件": row["decision"]["completion"]} if "decision" in row else {}),
+            }
+            if "body" in node:
+                visit(node["body"], path + "/")
+        for node in body["nodes"]:
+            path = prefix + node["id"]
+            checklist[path]["輸出"] = {
+                name: {"合約": port, "用途": consumers.get(f"artifact://{node['id']}/{name}", [])}
+                for name, port in steps[path]["outputs"].items()
+            }
+
+    visit(graph)
+    return checklist
 
 
 def review_sections(proposal):
@@ -273,6 +325,7 @@ def review_sections(proposal):
         "process": (
             "工作步驟、分支與復原",
             {
+                "逐步輸入輸出合約": step_contract_checklist(graph, (final or draft)["steps"]),
                 "所有步驟與資料契約": graph["nodes"],
                 "人工校閱": decisions["review"],
                 "失敗或中斷後的處理": decisions["recovery"],
@@ -292,7 +345,7 @@ def review_sections(proposal):
             {
                 "技能來源": proposal["skill_sources"],
                 "內嵌檔案": list(proposal["skill_files"]),
-                "採用的 Pattern 與能力綁定": graph["provenance"].get("pattern_compositions", []),
+                "採用的 Pattern 與能力需求": graph["provenance"].get("pattern_compositions", []),
                 "工具配置及權限": (final or draft)["tools"],
                 "變數清冊": (final or draft)["variables"],
                 **(
@@ -444,7 +497,7 @@ def final_presentation(repository, proposal, review):
         or locations.keys() != tools.keys()
         or any(not isinstance(locus, str) or locus not in _LOCI for locus in locations.values())
     ):
-        fail("請逐項確認工具的執行位置。")
+        fail("請逐項填寫執行位置限制，待建置時解析可填 deferred。")
     glossary = review["glossary"]
     if not isinstance(glossary, dict) or any(
         not term.strip() or not isinstance(value, str) or not value.strip()
@@ -524,7 +577,17 @@ def final_presentation(repository, proposal, review):
         "final_diagram": _diagram(final, final=True),
         "steps": steps,
         "variables": variables,
-        "tools": {path: {**item, "locus": locations[path]} for path, item in tools.items()},
+        "tools": {
+            path: {
+                **item,
+                **(
+                    {"location_deferred": True}
+                    if locations[path] == "deferred"
+                    else {"locus": locations[path]}
+                ),
+            }
+            for path, item in tools.items()
+        },
         "skills": skills,
         "skill_sources": proposal["skill_sources"],
         "skill_manifest": proposal["skill_files"],

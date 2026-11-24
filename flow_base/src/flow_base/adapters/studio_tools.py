@@ -358,7 +358,7 @@ def register(server, workspace, result):
         design: dict | None = None,
         skills: list[dict] | None = None,
     ) -> dict:
-        """Prepare a detailed draft. Show its diagram and every review section before asking for approval."""
+        """Show all review sections, including step data contracts. Build preflight applies to building."""
         return call(
             "prepare_blueprint",
             project_id=project_id,
@@ -380,7 +380,7 @@ def register(server, workspace, result):
         draft_reply: str | None = None,
         shown_sections: dict[str, str] | None = None,
     ) -> dict:
-        """Relay actual draft approval and the IDs and SHA-256 values of all displayed sections."""
+        """Relay draft approval and section hashes. Set each undecided tool_locations entry to 'deferred'."""
         return call(
             "finalize_workflow_design", project_id=project_id, expected_revision=expected_revision,
             request_id=request_id, draft_id=draft_id, review=review, draft_reply=draft_reply,

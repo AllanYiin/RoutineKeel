@@ -59,7 +59,9 @@ def next_question(state, domain=None):
         if stage == "draft_required":
             return {
                 **result,
-                "text": "請先依任務與已知答覆擬完整初稿，預填各步輸入、輸出、分支、例外、復原和驗收。"
+                "text": "請先依任務與已知答覆擬完整初稿。逐步預填輸入的來源、型別、格式與必填性，"
+                "以及輸出的名稱、型別、格式、下游用途與完成條件，再補上分支、例外、復原和驗收。"
+                "在設計時確認能力需求，交給底座在目標工作區解析實際工具。"
                 "有會改變設計且無法合理提案的缺口，再指定領域向使用者提問。",
                 "next_actions": ["prepare_blueprint", "pause", "status"],
             }

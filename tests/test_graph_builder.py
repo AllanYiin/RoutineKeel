@@ -117,7 +117,7 @@ def test_desktop_design_export_and_builder_use_same_graph_and_receipt(tmp_path, 
         },
     )
     assert proposal["build_preflight"] == {
-        "status": "ready", "capability_gaps": [], "build_gaps": []
+        "status": "ready", "blocks_blueprint_export": False, "capability_gaps": [], "build_gaps": []
     }
     proposal = studio_request(tmp_path, "finalize_workflow_design", {
         "project_id": pid, "expected_revision": proposal["revision"], "request_id": "finalize",
