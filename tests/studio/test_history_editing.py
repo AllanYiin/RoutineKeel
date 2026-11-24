@@ -2,12 +2,12 @@ import pytest
 from compiler_helpers import build_ir
 from test_governance import verified_approval
 from workflow_studio.contracts import StudioError
+from workflow_studio.conversation.session import StudioSession
 from workflow_studio.governance.approvals import Approvals
 from workflow_studio.governance.release import Releases
 from workflow_studio.llm.streaming import EventStore
 from workflow_studio.project.history import differences
 from workflow_studio.service import StudioService
-from workflow_studio.ui.model import StudioUIModel
 
 
 def test_history_reuse_preserves_original_and_orders_versions_after_discard(tmp_path):
@@ -58,7 +58,7 @@ def test_goal_restore_is_explicit_and_rolls_back_if_current_tool_not_allowed(tmp
 
 
 def test_approved_and_published_history_cannot_be_discarded_or_mutated(tmp_path):
-    studio, p, build, cases, verifier, policy, approval = verified_approval(tmp_path)
+    studio, p, build, _cases, verifier, policy, approval = verified_approval(tmp_path)
     current = studio.projects.get(p.project_id)
     with pytest.raises(StudioError) as exc:
         studio.history.discard(p.project_id, build["revision_id"], current.version)
@@ -110,9 +110,9 @@ def test_raw_draft_can_be_copied_and_comparison_keeps_types(tmp_path):
 
 
 def test_ui_history_actions_invalidate_cached_build_and_approval(tmp_path):
-    studio, p, revision, policy = build_ir(tmp_path)
+    studio, p, revision, _policy = build_ir(tmp_path)
     studio.close()
-    model = StudioUIModel(tmp_path / "studio")
+    model = StudioSession(tmp_path / "studio")
     model.select_project(p.project_id)
     model.build_id = "old-build"
     model.approval_id = "old-approval"

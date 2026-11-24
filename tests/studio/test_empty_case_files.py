@@ -3,15 +3,15 @@ from compiler_helpers import build_ir, runtime_python
 from test_acceptance_corpus import CATALOG, ROOT
 from test_generated_handlers import program_ir
 from workflow_studio.contracts import StudioError
+from workflow_studio.conversation.session import StudioSession
 from workflow_studio.ingestion.models import ImportLimits
 from workflow_studio.ingestion.preview import preview_file
-from workflow_studio.ui.model import StudioUIModel
 from workflow_studio.verifier.golden_cases import GoldenCases
 from workflow_studio.verifier.report import Verifier
 
 
 def test_empty_expected_file_can_be_added_as_an_exact_business_case(tmp_path):
-    model = StudioUIModel(tmp_path)
+    model = StudioSession(tmp_path)
     p = model.create_project(
         "empty result", "extract matching lines", "no matches produces zero bytes"
     )
@@ -23,7 +23,7 @@ def test_empty_expected_file_can_be_added_as_an_exact_business_case(tmp_path):
 
 
 def test_blank_pasted_description_and_invalid_structured_files_still_rejected(tmp_path):
-    model = StudioUIModel(tmp_path)
+    model = StudioSession(tmp_path)
     p = model.create_project("invalid", "goal", "success")
     with model.service() as studio:
         with pytest.raises(StudioError):

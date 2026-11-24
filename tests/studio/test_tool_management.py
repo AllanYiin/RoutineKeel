@@ -7,13 +7,17 @@ from compiler_helpers import build_ir, runtime_python
 from test_discovery import FixtureProvider
 from test_verifier import verification_case
 from workflow_studio.contracts import StudioError
+from workflow_studio.conversation.session import StudioSession
 from workflow_studio.governance.release import Releases
 from workflow_studio.llm.usage import Budget
 from workflow_studio.registry.builtin import builtin_tools
 from workflow_studio.registry.policy import ToolPolicy
-from workflow_studio.storage.migrations import APPLICATION_ID, MIGRATIONS, SCHEMA_VERSION
+from workflow_studio.storage.migrations import (
+    APPLICATION_ID,
+    MIGRATIONS,
+    SCHEMA_VERSION,
+)
 from workflow_studio.storage.sqlite import SQLiteRepository
-from workflow_studio.ui.model import StudioUIModel
 
 
 def custom_copy():
@@ -23,9 +27,9 @@ def custom_copy():
 
 
 def test_registered_approved_disabled_and_revoked_tool_lifecycle_runs_real_package(tmp_path):
-    studio, p, _, cases, verifier, policy = verification_case(tmp_path)
+    studio, p, _, _cases, _verifier, policy = verification_case(tmp_path)
     studio.close()
-    model = StudioUIModel(tmp_path / "studio", runtime_python=runtime_python())
+    model = StudioSession(tmp_path / "studio", runtime_python=runtime_python())
     model.select_project(p.project_id)
     registered = model.register_tool(
         custom_copy(), actor="fixture", reason="register reviewed contract"
@@ -47,9 +51,8 @@ def test_registered_approved_disabled_and_revoked_tool_lifecycle_runs_real_packa
     disabled = model.decide_tool(approved, "disabled", "reviewer", "temporarily stop use")
     with pytest.raises(StudioError):
         model.compile()
-    with model.service() as studio:
-        with pytest.raises(StudioError):
-            Releases(studio).publish(p.project_id, approval_id, tmp_path / "installed", policy)
+    with model.service() as studio, pytest.raises(StudioError):
+        Releases(studio).publish(p.project_id, approval_id, tmp_path / "installed", policy)
     assert manifest.read_bytes() == original
     active = model.decide_tool(disabled, "active", "reviewer", "resume same contract")
     assert model.verify()["status"] == "passed"
@@ -67,7 +70,7 @@ def test_registered_approved_disabled_and_revoked_tool_lifecycle_runs_real_packa
 
 
 def test_new_versions_preserve_old_contract_and_versioned_titles(tmp_path):
-    model = StudioUIModel(tmp_path)
+    model = StudioSession(tmp_path)
     first = model.register_tool(custom_copy())
     second = custom_copy()
     second.update(version="1.1.0", title="新版複製")
@@ -85,7 +88,7 @@ def test_new_versions_preserve_old_contract_and_versioned_titles(tmp_path):
 
 
 def test_stale_tool_review_cannot_approve_after_state_changes(tmp_path):
-    model = StudioUIModel(tmp_path)
+    model = StudioSession(tmp_path)
     item = model.register_tool(custom_copy())
     disabled = model.decide_tool(item, "disabled", "fixture", "pause")
     model.decide_tool(disabled, "active", "fixture", "resume")
@@ -98,7 +101,7 @@ def test_stale_tool_review_cannot_approve_after_state_changes(tmp_path):
     "raw", ["null", "[]", '{"tool_id":"a","tool_id":"b"}', "not-json", "x" * 128001]
 )
 def test_tool_import_rejects_ambiguous_or_oversized_json(tmp_path, raw):
-    model = StudioUIModel(tmp_path / "studio")
+    model = StudioSession(tmp_path / "studio")
     path = tmp_path / "tool.json"
     path.write_text(raw, encoding="utf-8")
     with pytest.raises(StudioError):
@@ -110,7 +113,7 @@ def test_import_cannot_self_assign_trust_and_unsupported_tools_are_not_advertise
     studio, p, revision, policy = build_ir(tmp_path)
     source_id = revision.ir["evidence"][0]["source_id"]
     studio.close()
-    model = StudioUIModel(tmp_path / "studio")
+    model = StudioSession(tmp_path / "studio")
     model.select_project(p.project_id)
     payload = custom_copy()
     with pytest.raises(StudioError):
@@ -136,7 +139,7 @@ def test_alias_cannot_understate_real_model_permissions_or_network(tmp_path):
     descriptor = next(t for t in builtin_tools() if t.implementation == "builtin.llm").model_dump()
     descriptor.update(tool_id="custom.model", permissions=["workspace.write"], cost_micro_usd=0)
     descriptor["resources"]["network"] = False
-    model = StudioUIModel(tmp_path / "studio")
+    model = StudioSession(tmp_path / "studio")
     registered = model.register_tool(descriptor)
     model.decide_tool(registered, "approve", "reviewer", "declared contract is still not authority")
     weak = ToolPolicy("windows", frozenset({"workspace.write"}), False, True, 100_000)
@@ -158,7 +161,7 @@ def test_alias_cannot_understate_real_model_permissions_or_network(tmp_path):
 
 @pytest.mark.parametrize("action", ["approve", "disabled"])
 def test_audit_failure_rolls_back_tool_change(tmp_path, monkeypatch, action):
-    model = StudioUIModel(tmp_path)
+    model = StudioSession(tmp_path)
     initial = model.register_tool(custom_copy())
     with model.service() as studio:
         catalog = studio.tools

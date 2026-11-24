@@ -121,12 +121,12 @@ def test_enumeration_and_comprehensions():
 
 
 def test_argument_contract_and_workbench_edit_without_code_changes(tmp_path):
-    from workflow_studio.ui.model import StudioUIModel
+    from workflow_studio.conversation.session import StudioSession
 
     params = csv_parameters()
-    studio, p, revision, policy = build_ir(tmp_path, program_ir(params, "csv"))
+    studio, p, _revision, _policy = build_ir(tmp_path, program_ir(params, "csv"))
     studio.close()
-    model = StudioUIModel(tmp_path / "studio")
+    model = StudioSession(tmp_path / "studio")
     model.select_project(p.project_id)
     with pytest.raises(StudioError):
         model.edit_node("copy", arguments={"minimum": "invalid"})

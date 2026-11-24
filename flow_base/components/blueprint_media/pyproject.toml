@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "routinekeel-blueprint-media"
+version = "0.1.1"
+requires-python = ">=3.11,<3.14"
+description = "Local, bounded WAV/SRT/MP4 processing for RoutineKeel blueprint recipes"
+
+[project.entry-points."routinekeel.blueprint_operations"]
+"audio.timeline" = "routinekeel_media:audio_timeline"
+"subtitle.srt" = "routinekeel_media:subtitles"
+"video.compose" = "routinekeel_media:compose"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/routinekeel_media"]

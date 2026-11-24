@@ -3,14 +3,13 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from pydantic import BaseModel, ValidationError, model_validator
-
+from flow_base.contracts import Step, Workflow
 from flow_base.diagnostics import cli_error, record_exception
-from flow_base.engine import run_workflow, Adapter
-from flow_base.contracts import Workflow, Step
+from flow_base.engine import Adapter, run_workflow
 from flow_base.runtime import FlowError, read_json
 from flow_base.workspace import Workspace
-from test_workspace import workspace, cli
+from pydantic import BaseModel, ValidationError, model_validator
+from test_workspace import cli
 
 
 class ExampleRow(BaseModel):

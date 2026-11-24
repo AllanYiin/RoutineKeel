@@ -4,11 +4,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
-from flow_base import hardware, runtime as runtime_module
+from ai_flow01.adapter import Adapter, resolve_environment
 from flow_base.runtime import FlowError, Runtime
 from flow_base.workspace import Manifest, Task
-from ai_flow01.adapter import Adapter, resolve_environment
+
+from flow_base import hardware
+from flow_base import runtime as runtime_module
 
 
 def environment(status='available', detected='detected'):
@@ -118,7 +119,7 @@ def test_hardware_memory_fluctuations_do_not_invalidate_asr_cache():
 
 
 def test_packaged_default_and_sample_both_choose_auto():
-    root=Path(__file__).resolve().parents[1]/'routinekeel/flows/課程影片產生字幕'
+    root=Path(__file__).resolve().parents[1]/'workflows/FLOW_課程影片產生字幕'
     template=json.loads((root/'flow.template.json').read_text())['defaults']
     example=json.loads((root/'settings.example.json').read_text())
     for config in (template,example):

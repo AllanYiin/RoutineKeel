@@ -2,51 +2,49 @@
 
 ## SNAPSHOT — 當前狀態
 
-最後更新：2026-11-17T08:35+08:00
+最後更新：2026-11-23T11:32+08:00
 交接狀態：verified
 
 ### 目標與授權範圍
 
-依 RoutineKeel 底座階段規劃及使用者核定的 MCP 佇列修訂完成 Stage 0–13、逐階段驗收並交付。
+修正 Workflow Studio 規格稽核缺口，並讓整合包以空白底座啟動。
 
 ### 目前進度
 
-Stage 0–12 的程式與整合 Gate 已提交並在 GitHub draft PR #3 的 Ubuntu/Windows/macOS CI 通過；Stage10 16d0fd6，Stage11 ad753e0，Stage12 候選 a0495ba，後續跨平台修正 d08c5c4/24354da。Stage13 文件候選 f69402f；最後 CI 結果與真人走查清單正在更新，PR 保持 draft、未合併未發布。原有 .idea/ 七個 staged 檔案屬使用者變更。
+修正與本機驗證完成。Studio 稽核修正見 363f130。整合包收錄兩個待安裝範例 ZIP，布局與測試隨本交接提交。發行候選位於 dist/candidate-uninstalled-examples/release/。
 
 ### 下一步
 
-將 CI run #9 的三平台結果與未覆蓋 Mac Finder/Tk 真人走查寫入報告/手冊，提交並推送 doc-only 更新，再追蹤最後文件變更的 CI 終態。等待使用者對未接觸程式碼的操作走查回覆；未取得人工證據與明確合併/發布授權前不宣稱 Stage13 發行完成。
+本機候選已建置。對外發布前依發行流程確認平台驗收及發布授權。
 
 ### DECISIONS
 
-- Stage10 MCP 以 execution_id/SQLite v004/獨立 queue-worker 執行，MCP Client 無狀態查詢且不派生 Worker。
-- PR #3 使用 Ubuntu build 加 Windows2025/macOS15 Gate；publish 需三平台成功，draft PR 不合併/不發布。
-- Windows cp1252 與 macOS 缺 process_started_at 已依第一次/第二次 CI 日誌修正；發行啟動器和 CI 明確用 UTF-8。
-- Stage12 指標依三平台自動測試與 C: NVMe p95 9.78ms 驗收；Mac GUI/Finder headless 未覆蓋須列明。
+- 整合包的 workflows、share_states、share_logs 初始空白。範例沿用現成分包，置於 examples/workflows，使用者選擇後解壓至 RoutineKeel 根目錄。開發用 dist/workspace 可直接用既有已裝好的測試布局。
+- 定稿包含每步用途、完成條件、關鍵性及理由，並封存已顯示的藍圖、品質規則和技能指紋。網頁研究先由宿主搜尋，Studio 擷取支援的 HTTPS 文字來源並核對原文和採用值。
+- 更正交付重新評估原生產節點，必要人審須重新取得。Pack 停用阻擋新建置與安裝，Pattern 控制邊以隔離測具驗證，改版須有回歸比較。
 
 ### LANDMINES
 
-- Stage13 手冊規定未接觸程式碼的人走一次安裝/範例/診斷/恢復，尚待使用者安排；macOS Finder/Tk 互動桌面不由 CI 證明。
-- 實際舊版 wheel 回退未演練，只有 SQLite 備份 checksum/restore 測試；發布前需決策。
-- 最後文件更新尚未跑其對應 head commit 的完整 CI；PR 仍 draft。
-- .idea staged 屬使用者，所有提交與推送均排除。
+- 本輪驗證於 Windows。macOS、真人宿主與真實模型驗收尚待。來源核對接受支援網域的 HTML、純文字與 Markdown。
+- 本輪範例安裝沿用 ZIP 解壓。沒有 SQLite schema 遷移。回退發行布局可還原 tools/release.py 的全包組裝與相應測試指引。
 
 ### 證據索引
 
-- draft PR https://github.com/AllanYiin/RoutineKeel/pull/3
-- GitHub Actions run 43987170358 各 job logs
-- routinekeel/flow_base/docs/test-report.md 與 release-checklist.md
-- routinekeel/flow_base/docs/user-guide.md 新增走查清單
-- git status：.idea 七個 staged 使用者檔案與待提交 docs
+- tools/release.py
+- tests/test_release_layout.py
+- tests/test_studio_design_contract.py
+- workflow_studio/docs/host-conversation.md
+- dist/candidate-uninstalled-examples/release/versions.json
 
 ### VALIDATION
 
-- GitHub PR CI run #9 — PASS：https://github.com/AllanYiin/RoutineKeel/actions/runs/43987170358 commit 24354dac：Ubuntu 401 passed/3 skipped、macOS15 402 passed/2 skipped、Windows2025 383 passed/21 skipped；三 job success、publish skipped；Ubuntu三 ZIP SHA256SUMS OK。
-- 本機 Windows/WSL — PASS：Windows 382 passed/21 skipped，WSL Linux 390 passed/13 skipped；M7 C:NVMe 5,000 Run p95 9.78ms。
-- Stage13 文件候選 — PASS：source.zip 含架構/known issues/release checklist/upgrade/合成診斷，三 ZIP SHA正確，文件連結0缺失；user-guide 新增真人走查步驟，後續需重建驗證。
-- Mac Finder/Tk 真人走查與舊 wheel rollback — NOT_RUN：headless CI不具互動視窗；使用者走查回覆待處理；舊 wheel回退未演練。
+- 全包、首次空白 catalog、單獨啟用複製流程與快取 — PASS：dist/uninstalled-examples-layout.xml，15 passed。實際解壓候選 ZIP，空工作區無狀態檔，選擇複製分包後 catalog 只列該流程，並實際執行與重跑。
+- 發行包與流程更新 — PASS：dist/uninstalled-examples-release.xml，87 passed。兩個內嵌分包與獨立分包位元相同。
+- 定稿、交付、Graph、Pattern 與整合回歸 — PASS：dist/studio-audit-base.xml 38 passed，dist/studio-audit-studio.xml 29 passed，dist/studio-audit-graph.xml 81 passed，另驗證經 join 轉送的交付更正會重做原節點檢核。
+- 公開真實原文擷取 — PASS：Studio CLI 從 Python 官方 3.12 文件擷取測試引文，回傳查閱日期與來源 SHA-256。
 
 # HISTORY
+
 
 - 2026-11-17：完成 Stage 0–2；Stage 3 開始。
 - 2026-11-17：Stage 3 實作與驗證完成，含 Client 退出後獨立 supervisor；準備進入 Stage 4。
@@ -144,3 +142,450 @@ Stage13 文件候選 f69402f 已提交；本機三 ZIP SHA、source 文件、連
 <!-- devnote-review:c76f4a3b22a97acd2afdc5ce -->
 
 PR #3 第三輪 CI Ubuntu401/3skip、macOS402/2skip、Windows383/21skip 均成功；前兩輪揭露並修復 Windows cp1252 和 macOS 程序出生時間。Stage12 整合 Gate 已具三平台證據。Stage13 更新測試報告與真人走查步驟，仍待最後 doc-only CI、Mac GUI真人走查及發布授權。
+
+
+## [2026-11-17T08:55+08:00] 最後文件 head 三平台 CI 通過
+
+<!-- devnote-review:fbc79e0f03e7d22e5dc5c346 -->
+
+PR #3 最終文件 head 0d2e48d 的 Actions run #11 Ubuntu401/3skip、macOS402/2skip、Windows383/21skip 全部 success，ZIP SHA正確且 publish skipped。使用者同意安排非技術走查，結果仍待回覆；PR保持 draft、未合併未發布。
+
+
+## [2026-11-17T09:01+08:00] 舊0.2.9 wheel回滾可讀，雙擊入口限制
+
+<!-- devnote-review:501661505046bc928a52a304 -->
+
+找到本機舊發行包0.2.9；以 before-v001 還原後，PowerShell7執行未修改舊 start.ps1 可安裝 wheel 並讀 run_old。舊 run_app.bat 在此主機WinPS5.1因 Get-FileHash 缺失失敗。文件已區分兩者，等真人走查回報後再推最後 doc CI。
+
+
+## [2026-11-17T09:06+08:00] 走查復原步驟補齊並重建發行包
+
+<!-- devnote-review:d1b62609350f7e54ee1feaa4 -->
+
+核對待整理 checkpoint 與工作樹後，在非技術走查第 5 步補上修正錯誤輸入、重新執行並比對成果的復原驗收；本機 release.py 建置成功，ZIP 中已有更新指引。真人走查未回報，文件仍未推 PR。
+
+
+## [2026-11-17T09:24+08:00] PR 使用者合併與自動發行後的處置待決
+
+<!-- devnote-review:27d7b4e6a53ec469ead3d997 -->
+
+五份 Stage 13 文件以 264a605 推送，run #12 三平台成功。GitHub 事件顯示使用者帳號合併 PR #3；合併後 run #13 自動公開新 Release。使用者授權取消時 publish 已完成，未能取消；已請其決定是否刪除新 Release。伯東案例不上傳，當前倉庫與可見資產未發現匹配項；真人走查仍待回報。
+
+
+## [2026-11-17T09:37+08:00] 手動發行 Gate 修正通過三平台 CI
+
+<!-- devnote-review:3e947a741bde08a68fac3bf7 -->
+
+新增 draft PR #5：以手動 main workflow_dispatch 加 publish_release 明確選項取代 PR 合併自動發布，仍以三平台測試為 publish 前置。run #14 三平台全成功、publish skipped；更新 Stage 13 文件的回滾與實際發行紀錄。已發布版本處置與真人走查仍待使用者。
+
+
+## [2026-11-17T10:03+08:00] 保留已發布版本，修正文件通過三平台 CI
+
+<!-- devnote-review:dc05c6f5bff9899687c4bc9e -->
+
+使用者明確選擇保留 build-00fff1c。PR #5 文件記錄該決定，最新 head 2397ede 的 run #15 Ubuntu/Windows/macOS 全成功且 publish skipped；PR 保持 draft。線上 ZIP 下載逾時未得檔，不宣稱逐包內容檢查完成。Stage 13 真人走查仍待回報。
+
+
+## [2026-11-17T10:51+08:00] PR #5 合併，main 採用手動發行 Gate
+
+<!-- devnote-review:1c0332c00073837da523edc4 -->
+
+使用者授權後將 PR #5 轉為 ready 並以預期 head SHA 合併；main 21fba443 已採用手動 publish_release 且保留三平台前置測試。合併後核對無新 Release，原 build-00fff1c 按使用者決定保留；Stage 13 真人走查仍待回報。
+
+
+## 2026-11-17 Studio 新目標
+
+使用者另行提供完整 Studio 規格並啟用 devloop；Stage 0 已提交 5543ebd，Stage 1 進行中。舊底座歷史與發布決定保留如上。
+
+## 2026-11-17 Studio Stage 1–4 通過
+
+持久化、來源安全預覽、IR v1 與工具目錄已各自提交；最新 ecf3e9a。89 項 Studio 測試通過，Stage 5 進行中。
+
+## 2026-11-17 Studio Stage 5–7
+
+串流 Discovery、資料夾證據與 Compiler 已提交 aade591、3621b8a、66427a1。124 tests passed，兩個生成案例經底座實跑，原有發行工具重建成功。Stage 8 進行中。
+
+
+## [2026-11-18T00:59+08:00] Studio 工作台視覺缺陷修正與進度對齊
+
+<!-- devnote-review:244a5fdd30341a49934540e0 -->
+
+補齊 Stage 8–10 提交與 Stage 11 進行中狀態。使用者指出模糊後，已親自檢視原生 UI 並修復 DPI、字體、版面及操作狀態；最新 UI 針對性測試通過，使用者確認改善。完整規格、模型品質與平台 Gate 仍未完成。
+
+
+## [2026-11-18T03:09+08:00] Studio Handler、明確驗收規則與累積修復
+
+<!-- devnote-review:1a0b5cfa8df48a50439fbdd8 -->
+
+核對並補齊前輪工作台與生成 Handler 提交；本輪完成 JSON 明確驗收、版本核准失效、案例與候選交易回復，以及第二輪接續前輪 IR 的修復。非桌面全測 230 passed／3 deselected，其後修復專項 4 passed；提交 6eb0ee6。建立完整需求缺口索引，Stage 12/13 與模型／真人／平台 Gate 仍未完成。
+
+
+## [2026-11-18T03:23+08:00] 業務試做模型修復接線與隔離重播
+
+<!-- devnote-review:c2f75f9beba52024d7f5f885 -->
+
+提交 2a1505a：ModelRepair 具獨立資料授權、固定案例、兩輪串流及累積修復、Runtime 模型範圍限制與 UI 入口。CSV 算法和門檻經兩輪修復後真實重播通過。非桌面全測 246 passed／3 deselected；其後缺規則專項 1 passed。真實模型、平台與新 UI 視覺驗收未完成。
+
+
+## [2026-11-18T03:35+08:00] 版本續編與案例歷史編輯
+
+<!-- devnote-review:92512e35b6f00eb93767c5eb -->
+
+提交 9331aaa：版本差異、歷史另存新稿、目標還原、草稿捨棄保護，以及案例歷史與版本化修改。非桌面全測 258 passed／3 deselected；後續核准競爭治理專項 15 passed。新視窗未實機驗收，完整編輯能力、模型品質、平台及交付 Gate 仍未完成。
+
+
+## [2026-11-18T03:46+08:00] 原子流程編輯與連線工作表單
+
+<!-- devnote-review:1c85166a83d19b63ccf22049 -->
+
+提交 6033ded：FlowEditor、GraphDraft、節點新增／重用、來源／依賴／輸入格式／交付物及合併刪除。真實 Runtime 重播文字整理→指紋報告；專項 17 passed／2 deselected，全非桌面回歸 272 passed／3 deselected。新視窗未視覺驗收，完整政策與治理、真實模型、平台及交付仍待。
+
+
+## [2026-11-18T04:05+08:00] 來源綁定人工證據決策與 v010
+
+<!-- devnote-review:4bea53b17ba9a9ad71ec1f12 -->
+
+提交 4abd425：規則說明與步驟引用、來源內容綁定的人工確認／撤回、跨流程驗證接線及發布前重檢；共用圖片預覽讀取歷史版本。v009 升級備份及還原通過。專項 28 passed，最終非桌面回歸 288 passed／3 deselected。機器證據、完整治理、新 UI 實機、模型品質及交付 Gate 仍待。
+
+
+## [2026-11-18T04:30+08:00] 手動起案與型別化步驟設定
+
+<!-- devnote-review:84cdb04339c98bad6cac933e -->
+
+提交 e498a40：手動第一個流程、完整步驟設定表單、共同分支輸出型別、Runtime 模型模板及預算總額檢查。手動與兩路分支真實重播；非桌面全測 305 passed／3 deselected。原生表單互動、完整治理、模型品質、平台與交付 Gate 未完成。
+
+
+## [2026-11-18T05:00+08:00] 工具治理、可用能力篩選與 v011
+
+<!-- devnote-review:17df02b5f37ee378cee15eab -->
+
+提交 ef488e3：工具描述與版本 UI、核准撤回及狀態事件、可編譯 available 與政策 allowed 分離、模型能力資訊與本機測試路徑排除。工具流程真實重播及停用 Gate 通過；非桌面全測 319 passed／3 deselected，後續模型專項 30 passed。v011 備份還原已驗；完整重用、治理、實機、模型品質與交付仍待。
+
+
+## [2026-11-18T05:55+08:00] 固定 Handler 跨專案工具庫與 v012
+
+<!-- devnote-review:e2678af914360ffaa7b929d6 -->
+
+提交 053d062：已驗收生成步驟可保存為需核准的固定工具版本，同工作區跨專案重用且參數有型別限制。模型介面不攜固定程式／合成測試，實際新專案重播與參數修復通過。非桌面全測 332 passed／3 deselected；後續工具庫專項 14 passed。v012 備份還原已驗，完整治理、實機、模型品質與交付 Gate 仍待。
+
+
+## [2026-11-18T07:01+08:00] 建置審核、完整案例與發布指標 Gate
+
+<!-- devnote-review:9e1fc9722788e35cbee15618 -->
+
+提交 a82676a：v013 審核與建置瀏覽、同修訂退回／重送、封存保護及明確來源版本更新。補完整案例集合與交付物 Gate、發布停用及理由，相同 manifest 決策指標與重複核准一致性，固定 ZIP 時間。專項 18 passed，最終非桌面回歸 349 passed／3 deselected。prepared 核對 UI、新視窗實機、模型品質、平台與交付 Gate 仍待。
+
+
+## [2026-11-18T07:40+08:00] 發布中斷核對與 v014
+
+<!-- devnote-review:59920780c23a77b4564ed0da -->
+
+提交 3414be1：發布準備核對及不刪檔結束、已生效紀錄補齊、發布／目前版本共用鎖、停用中斷與過期／損毀／被取代保護。非桌面完整回歸 369 passed／3 deselected，最終鎖修正專項 38 passed；v013 備份／v014 升級／獨立還原與 UI model 重開通過。未對外發布或操作桌面；全目標及實機 Gate 仍未完成。
+
+
+## [2026-11-18T07:53+08:00] 資料夾關係人工決策與候選採用
+
+<!-- devnote-review:d1f15678ff696ce4f9a10560 -->
+
+提交 c13cdb2：資料夾角色及關係決策、固定來源預覽、版本與理由，採用時重核來源及圖版本並原子保存確認／IR／案例。補已捨棄修訂的候選編號，舊流程不回寫。非桌面回歸 381 passed／3 deselected，最終專項 36 passed；新 UI 尚未實機驗收。全目標、機器證據、手繪、真實模型、三平台及最終交付仍待。
+
+
+## [2026-11-18T08:08+08:00] 固定 Runtime 試做機器驗證證據
+
+<!-- devnote-review:af8fb3c4c68e4e1f1e46613b -->
+
+提交 b97030d：實際報告與產物可加入 verified 依據，原 ZIP／執行副本／案例／Runtime／實際成果皆重核。處理修改降級、人工機器標籤隔離，修復保留固定說明；新版本仍重測核准。最終非桌面回歸 400 passed／3 deselected；新 UI 未實機驗收。已確認一般 Discovery 不支援圖片，接續手繪與完整 Gate；全目標仍 active。
+
+
+## [2026-11-18T08:28+08:00] 靜態流程圖片分析與傳送範圍預覽
+
+<!-- devnote-review:613343c3dc8572da1cd7e7ae -->
+
+提交 4c08767：圖片＋文字 Discovery、完整解析度／方向／metadata 處理、固定傳送預覽、圖片預留量、未知草稿與影片隔離。最終非桌面回歸 422 passed／3 deselected；真實辨識品質與新介面未驗。另確認背景完成會覆蓋未保存主目標文字，接續修復並保留 CAS 衝突語意。全目標與最終 Gate 仍 active。
+
+
+## [2026-11-18T08:47+08:00] 背景目標草稿保護與外部版本比較
+
+<!-- devnote-review:7b85e3a1ead25fc7b11bbf48 -->
+
+提交 b3c207a：背景完成不覆蓋未儲存目標；獨立編輯基準、CAS 衝突與三方比較、跨專案保護、準備分析後重核、舊成功條件保留。非桌面回歸 435 passed／3 deselected，最終相關專項 20 passed／3 deselected。新 UI 未實機驗收；下一步回原規格核對核心 DoD 並推進正式矩陣，不能自創任意 IR 全支援 Gate，也不能用拒絕替代 P0/P1。全目標仍 active。
+
+
+## [2026-11-18T09:10+08:00] Stage 12 本機基準與百次隔離
+
+<!-- devnote-review:cf1e0f7e3e3700aa40a415aa -->
+
+提交 42ef321：核心 DoD 八檔 37 passed，20 節點 p95 0.8214ms、100 來源零模型、100 建立／更新／重開、已發布包 100 次不同輸入實跑及交付重核通過。輸出槽重用的錯誤測試期待已改正，保留 OUTPUT_EXISTS 負例。硬體 SSD 與原始指紋報告已保存；Stage 12 主要進行中，20 故障／20 範例／三平台／真人與交付仍待。
+
+
+## [2026-11-18T09:34+08:00] 二十發布故障點與程序中止驗收
+
+<!-- devnote-review:d9f060b16f4a06c32fde5af3 -->
+
+提交 49d1012：20 個唯一故障點 20 passed／91.19s，三個真正 os._exit 中止 3 passed／17.29s。每點保留舊發布快照與成果，核對提交邊界並實際重播舊包；JUnit 無 failure/error/skip。§12.1 五項 Windows 本機基準已具證據，不推論斷電／硬體或其他平台。Stage 12 仍進行中，20 範例／完整 AC／三平台／真人與最終交付待辦。
+
+
+## [2026-11-18T11:28+08:00] 固定二十案例與來源缺陷修復
+
+<!-- devnote-review:e32c25480dcc54c696d41ca1 -->
+
+提交 ea69748：acceptance-v1 20 件／21 訓練／40 未見，結果維持 not_run；61 組預期與來源隔離核對，五個資料夾真正重播／隔離發布。修復多選只送首項、預覽焦點與空檔預期匯入，157 項相關回歸通過；155 個 Git index 檔案 bytes 與指紋相符。未把工程測試冒充真人或真實模型品質；完整 Stage 12/13 仍未完成。
+
+
+## [2026-11-18T13:41+08:00] 字幕 CUDA 環境準備序列化修正
+
+<!-- devnote-review:09ef94fa7ec55d39a5c6be0e -->
+
+對照 D 槽安裝版與主線修正，重現 current 名稱遮蔽，恢復位置紀錄寫入並通過 39 個測試。Studio 分支進展依 Git 核對，外部 CI 狀態未於本輪查證。
+
+
+## [2026-11-18T13:43+08:00] Studio後續開發移交隔離工作樹與PR9
+
+<!-- devnote-review:28ec41496184fe4270a06fb0 -->
+
+整理 checkpoint 1f5e456a45280238ca2039ac：安全與續編測試已提交；保留原 E 使用者變更，在 C 管理工作樹整合main並建立草稿PR9。CI揭露POSIX venv解析與Windows CRLF測試，3924c6d已修；最新run的macOS/Linux Studio成功，Windows待結果。後續以C工作樹交接為準。 與13:41字幕CUDA環境準備更新調和，保留其決策、限制與驗證紀錄。 原本1f5e checkpoint已由並行工作處理；本次不確認其他工作的新checkpoint。
+
+
+## [2026-11-18T13:48+08:00] 核對字幕底座實機修復紀錄
+
+<!-- devnote-review:a6c9fb020ccde0fc8c49aa61 -->
+
+核對待整理的前輪字幕修復紀錄、發行包雜湊與 D 槽環境位置。實際模型推論未驗；Studio 工作仍沿用獨立工作樹交接。
+
+
+## [2026-11-19T22:30+08:00] 底座 0.2.13 宿主 ZIP 附件更新
+
+<!-- devnote-review:b07a1ea73c8083c402b5e116 -->
+
+完成已安裝流程的 Service／CLI／MCP ZIP 更新、備份回退與中斷復原；保留設定、成果與歷史。專項 35 passed；非桌面回歸 418 passed／21 skipped／1 deselected，打包缺件補齊後單項 1 passed；乾淨 wheel 安裝 smoke 通過。新增檔 Ruff 通過，6 個既有 lint 未動。產出本機 0.2.13 ZIP，未對外發布、未操作既有使用者安裝；Studio 與原 dirty 修改保留。
+
+
+## [2026-11-20T00:50+08:00] 底座 0.2.14 訪談藍圖首次安裝
+
+<!-- devnote-review:9bdfde166eb3f5e8d6c051c4 -->
+
+完成目標宿主的草稿、候選程式、驗收、原子首次安裝與跨對話待辦。實際 Reel 藍圖用合成媒體通過平台回執與人工交付兩種試做；正式帳號未驗。Windows 非桌面回歸 432 passed、21 skipped、1 deselected，最終專項 16 passed。
+
+
+## [2026-11-20T12:27+08:00] D 工作區更新與 Reel 僅安裝
+
+<!-- devnote-review:71d53fd000eeb24e6650b508 -->
+
+更新 D:/RoutineKeel 至基座 0.2.14，保留 15 筆歷史與 21645 個流程檔。將指定人工上傳 Reel 附件轉換為 0.2.2 並安裝，綁定 Akool；本機兩案零 provider calls 通過，未啟動正式流程。使用者只安裝指示前有一筆 1-credit 語音及兩張合成圖，其後停止新增生成。外部能力的唯讀探測與未執行功能驗收分列；舊 Studio 工作保持原交接。
+
+
+## [2026-11-21T03:20+08:00] 重建本機 Release 更新目錄與校正 Studio GitHub 狀態
+
+<!-- devnote-review:1fe338ff9e3022bc874f237e -->
+
+全元件建置產生底座0.2.14／複製0.2.2／字幕0.3.4與一致校驗清單，舊 release 已備份。封裝測試1 passed，巢狀封裝、SHA256與workspace核對PASS。未發布或呼叫付費流程。GitHub查核修正過期交接：PR9已合併，Studio位於main的routinekeel/workflow_studio/；預設三ZIP不包含Studio。
+
+
+## [2026-11-21T22:22+08:00] 統一來源與發行結構，採 E 底座、字幕 0.5.0 與對話 Studio
+
+<!-- devnote-review:31c008ec83cdfd64a262168a -->
+
+依使用者選擇整合 E 底座與 GitHub 字幕 0.5.0，將原始碼搬至與安裝相同的根層結構。排除 Studio Tk 並保留無視窗核心，新增 guide 入口及驗證。更新／回退支援巢狀流程與技能附件，五 ZIP 已建置；529／515／90 項測試通過。舊來源、SQLite、Tk 與 E staging 有備份與核對；D 僅唯讀檢查，未執行付費生成或發布。
+
+
+## [2026-11-21T22:45+08:00] 修正 Windows checkout 的模板換行驗證
+
+<!-- devnote-review:7de286b9c6e1e5f0c6388108 -->
+
+PR #13 首輪 CI 僅 Windows Studio 失敗：模板為 CRLF 時測試再次替換 LF，生成 CRCRLF。固定模板 checkout 為 LF，改以 LF／CRLF 兩種來源做舊套件實際執行測試，並確認異常 CRCRLF 仍拒絕。專項 5 passed、lint／format 通過；未放寬模板信任邏輯，等待新提交三平台 CI。
+
+
+## [2026-11-21T22:48+08:00] 整合遠端修正並保持模板信任邊界
+
+<!-- devnote-review:4c9eafee521c5fdafd1c116f -->
+
+遠端出現 Copilot 5a9febd，先 fetch 並 merge 保留歷史，不強推。實測其換行正規化會接受改變字串內容的模板，維持原有嚴格規則並用新增反例保護。模板與安全專項 9 passed；等待新 head 三平台 CI。
+
+
+## [2026-11-22T13:34+08:00] 完成 main 正式 Release 發布與 Latest 附件核對
+
+<!-- devnote-review:47c95b87edb27ae738cb82ad -->
+
+依使用者明確更新 RELEASE 的要求，PR #13 合併至 426ba934，經既有手動 Gate 啟動 run 44917893261。七個工作全部成功；Latest 更新為 build-426ba934...。在 GitHub UI 核對五 ZIP 及校驗檔，資產 SHA 與正式 CI artifact 相同，C/E release/workspace/wheels 同步正式產物。保留舊版、備份及 E staging，未更新 D 或執行付費生成。CLI 憑證轉用被拒後已停止，改用正常登入 UI 完成發行。
+
+
+## [2026-11-22T15:34+08:00] RK-NEXT Stage 0 可重現基線與回復驗證
+
+<!-- devnote-review:9313b4348683da52ee8ed22e -->
+
+核對指定規格、原發行與工作樹，通過 Windows 全套及平台／音訊補測，建立下一階段依據。
+
+
+## [2026-11-22T15:43+08:00] RK-NEXT Stage 1 共用必要驗證器
+
+<!-- devnote-review:4080d30cdb512f971657f6fd -->
+
+試做與安裝重新檢查 IR、工具及 wheel RECORD，實測驗證器缺失與例外皆阻擋，舊流程依原入口運作。
+
+
+## [2026-11-22T15:51+08:00] RK-NEXT Stage 2 圖形契約與來源相容性
+
+<!-- devnote-review:64cb287676a5c0d4c9af967b -->
+
+亂序 DAG 測試發現控制邊曾影響重複依賴判斷，已修正並重跑。Graph 層使用共用契約，正式執行仍待後續 Builder 與 Scheduler。
+
+
+## [2026-11-22T15:57+08:00] RK-NEXT Stage 3 持久化訪談與復原
+
+<!-- devnote-review:9fbe34961b660837a8e741f4 -->
+
+原專案 API 與訪談共享版本並在同一交易同步目標。測試跨程序重開、同版並發、重送、封存、上游修訂及 v14 回復。
+
+
+## [2026-11-22T16:21+08:00] RK-NEXT Stage 4 對話介接與終端信任條件
+
+<!-- devnote-review:f12a1f99e1e175637cccb4fc -->
+
+依使用者決定，宿主負責提問與呈現，可信本機文字 CLI 確認。Stage 4 的 CLI、MCP 與候選包專項已過；首次底座全測有診斷碼與監督程序測試失敗，已修復並回歸。
+
+
+## [2026-11-22T16:41+08:00] RK-NEXT Stage 4 桌面對話與關鍵點校閱
+
+<!-- devnote-review:5a8a7792c1663ed418f1c951 -->
+
+依使用者決定，採信桌面宿主轉交的實際回覆。已修正診斷碼、監督程序測試及舊 v1 最大流程轉換；開發回歸並未改成人工逐步核准。
+
+
+## [2026-11-22T16:48+08:00] RK-NEXT Stage 5 不可執行藍圖匯出
+
+<!-- devnote-review:6103aaa7e914f5277d283a49 -->
+
+設計預覽綁定專案版本、具名能力與所選技能指紋。拒絕或過期不匯出，重開專案可重取同一不可變藍圖。
+
+
+## [2026-11-22T16:59+08:00] RK-NEXT Stage 6 能力綁定與宿主工具清冊
+
+<!-- devnote-review:8449d660f5a967c5d74a1cd3 -->
+
+新增能力解析入口，從連接中的 MCP client 實際讀取清單。驗證版本、權限、離線與宿主回執；只有缺口才要求處理。
+
+
+## [2026-11-22T17:12+08:00] RK-NEXT Stage 7 Graph Builder 與共用核發政策
+
+<!-- devnote-review:224b862db04fb8d0caa4c0dc -->
+
+桌面對話設計匯出、能力解析到真實試做及安裝串接。舊 Studio 相容後端也須經共用收據；已啟用訪談的專案不能從舊發布 API 啟用新版本。
+
+
+## [2026-11-22T17:25+08:00] RK-NEXT Stage 8 依節點恢復與回修
+
+<!-- devnote-review:5863965e78e04c50c7d1c52c -->
+
+新增分支兄弟保留、程序中斷、具名多待辦與取消重試測試。釐清臨時工作區載入的是候選工作流，並非原始藍圖。
+
+
+## [2026-11-22T17:34+08:00] RK-NEXT Stage 9 選路、跳過與具名匯合
+
+<!-- devnote-review:7985270fd5e658f763d62548 -->
+
+雙路徑由真正候選工作流重播；補上有型別的條件欄位、明確備援及決策回修。
+
+
+## [2026-11-22T18:05+08:00] RK-NEXT Stage 10 對話核准及對外回執
+
+<!-- devnote-review:4bc7cb841f9fa0f3987cf464 -->
+
+同一待辦重複領取不重新派送，拒絕、過期版本與 actor 自述不能授權。修正隔離規畫程序無法取得非敏感能力描述的問題。
+
+
+## [2026-11-22T18:31+08:00] RK-NEXT Stage 11 有界子圖及迭代恢復
+
+<!-- devnote-review:8a3e59894daf1cb07ddcf175 -->
+
+空集合、上限、零次／一次重做、故障後續編、部分重試、取消、模型回執與預算均有實測。未呼叫付費模型。
+
+
+## [2026-11-22T19:08+08:00] RK-NEXT Stage 12 品質評估、預覽與正式交付
+
+<!-- devnote-review:a23c1e09734a175778ff1370 -->
+
+未驗收成果另存不可變預覽。修正另建版本，重驗後可正式交付。測試實際還原 v4 備份。MCP 重連測試改為先結束提交者，再啟動獨立 Worker，避免空閒逾時先退出。
+
+
+## [2026-11-22T20:05+08:00] RK-NEXT Stage 13 修訂比較與可恢復升版
+
+<!-- devnote-review:7e558cf8460ddaeaa61bf367 -->
+
+第一輪底座回歸遇到模組搬移時的三例匯入失敗及一例 Worker 冷啟計時失敗。修復後整組 83 項重跑皆通過；另實測切換中斷、重試及回復後執行舊版。
+
+
+## [2026-11-22T20:25+08:00] RK-NEXT Stage 14 Agent 目錄與對話續接
+
+<!-- devnote-review:37acb3ed919f9b4631c29701 -->
+
+真實 MCP 提交後斷線並重連，區分完成的 Run、仍等待的人工節點與品質驗收。修正取消測例使用已不存在的假 PID；完整 22 項連同既有 Service 回歸通過。
+
+
+## [2026-11-22T21:05+08:00] RK-NEXT Stage 15 全庫清理與相容性修正
+
+<!-- devnote-review:3fc41c1246c7617ca39c50dd -->
+
+已獲明確授權清理既有診斷。353 個受掃描檔案通過全庫 Ruff，Studio 原規則及 164 個檔案 format 通過。初次全測發現字幕 resource_path 公開轉出遭移除，已明確恢復。清理前的 Windows 兩組測試已停止，會重新完整驗收。
+
+
+## [2026-11-22T23:56+08:00] RK-NEXT Stage 15 本機技術驗收
+
+<!-- devnote-review:a92a35a5c6dca3791187b513 -->
+
+Windows 及 WSL 實測逐一核對 1,190 個唯一測例，補驗逾時與所有平台／依賴條件。修復冷啟動子程序被過早判定中斷的空窗。實際解壓冷啟動，包內 MCP 列出 32 個工具並續編既有訪談。
+
+
+## [2026-11-23T00:28+08:00] RK-NEXT Stage 16 最終 0.3.0 本機候選
+
+<!-- devnote-review:b9fd72cda8f0e829edc078bc -->
+
+獨立建立 RC1，未覆蓋既有發行目錄。五 ZIP 與六 wheel 校驗，解壓後建新環境、32 個 MCP 工具、提交／重連／成果及實際 0.2.3 → 0.2.4 → 0.2.3 回復通過。Stage 16 回歸 106+31 全過，完整收集逐案 659/659 與 534/534。文件與打包後本機連結均有效。
+
+
+## [2026-11-23T01:00+08:00] 按開發時序與主題提交 RK-NEXT 0.3.0 RC1
+
+<!-- devnote-review:149dc347e10aaa25a281f0a0 -->
+
+以 ad8dbcb9f141 為原分支起點，保留 a14b9afd7ab2 的工作區重整歷史，按已保存的階段原始碼、功能依賴與驗收文件分組，共 13 筆整合與實作提交，交接另立一筆。比對入庫原始碼與工作樹、重驗 Ruff 及 3 項候選交付測試。7 個原有暫存 IDE 檔案另留暫存區。
+
+
+## [2026-11-23T02:10+08:00] Studio 批次訪談與字幕藍圖預檢
+
+<!-- devnote-review:a476a6927c9dd479d6c642cd -->
+
+從既有 E:/RoutineKeel 安裝取得原始 ZIP 與對話證據。修復宿主節點參數支援與批次訪談，補建置預檢及可執行案例檢查。候選可匯入原 ZIP 並清楚診斷剩餘缺口。原設計聊天 7 輪合計約 16 分 53 秒，68 次命令合計約 1 分 37 秒。
+
+
+## [2026-11-23T07:03+08:00] v1.3.0 資產契約與 Registry
+
+<!-- devnote-review:520898f32a0e4a0da3e30feb -->
+
+核對規格與合併基線，完成 Stage 17 可攜資產契約及 Stage 18 Registry。修復 Windows NUL 的核准入口辨識後重跑，實測停用後的舊工作流與 Studio v15 遷移還原。
+
+
+## [2026-11-23T08:27+08:00] 完成 v1.3.0 Stage 17–26 本機候選與驗收
+
+<!-- devnote-review:c4db6082762b6ce79029696f -->
+
+依規格完成擷取、資格、推薦、合成、環境鎖與安全演進。Windows、WSL 與音訊選配環境逐案補測。冷啟動最終候選並重播跨環境流程，八個發行資產指紋核對一致。macOS 與正式發行待另行授權。
+
+
+## [2026-11-23T10:00+08:00] 實作 Studio 初稿、定稿與執行檢核
+
+<!-- devnote-review:4c70ac8d63f32fe574b62142 -->
+
+核對使用者補充規範與前一輪工作指引，接上 Studio、CLI、MCP、改版及底座檢核。定稿綁定全部顯示內容，人審與兩種錯誤處理通過回歸。
+
+
+## [2026-11-23T11:20+08:00] 修復 Studio 稽核並保留空白底座
+
+<!-- devnote-review:21d4750d4022f9aeaf95990f -->
+
+核對已確認藍圖、成果更正、Pack 停用及 Pattern 改版的執行閘門。依使用者簡化要求，整合包的兩個參考流程收進 examples/workflows 下的現有 ZIP。已確認空白 catalog 與單獨啟用範例。
+
+
+## [2026-11-23T11:32+08:00] 按主題提交 Studio 稽核與整合包調整
+
+<!-- devnote-review:99b992b521885deced8e3ae1 -->
+
+將已驗證的修正拆為 Studio 稽核與空白底座發行布局兩項提交。保留既有測試紀錄。

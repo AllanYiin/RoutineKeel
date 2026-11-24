@@ -1,5 +1,4 @@
 """Build one ZIP per component in dist, with a separate test workspace."""
-from pathlib import Path
 import argparse
 import ast
 import hashlib
@@ -11,12 +10,13 @@ import sys
 import tempfile
 import tomllib
 import zipfile
+from pathlib import Path
 
 from agent_guidance import write_package_guide, write_workspace_guide
 
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / 'dist'
-PRODUCT = ROOT / 'routinekeel'
+PRODUCT = ROOT
 BASE = PRODUCT / 'flow_base'
 STUDIO = PRODUCT / 'workflow_studio'
 
@@ -68,7 +68,7 @@ def project_info(path):
 
 
 def discover_projects():
-    flows = [p for p in sorted((PRODUCT / 'flows').iterdir())
+    flows = [p for p in sorted((PRODUCT / 'workflows').iterdir())
              if (p / 'flow.template.json').is_file()]
     projects = [BASE, *flows]
     names, archives = set(), set()
@@ -81,7 +81,7 @@ def discover_projects():
     return projects
 
 
-def write_bootstrap(dest, wheel, version):
+def write_bootstrap(dest, wheel, version, media_wheel=None, *, contracts_wheel):
     assets = json.loads((ROOT / 'tools/uv-assets.json').read_text(encoding='utf-8'))
 
     def asset(suffix):
@@ -103,6 +103,9 @@ def write_bootstrap(dest, wheel, version):
         template = (ROOT / 'tools' / f'{name}.in').read_text(encoding='utf-8')
         body = template.replace('@WHEEL@', wheel.name).replace('@WHEEL_HASH@', sha(wheel))
         body = body.replace('@VERSION@', version)
+        body = body.replace('@CONTRACTS_WHEEL@', contracts_wheel.name).replace('@CONTRACTS_SHA256@', sha(contracts_wheel))
+        body = body.replace('@MEDIA_WHEEL@', media_wheel.name if media_wheel else '')
+        body = body.replace('@MEDIA_SHA256@', sha(media_wheel) if media_wheel else '')
         body = body.replace('@UV_SH_CASES@', '\n'.join(sh_cases)).replace('@UV_PS_CASES@', '\n'.join(ps_cases))
         (dest / name).write_text(body, encoding='utf-8-sig' if name.endswith('.ps1') else 'utf-8', newline='\n')
     (dest / 'start.sh').chmod(0o755)
@@ -128,7 +131,6 @@ def write_ui_launchers(dest):
 def build_project(path, staging):
     name, version, archive_name = project_info(path)
     if path == STUDIO:
-        project_info(BASE)
         from studio_release import build_studio
         return build_studio(path, staging, root=ROOT, base=BASE,
                             run=run, write_bootstrap=write_bootstrap)
@@ -144,19 +146,34 @@ def build_project(path, staging):
              '--project', str(validation), '--strict'])
     run(['uv', 'build', '--wheel', '--out-dir', str(wheels)], cwd=path)
     wheel = wheels / f'{name.replace("-", "_")}-{version}-py3-none-any.whl'
-    dest = staging / 'workspace' / path.name
+    relative = path.relative_to(ROOT)
+    dest = staging / 'workspace' / relative
     dest.mkdir(parents=True)
     shutil.copyfile(wheel, dest / wheel.name)
     shutil.copyfile(path / 'README.md', dest / 'README.md')
     shutil.copyfile(path / 'LICENSE' if (path / 'LICENSE').is_file() else ROOT / 'LICENSE', dest / 'LICENSE')
     write_package_guide(dest, path)
     if path == BASE:
-        write_bootstrap(dest, wheel, version)
+        # Optional local media operations are a separate, offline-installable distribution.
+        from studio_release import build_contract_wheel
+        contracts_wheel = build_contract_wheel(BASE, wheels, run)
+        shutil.copyfile(contracts_wheel, dest / contracts_wheel.name)
+        media = BASE / 'components/blueprint_media'
+        run(['uv', 'build', '--wheel', '--out-dir', str(wheels)], cwd=media)
+        media_wheel = wheels / f'routinekeel_blueprint_media-{project_info(media)[1]}-py3-none-any.whl'
+        shutil.copyfile(media_wheel, dest / media_wheel.name)
+        write_bootstrap(dest, wheel, version, media_wheel, contracts_wheel=contracts_wheel)
+        (dest / 'blueprint-tools.json').write_text(json.dumps({
+            'media': {'wheel':media_wheel.name, 'sha256':sha(media_wheel),
+                     'operations':['audio.timeline','subtitle.srt','video.compose']}
+        }, indent=2), encoding='utf-8')
         run([sys.executable, str(launcher), '--root', str(dest), '--flow-base-package'])
         write_ui_launchers(dest)
-        shutil.copyfile(path / 'docs/user-guide.md', dest / 'user-guide.md')
-        shutil.copyfile(path / 'docs/mcp-local.md', dest / 'mcp-local.md')
-        sources = [(BASE, 'routinekeel/flow_base/'), (ROOT / 'tools', 'tools/')]
+        for document in ('user-guide.md', 'mcp-local.md', 'blueprint-install.md', 'graph-quality.md',
+                         'workflow-evolution.md', 'workflow-updates.md', 'known-issues.md'):
+            shutil.copyfile(path / 'docs' / document, dest / document)
+        sources = [(BASE, 'flow_base/'), (ROOT / 'tools', 'tools/'),
+                   (ROOT / 'examples/blueprint-install', 'examples/blueprint-install/')]
     else:
         manifest = json.loads((path / 'flow.template.json').read_text(encoding='utf-8'))
         if manifest['version'] != version or (manifest.get('module') or manifest.get('id')) != name:
@@ -167,14 +184,19 @@ def build_project(path, staging):
         for doc in ('settings.example.json', 'WORKFLOW_AUDIT.md', 'PROVENANCE.md'):
             if (path / doc).is_file():
                 shutil.copyfile(path / doc, dest / doc)
-        sources = [(path, f'routinekeel/flows/{path.name}/')]
+        if (path / 'skills').is_dir():
+            shutil.copytree(path / 'skills', dest / 'skills')
+        sources = [(path, f'workflows/{path.name}/')]
     source_archive(dest / 'source.zip', sources)
 
     output = staging / 'release' / f'{archive_name}-{version}.zip'
     with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as archive:
-        for file in sorted(dest.iterdir()):
+        if path == BASE:
+            for directory in ('workflows/', 'blueprints/', 'flow_base/share_logs/', 'flow_base/share_states/'):
+                archive.writestr(directory, b'')
+        for file in sorted(dest.rglob('*')):
             if file.is_file():
-                member = f'{path.name}/{file.name}'
+                member = file.relative_to(staging / 'workspace').as_posix()
                 if file.suffix in {'.sh', '.command'}:
                     info = zipfile.ZipInfo(member)
                     info.create_system = 3
@@ -186,29 +208,97 @@ def build_project(path, staging):
     with zipfile.ZipFile(output) as archive:
         if archive.testzip() is not None:
             raise ValueError(f'Corrupted release file: {output}')
-    return {'file': output.name, 'folder': path.name, 'version': version,
+    return {'file': output.name, 'folder': relative.as_posix(), 'version': version,
             'bytes': output.stat().st_size, 'sha256': sha(output)}
+
+
+def workspace_directories(workspace):
+    """Create empty layout scaffolding, never copy an installed environment."""
+    for name in ('workflows', 'blueprints', 'workflow_studio',
+                 'flow_base/share_logs', 'flow_base/share_states'):
+        (workspace / name).mkdir(parents=True, exist_ok=True)
+
+
+def write_workspace_archive(staging, reports):
+    workspace = staging / 'workspace'
+    workspace_directories(workspace)
+    (workspace / 'README.md').write_text(
+        '# RoutineKeel 本機工作區\n\n'
+        '在桌面對話說「建立工作流」、「執行工作流」或「改善工作流」。首次連線由安裝者設定本機底座與 Studio。\n\n'
+        'Studio 把訪談整理成藍圖。底座另建候選工作流，在臨時工作區載入並實際測試。通過後才安裝到正式工作區。'
+        '只有指定的業務判斷、關鍵校閱或對外授權需要回覆。\n\n'
+        '[對話操作與真人走查](flow_base/user-guide.md) · [本機 MCP 設定](flow_base/mcp-local.md) · '
+        '[支援範圍](flow_base/known-issues.md)\n\n'
+        '宿主指引位於 workflow_studio/AGENTS.md。全包首次解壓時，workflows/ 保持空白。\n\n'
+        '兩個待安裝的參考流程 ZIP 位於 examples/workflows/。想使用其中一個時，把選定的 ZIP '
+        '解壓到本 RoutineKeel 根目錄，再從 flow_base/ 的共用入口執行。\n\n'
+        '共享執行紀錄與狀態會放在 flow_base/share_logs/ 和 flow_base/share_states/。'
+        '首次啟動會建立本機環境。\n', encoding='utf-8')
+    version = project_info(BASE)[1]
+    output = staging / 'release' / f'RoutineKeel-workspace-{version}.zip'
+    with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr('RoutineKeel/', b'')
+        for file in sorted(workspace.rglob('*')):
+            relative = file.relative_to(workspace)
+            if relative.parts[0] == 'workflows' and len(relative.parts) > 1:
+                continue
+            member = 'RoutineKeel/' + relative.as_posix()
+            if file.is_dir():
+                archive.writestr(member + '/', b'')
+            else:
+                info = zipfile.ZipInfo(member)
+                info.create_system = 3
+                info.external_attr = (0o100755 if file.suffix in {'.sh', '.command'} else 0o100644) << 16
+                info.compress_type = zipfile.ZIP_DEFLATED
+                archive.writestr(info, file.read_bytes())
+        for item in reports:
+            if item['folder'].startswith('workflows/'):
+                archive.write(
+                    staging / 'release' / item['file'],
+                    'RoutineKeel/examples/workflows/' + item['file'],
+                    compress_type=zipfile.ZIP_STORED,
+                )
+    with zipfile.ZipFile(output) as archive:
+        if archive.testzip() is not None:
+            raise ValueError('Corrupted workspace ZIP')
+    return {'file': output.name, 'folder': 'RoutineKeel', 'version': version,
+            'bytes': output.stat().st_size, 'sha256': sha(output),
+            'components': [item['folder'] for item in reports]}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--project', help='Optional component folder name or Python package name')
+    parser.add_argument('--candidate', help='Build in a new named directory below dist, preserving other package sets')
+    parser.add_argument('--reference-packs', action='store_true', help='Build optional domain packs with a named candidate')
     args = parser.parse_args()
-    # Studio is opt-in; the existing default set of Runtime/flow ZIPs is unchanged.
+    if args.reference_packs and (not args.candidate or args.project):
+        parser.error('--reference-packs requires a named complete candidate')
+    # The default distribution centers on Studio/runtime plus two existing examples.
     projects = ([STUDIO] if args.project in {'studio', 'workflow_studio', 'workflow-studio'}
                 else discover_projects())
     if args.project:
         selected = ('flow_base' if args.project == 'base' else
                     'workflow_studio' if args.project == 'studio' else args.project)
-        projects = [p for p in projects if selected in (p.name, project_info(p)[0])]
+        projects = [p for p in projects if selected in (p.name, p.name.removeprefix("FLOW_"), project_info(p)[0])]
         if len(projects) != 1:
             parser.error(f'Unknown or ambiguous component: {args.project}')
+
+    if not args.project:
+        projects.append(STUDIO)
 
     if DIST.is_symlink() or (hasattr(DIST, 'is_junction') and DIST.is_junction()):
         raise ValueError('Build output cannot be a linked directory')
     DIST.mkdir(exist_ok=True)
     if not DIST.resolve().is_relative_to(ROOT.resolve()):
         raise ValueError('Build output must remain inside the repository')
+    candidate = None
+    if args.candidate:
+        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}', args.candidate):
+            parser.error('Candidate name must be a single portable path component')
+        candidate = DIST / ('candidate-' + args.candidate)
+        if candidate.exists() or candidate.is_symlink():
+            parser.error(f'Candidate already exists: {candidate.name}')
     with tempfile.TemporaryDirectory(dir=DIST, prefix='build-') as temporary:
         staging = Path(temporary)
         (staging / 'release').mkdir()
@@ -222,19 +312,35 @@ def main():
                 encoding='utf-8')
         else:
             write_workspace_guide(staging / 'workspace')
+        if not args.project:
+            reports.append(write_workspace_archive(staging, reports))
         (staging / 'release/SHA256SUMS').write_text(
             ''.join(f"{item['sha256']}  {item['file']}\n" for item in reports), encoding='utf-8')
         (staging / 'release/versions.json').write_text(
             json.dumps(reports, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-        # Replacing build output also removes stale assets from earlier versions.
-        for name in ('release', 'workspace', 'wheels'):
-            target = DIST / name
+        if args.reference_packs:
+            from reference_packs import build_reference_packs
+
+            build_reference_packs(ROOT, staging / 'domain-packs', run)
+        destination = DIST
+        if candidate is not None:
+            # Expose all three directories together only after verification succeeds.
+            destination = staging / 'candidate'
+            destination.mkdir()
+        # Default builds replace old package sets; named candidates start empty.
+        directory_names = ('release', 'workspace', 'wheels')
+        if args.reference_packs:
+            directory_names += ('domain-packs',)
+        for name in directory_names:
+            target = destination / name
             if (target.is_symlink() or (hasattr(target, 'is_junction') and target.is_junction())
-                    or target.resolve().parent != DIST.resolve()):
+                    or target.resolve().parent != destination.resolve()):
                 raise ValueError(f'Refusing linked build output: {target}')
             if target.exists():
                 shutil.rmtree(target)
             (staging / name).rename(target)
+        if candidate is not None:
+            destination.rename(candidate)
     # GitHub Windows runners may use cp1252 stdout; keep the console report ASCII.
     # The published versions.json remains UTF-8 with the original folder names.
     print(json.dumps(reports, ensure_ascii=True, indent=2))

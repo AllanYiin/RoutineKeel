@@ -122,7 +122,7 @@ db.execute('BEGIN IMMEDIATE')
 db.execute("UPDATE studio_projects SET name='not committed'")
 os._exit(9)
 """
-    result = subprocess.run([sys.executable, "-c", script, str(dbpath)])
+    result = subprocess.run([sys.executable, "-c", script, str(dbpath)], check=False)
     assert result.returncode == 9
     with StudioService.open_workspace(tmp_path) as studio:
         assert studio.projects.get(p.project_id) == p

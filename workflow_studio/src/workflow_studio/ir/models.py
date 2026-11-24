@@ -1,0 +1,43 @@
+"""Compatibility exports for the shared workflow contract."""
+
+from routinekeel_contracts.models import (
+    Binding,
+    CachePolicy,
+    Condition,
+    Contract,
+    EvidenceRef,
+    Goal,
+    Identifier,
+    Kind,
+    LLMPolicy,
+    Node,
+    NodeId,
+    Platform,
+    Port,
+    Resources,
+    RetryPolicy,
+    ToolSignature,
+    Version,
+    WorkflowIR,
+)
+
+__all__ = [
+    "Binding",
+    "CachePolicy",
+    "Condition",
+    "Contract",
+    "EvidenceRef",
+    "Goal",
+    "Identifier",
+    "Kind",
+    "LLMPolicy",
+    "Node",
+    "NodeId",
+    "Platform",
+    "Port",
+    "Resources",
+    "RetryPolicy",
+    "ToolSignature",
+    "Version",
+    "WorkflowIR",
+]

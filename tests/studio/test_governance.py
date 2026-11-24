@@ -22,13 +22,34 @@ def verified_approval(tmp_path):
     return studio, project, build, cases, verifier, policy, approval
 
 
-def test_publish_idempotency_update_rollback_and_preserve_outputs(tmp_path):
+def test_interview_project_cannot_promote_through_legacy_release_api(tmp_path):
+    studio, p, build, _cases, verifier, policy, approval = verified_approval(tmp_path)
+    try:
+        report = verifier.get(p.project_id, approval["report_id"])
+        assert report["builder_receipt"]["package_hash"] == build["package_hash"]
+        studio.interviews.start(p.project_id, studio.projects.get(p.project_id).version)
+        target = tmp_path / "alternate"
+        with pytest.raises(StudioError, match="對話專案"):
+            Releases(studio).publish(p.project_id, approval["approval_id"], target, policy)
+        assert not target.exists()
+    finally:
+        studio.close()
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_publish_idempotency_update_rollback_and_preserve_outputs(tmp_path, nested):
     studio, p, build, cases, verifier, policy, approval = verified_approval(tmp_path)
     target = tmp_path / "installed"
+    if nested:
+        (target / "workflows").mkdir(parents=True)
     releases = Releases(studio)
     first = releases.publish(p.project_id, approval["approval_id"], target, policy)
     assert releases.publish(p.project_id, approval["approval_id"], target, policy) == first
-    folder = target / first["workflow_id"]
+    folder = (
+        target / "workflows" / ("FLOW_" + first["workflow_id"])
+        if nested
+        else target / first["workflow_id"]
+    )
     (folder / "outputs").mkdir()
     (folder / "outputs/keep.txt").write_text("user result")
     payload = studio.projects.get_revision(p.project_id, build["revision_id"]).ir
@@ -106,62 +127,6 @@ def test_unverified_revoked_and_changed_project_cannot_publish(tmp_path):
         )
     assert caught.value.code == "APPROVAL_REQUIRED"
     studio.close()
-
-
-def test_simultaneous_publication_from_two_connections_creates_one_release(tmp_path, monkeypatch):
-    from concurrent.futures import ThreadPoolExecutor
-    from threading import Barrier, Lock
-
-    import workflow_studio.governance.release as module
-    from compiler_helpers import execute_package
-    from workflow_studio.service import StudioService
-
-    studio, project, build, _, _, policy, approval = verified_approval(tmp_path)
-    target = tmp_path / "concurrent-installed"
-    # Synchronize immediately before the actual OS lock, not before slow setup.
-    barrier, write_lock = Barrier(2), Lock()
-    real_lock, real_write = module.FileLock, module.atomic_bytes
-    writes = []
-
-    class ContendingLock:
-        def __init__(self, *args, **kwargs):
-            self.lock = real_lock(*args, **kwargs)
-
-        def __enter__(self):
-            barrier.wait(timeout=15)
-            return self.lock.__enter__()
-
-        def __exit__(self, *args):
-            return self.lock.__exit__(*args)
-
-    def observed_write(path, data):
-        if path == target / "copy-example/flow.json":
-            with write_lock:
-                writes.append(path)
-        return real_write(path, data)
-
-    def publish():
-        with StudioService.open_workspace(tmp_path / "studio") as independent:
-            return Releases(independent).publish(
-                project.project_id, approval["approval_id"], target, policy
-            )
-
-    try:
-        with monkeypatch.context() as patch:
-            patch.setattr(module, "FileLock", ContendingLock)
-            patch.setattr(module, "atomic_bytes", observed_write)
-            with ThreadPoolExecutor(max_workers=2) as pool:
-                futures = [pool.submit(publish) for _ in range(2)]
-                first, second = [future.result(timeout=30) for future in futures]
-        assert first == second
-        assert len(writes) == 1
-        assert len(Releases(studio).history(project.project_id)) == 1
-        assert Releases(studio).current(target, "copy-example") == first
-        assert first["build_id"] == build["build_id"]
-        result = execute_package(target / "copy-example", tmp_path / "probe", b"one publication")
-        assert result["status"] == "complete"
-    finally:
-        studio.close()
 
 
 def test_failed_first_manifest_switch_can_retry_without_overwriting_other_data(

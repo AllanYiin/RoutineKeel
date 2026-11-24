@@ -28,9 +28,7 @@ def build_ir(tmp_path, payload=None, policy=None):
 def runtime_python():
     # Independent Runtime environment is intentional: generated wheels must not need Studio.
     candidate = (
-        ROOT
-        / "routinekeel/flow_base/.venv"
-        / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+        ROOT / "flow_base/.venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     )
     return str(candidate) if candidate.is_file() else sys.executable
 
@@ -60,9 +58,7 @@ result['_lifecycle'] = [event['name'] for event in service.list_run_events(resul
 assert {'run.started','delivery.published','run.finished'} <= set(result['_lifecycle'])
 print('REPORT_JSON=' + json.dumps(result))
 """
-    env = dict(
-        os.environ, PYTHONPATH=str(ROOT / "routinekeel/flow_base/src"), PYTHONIOENCODING="utf-8"
-    )
+    env = dict(os.environ, PYTHONPATH=str(ROOT / "flow_base/src"), PYTHONIOENCODING="utf-8")
     run = subprocess.run(
         [runtime_python(), "-c", script, str(workspace), output_name],
         env=env,
@@ -70,6 +66,7 @@ print('REPORT_JSON=' + json.dumps(result))
         text=True,
         encoding="utf-8",
         timeout=60,
+        check=False,
     )
     assert run.returncode == 0, run.stdout + run.stderr
     report = json.loads(

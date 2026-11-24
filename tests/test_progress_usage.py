@@ -1,16 +1,14 @@
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 from types import SimpleNamespace
 
 import pytest
-
 from flow_base.presentation import ACTIVE, Reporter
-from flow_base.runtime import Runtime, FlowError, run_process
+from flow_base.runtime import FlowError, Runtime, run_process
 from flow_base.usage import UsageMeter, normalize_usage
-from test_workspace import workspace, ROOT
+from test_workspace import ROOT
 
 
 def test_real_progress_and_terminal_state_are_persisted(tmp_path,capsys,monkeypatch):
@@ -123,11 +121,11 @@ def test_ledger_automatically_registers_provider_receipts(tmp_path):
 
 def test_packaged_cli_banners_preserve_stdout_json_and_cache_usage(workspace):
     (workspace/'in.txt').write_text('test')
-    env=dict(os.environ,PYTHONPATH=str(ROOT/'routinekeel/flow_base/src'),PYTHONDONTWRITEBYTECODE='1')
+    env=dict(os.environ,PYTHONPATH=str(ROOT/'flow_base/src'),PYTHONDONTWRITEBYTECODE='1')
     args=[sys.executable,'-m','flow_base','--workspace',str(workspace),'run','--task','ai_flow02',
           '--input','in.txt','--output','out']
     for iteration in range(2):
-        p=subprocess.run(args,env=env,text=True,capture_output=True,timeout=30)
+        p=subprocess.run(args,env=env,text=True,capture_output=True,timeout=30, check=False)
         assert p.returncode==0,p.stdout+p.stderr
         result=json.loads(p.stdout)['result']
         assert '工作流正式啟動' in p.stderr and '進入節點 1/1' in p.stderr and '工作流處理結束' in p.stderr

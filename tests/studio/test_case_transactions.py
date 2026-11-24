@@ -1,12 +1,12 @@
 import pytest
-from test_ui_workflow import case_folder
+from test_conversation_workflow import case_folder
 from workflow_studio.contracts import StudioError
-from workflow_studio.ui.model import StudioUIModel
+from workflow_studio.conversation.session import StudioSession
 from workflow_studio.verifier.golden_cases import GoldenCases
 
 
 def test_invalid_case_rolls_back_both_sources_and_project_version(tmp_path):
-    model = StudioUIModel(tmp_path / "studio")
+    model = StudioSession(tmp_path / "studio")
     before = model.create_project("試做", "複製資料", "符合固定範例")
     source, expected = tmp_path / "input.txt", tmp_path / "expected.txt"
     source.write_text("input")
@@ -30,7 +30,7 @@ def test_invalid_case_rolls_back_both_sources_and_project_version(tmp_path):
 
 
 def test_candidate_case_failure_rolls_back_saved_ir(tmp_path, monkeypatch):
-    model = StudioUIModel(tmp_path / "studio")
+    model = StudioSession(tmp_path / "studio")
     model.create_project("候選", "複製資料", "符合固定範例")
     source = model.import_path(case_folder(tmp_path))
     candidates, _ = model.folder_candidates(source.source_id)

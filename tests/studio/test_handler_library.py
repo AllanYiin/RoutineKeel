@@ -8,13 +8,17 @@ from generated_cases import csv_parameters
 from ir_cases import valid_ir
 from test_generated_handlers import program_ir
 from workflow_studio.contracts import StudioError
+from workflow_studio.conversation.session import StudioSession
 from workflow_studio.llm.provider import Chunk
 from workflow_studio.llm.usage import Budget
 from workflow_studio.registry.handlers import MARKER
 from workflow_studio.service import StudioService
-from workflow_studio.storage.migrations import APPLICATION_ID, MIGRATIONS, SCHEMA_VERSION
+from workflow_studio.storage.migrations import (
+    APPLICATION_ID,
+    MIGRATIONS,
+    SCHEMA_VERSION,
+)
 from workflow_studio.storage.sqlite import SQLiteRepository
-from workflow_studio.ui.model import StudioUIModel
 
 
 def source_handler(
@@ -25,11 +29,11 @@ def source_handler(
     expected="id,amount\nA,100\n",
     format="csv",
 ):
-    studio, p, revision, policy = build_ir(
+    studio, p, revision, _policy = build_ir(
         tmp_path, program_ir(parameters or csv_parameters(), format)
     )
     studio.close()
-    model = StudioUIModel(tmp_path / "studio", runtime_python=runtime_python())
+    model = StudioSession(tmp_path / "studio", runtime_python=runtime_python())
     model.select_project(p.project_id)
     source, result = tmp_path / "input.txt", tmp_path / "expected.txt"
     source.write_bytes(text.encode())
@@ -146,7 +150,7 @@ def test_template_clone_keeps_body_and_requires_new_approval(tmp_path):
 
 
 def test_unbound_import_marker_cannot_claim_fixed_handler(tmp_path):
-    model = StudioUIModel(tmp_path)
+    model = StudioSession(tmp_path)
     with model.service() as studio:
         descriptor = studio.tools.get("data.transform_csv", "1.0.0")["tool"].model_dump()
     descriptor.update(tool_id="fake.template", test_evidence=[MARKER + "0" * 64])
@@ -342,7 +346,7 @@ def test_repair_uses_template_arguments_without_transmitting_fixed_body(tmp_path
 
 
 def test_old_verified_build_cannot_export_a_newly_edited_step(tmp_path):
-    model, _, _, report, item = source_handler(tmp_path)
+    model, _, _, report, _item = source_handler(tmp_path)
     old_build, old_hash = report["build_id"], report["package_hash"]
     model.edit_node("copy", arguments={"minimum": 200})
     with pytest.raises(StudioError) as exc:

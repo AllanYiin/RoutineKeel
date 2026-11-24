@@ -11,7 +11,7 @@ pytestmark = pytest.mark.skipif(os.name == 'nt' or shutil.which('sh') is None,
                                 reason='POSIX sh is required')
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('flow_base_profile', ROOT/'routinekeel/flow_base/scripts/flow_base_profile.py')
+spec = importlib.util.spec_from_file_location('flow_base_profile', ROOT/'flow_base/scripts/flow_base_profile.py')
 profile = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(profile)
 
@@ -36,7 +36,7 @@ exit 0
 
 def test_success_keeps_application_io_outside_bootstrap_log(tmp_path):
     app = install_fixture(tmp_path)
-    result = subprocess.run(['sh', str(app/'run_app.sh'), 'ask', '有 空格的需求'], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10)
+    result = subprocess.run(['sh', str(app/'run_app.sh'), 'ask', '有 空格的需求'], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10, check=False)
     assert result.returncode == 0, result.stderr
     assert (app/'received.txt').read_text().splitlines() == ['ask', '有 空格的需求']
     log = next((app.parent/'share_logs/launcher').glob('*.log')).read_text()
@@ -47,7 +47,7 @@ def test_success_keeps_application_io_outside_bootstrap_log(tmp_path):
 
 def test_failure_is_logged_and_prevents_launch_without_hanging(tmp_path):
     app = install_fixture(tmp_path, 17)
-    result = subprocess.run(['sh', str(app/'run_app.sh')], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10)
+    result = subprocess.run(['sh', str(app/'run_app.sh')], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10, check=False)
     assert result.returncode == 17
     assert not (app/'received.txt').exists()
     assert '環境準備失敗' in result.stderr
@@ -59,7 +59,7 @@ def test_failure_is_logged_and_prevents_launch_without_hanging(tmp_path):
 def test_default_enters_chat_and_preserves_retry(tmp_path):
     app = install_fixture(tmp_path)
     for _ in range(2):
-        result = subprocess.run(['sh', str(app/'run_app.command')], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10)
+        result = subprocess.run(['sh', str(app/'run_app.command')], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10, check=False)
         assert result.returncode == 0, result.stderr
     assert (app/'received.txt').read_text().strip() == 'chat'
     assert len(list((app.parent/'share_states/launcher').glob('*.json'))) == 2

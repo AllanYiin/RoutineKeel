@@ -5,11 +5,11 @@ import pytest
 from compiler_helpers import runtime_python
 from test_folder_discovery import folder_studio
 from workflow_studio.contracts import StudioError
+from workflow_studio.conversation.session import StudioSession
 from workflow_studio.discovery.evidence_graph import EvidenceGraphs
 from workflow_studio.discovery.folder import FolderDiscovery
 from workflow_studio.governance.evidence import EvidenceRecords
 from workflow_studio.registry.policy import ToolPolicy
-from workflow_studio.ui.model import StudioUIModel
 
 
 def review_model(tmp_path, entries=None):
@@ -18,7 +18,7 @@ def review_model(tmp_path, entries=None):
     )
     graph = FolderDiscovery(studio).analyze(project.project_id, source.source_id, 2)
     studio.close()
-    model = StudioUIModel(tmp_path / "workspace", runtime_python=runtime_python())
+    model = StudioSession(tmp_path / "workspace", runtime_python=runtime_python())
     model.select_project(project.project_id)
     return model, graph, source, folder
 
@@ -49,7 +49,7 @@ def test_confirmed_relation_adoption_has_auditable_basis_and_real_replay(tmp_pat
         assert record["reason"] == "verified the intended copy step"
         assert studio.confirmed_evidence(model.project_id, revision.ir) == {evidence["verified_by"]}
     assert model.verify()["status"] == "passed"
-    reopened = StudioUIModel(tmp_path / "workspace", runtime_python=runtime_python())
+    reopened = StudioSession(tmp_path / "workspace", runtime_python=runtime_python())
     reopened.select_project(model.project_id)
     assert reopened.folder_graph(graph_id)["history"][0] == snapshot
     assert reopened.folder_asset(graph_id, 1, edge["from"])["content"] == b"sample\n"

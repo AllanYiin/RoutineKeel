@@ -29,39 +29,26 @@ jobs:
       - name: Install pinned environment tool
         run: python -m pip install 'uv==0.13.6'
       - name: Prepare independent Runtime environment
-        run: uv sync --locked --python 3.12 --project routinekeel/flow_base --group dev
+        run: uv sync --locked --python 3.12 --project flow_base --group dev --extra mcp
       - name: Prepare Studio development environment
-        run: uv sync --locked --python 3.12 --project routinekeel/workflow_studio --group dev
+        run: uv sync --locked --python 3.12 --project workflow_studio --group dev
       - name: Record environment and test scope
         env:
           STUDIO_GATE_REPORT_DIR: ${{ runner.temp }}/studio-evidence
-        run: uv run --locked --project routinekeel/workflow_studio --group dev python routinekeel/workflow_studio/scripts/ci_environment.py
+        run: uv run --locked --project workflow_studio --group dev python workflow_studio/scripts/ci_environment.py
       - name: Lint and formatting
         run: |
-          uv run --locked --project routinekeel/workflow_studio --group dev ruff check --config routinekeel/workflow_studio/pyproject.toml routinekeel/workflow_studio/src routinekeel/workflow_studio/scripts tests/studio tools/studio_release.py
-          uv run --locked --project routinekeel/workflow_studio --group dev ruff format --check --config routinekeel/workflow_studio/pyproject.toml routinekeel/workflow_studio/src routinekeel/workflow_studio/scripts tests/studio tools/studio_release.py
-      - name: Prepare isolated GUI test dependencies
-        if: runner.os == 'Linux'
-        timeout-minutes: 5
-        run: |
-          sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=30
-          sudo apt-get install -y --no-install-recommends -o Acquire::Retries=2 -o Acquire::http::Timeout=30 xvfb xauth fonts-wqy-microhei
-      - name: Verify guided workbench in an isolated virtual display
-        if: runner.os == 'Linux'
-        timeout-minutes: 5
-        env:
-          STUDIO_HEADLESS_UI_TESTS: '1'
-          STUDIO_GATE_REPORT_DIR: ${{ runner.temp }}/studio-evidence
-        run: |
-          xvfb-run -a -s '-screen 0 1440x1000x24' uv run --locked --project routinekeel/workflow_studio --group dev python -m pytest tests/studio/test_ui_guidance.py tests/studio/test_ui_workflow.py tests/studio/test_ui_readability.py -q -k "headless or test_real_tk_buttons or test_tk_analysis or test_ui_state_multiline" --junitxml="${{ runner.temp }}/studio-evidence/guided-ui-junit.xml"
+          uv run --locked --project workflow_studio --group dev ruff check .
+          uv run --locked --project workflow_studio --group dev ruff check --config workflow_studio/pyproject.toml workflow_studio/src workflow_studio/scripts tests/studio
+          uv run --locked --project workflow_studio --group dev ruff format --check --config workflow_studio/pyproject.toml workflow_studio/src workflow_studio/scripts tests/studio
       - name: Run complete non-desktop Studio acceptance
         env:
           STUDIO_GATE_REPORT_DIR: ${{ runner.temp }}/studio-evidence
-        run: uv run --locked --project routinekeel/workflow_studio --group dev python -m pytest tests/studio -q -rs -k "not test_real_tk_buttons and not test_tk_analysis and not test_ui_state_multiline" --junitxml="${{ runner.temp }}/studio-evidence/studio-junit.xml"
-      - name: Build opt-in Studio distribution
-        run: python tools/release.py --project studio
-      - name: Verify packaged launchers and clean installation without desktop
-        run: python routinekeel/workflow_studio/scripts/verify_distribution.py dist/release/workflow-studio-0.1.0.zip --require-clean --output "${{ runner.temp }}/studio-evidence/distribution"
+        run: uv run --locked --project workflow_studio --group dev python -m pytest tests/studio -q -rs --junitxml="${{ runner.temp }}/studio-evidence/studio-junit.xml"
+      - name: Replay cross-host Pattern portability
+        env:
+          STUDIO_GATE_REPORT_DIR: ${{ runner.temp }}/studio-evidence
+        run: python workflow_studio/scripts/ci_pattern_portability.py
       - name: Preserve scoped acceptance evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

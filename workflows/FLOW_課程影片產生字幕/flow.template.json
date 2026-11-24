@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "runtime_api": "0.2",
+  "id": "ai_flow01",
+  "version": "0.5.1",
+  "title": "課程影片產生字幕",
+  "description": "本機 Demucs 人聲分離、音量標準化與 VAD；另提供可選的非平穩降噪與預加重模式。使用 faster-whisper large-v3 依原片時間辨識，輸出字幕與原音聽審。",
+  "keywords": [
+    "字幕",
+    "逐字稿",
+    "subtitles",
+    "transcribe"
+  ],
+  "examples": [
+    "把「課程.mp4」做成繁體中文字幕",
+    "將「lecture.mp4」產生英文字幕，使用 CPU"
+  ],
+  "input_extensions": [
+    ".mp4",
+    ".mkv",
+    ".mov",
+    ".avi",
+    ".webm",
+    ".wav",
+    ".mp3",
+    ".m4a",
+    ".flac"
+  ],
+  "parameter_paths": [
+    "model",
+    "profile",
+    "options.language",
+    "options.traditional_chinese",
+    "options.device",
+    "options.allow_cpu_fallback",
+    "options.audio_preprocessing",
+    "options.beam_size",
+    "options.max_line_chars",
+    "options.max_cue_seconds",
+    "options.glossary",
+    "options.initial_prompt",
+    "options.initial_prompt_enabled",
+    "options.vad_threshold",
+    "options.vad_min_speech_ms",
+    "options.vad_min_silence_ms",
+    "options.vad_skip_silence_seconds"
+  ],
+  "rules": [
+    {
+      "phrases": [
+        "繁體",
+        "正體"
+      ],
+      "set": {
+        "options.traditional_chinese": true
+      }
+    },
+    {
+      "phrases": [
+        "英文",
+        "English"
+      ],
+      "set": {
+        "options.language": "en"
+      }
+    },
+    {
+      "phrases": [
+        "中文",
+        "Chinese"
+      ],
+      "set": {
+        "options.language": "zh"
+      }
+    },
+    {
+      "phrases": [
+        "CPU"
+      ],
+      "set": {
+        "profile": "asr-cpu",
+        "options.device": "cpu"
+      }
+    },
+    {
+      "phrases": [
+        "CUDA",
+        "GPU"
+      ],
+      "set": {
+        "profile": "asr-cuda",
+        "options.device": "auto"
+      }
+    },
+    {
+      "phrases": [
+        "small 模型"
+      ],
+      "set": {
+        "model": "whisper-small"
+      }
+    },
+    {
+      "phrases": [
+        "tiny 模型"
+      ],
+      "set": {
+        "model": "whisper-tiny"
+      }
+    },
+    {
+      "phrases": [
+        "large-v3",
+        "large v3"
+      ],
+      "set": {
+        "model": "whisper-large-v3"
+      }
+    },
+    {
+      "phrases": [
+        "請潤飾",
+        "並潤飾",
+        "幫我潤飾",
+        "進行校訂",
+        "polish"
+      ],
+      "questions": [
+        "本字幕 runner 禁止 LLM API 呼叫；請先產生本機草稿與疑義表，需 AI 協助時明確匯出有限片段。"
+      ]
+    }
+  ],
+  "defaults": {
+    "model": "whisper-large-v3",
+    "options": {
+      "audio_preprocessing": "standard",
+      "allow_cpu_fallback": false,
+      "max_line_chars": 30,
+      "max_cue_seconds": 12,
+      "llm": {
+        "enabled": false,
+        "max_calls": 0
+      },
+      "device": "auto",
+      "initial_prompt": "繁體中文",
+      "vad_threshold": 0.3,
+      "vad_min_speech_ms": 250,
+      "vad_min_silence_ms": 2200,
+      "vad_skip_silence_seconds": 3.0
+    },
+    "profile": "auto"
+  },
+  "module": "ai_flow01",
+  "llm_policy": "forbidden",
+  "actions": [
+    "review-build",
+    "review-approve",
+    "review-packet",
+    "recover-run",
+    "review-import"
+  ],
+  "output_layout": "categorized-v1",
+  "recovery_action": "recover-run"
+}

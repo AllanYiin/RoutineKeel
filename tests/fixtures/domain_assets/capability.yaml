@@ -1,0 +1,14 @@
+id: text.copy
+version: 1.0.0
+kind: deterministic
+inputs:
+  source: {type: string}
+outputs:
+  result: {type: string}
+invariants: [preserve_original_text]
+permissions: []
+side_effects: none
+substitution:
+  mode: flexible
+  requires: [contract_conformance, behavioral_qualification]
+execution_loci: [local_runtime, host_mediated]

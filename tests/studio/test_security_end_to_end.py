@@ -22,7 +22,7 @@ from workflow_studio.verifier.report import Verifier
 def test_untrusted_send_request_cannot_become_executable_approved_or_published(
     tmp_path, monkeypatch
 ):
-    studio, p, build, _, _, policy, approval = verified_approval(tmp_path)
+    studio, p, _build, _, _, policy, approval = verified_approval(tmp_path)
     try:
         root = tmp_path / "installed"
         first = Releases(studio).publish(p.project_id, approval["approval_id"], root, policy)

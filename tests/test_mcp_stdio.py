@@ -5,28 +5,121 @@ import os
 import shutil
 import subprocess
 import sys
-import time
 
 import pytest
 
 pytest.importorskip('mcp')
-from mcp import Client, StdioServerParameters
-
+from flow_base.core.lifecycle import RunStore
 from flow_base.core.queue import QueueStore
 from flow_base.core.service import WorkflowService
 from flow_base.core.types import SubmitRequest
-from flow_base.core.lifecycle import RunStore
 from flow_base.runtime import atomic_json
-from test_workspace import workspace, cli
+from mcp import Client, StdioServerParameters
+from test_workspace import cli
 
 
 def client_for(root, *, mode='auto'):
+    host_env = {name:os.environ[name] for name in ("ROUTINEKEEL_HOST_CATALOG","ROUTINEKEEL_STUDIO_PYTHON") if name in os.environ}
     return Client(StdioServerParameters(command=sys.executable,
-        args=['-m', 'flow_base', '--workspace', str(root), 'mcp-stdio']), mode=mode)
+        args=['-m', 'flow_base', '--workspace', str(root), 'mcp-stdio'],env=host_env), mode=mode)
 
 
-async def call(client, name, **arguments):
-    response = await client.call_tool(name, arguments)
+def test_real_stdio_interview_resumes_and_keeps_host_answers_unconfirmed(tmp_path):
+    async def exercise():
+        async with client_for(tmp_path) as client:
+            state = (await call(client,'studio_create_project',name='週報',task='整理週報'))['result']
+            guidance = (await call(client, "studio_next_questions", project_id=state["project_id"]))["result"]
+            assert guidance["questions"] == [] and guidance["next_actions"][0] == "prepare_blueprint"
+            question = (await call(client,'studio_next_question',project_id=state['project_id'],domain='goal'))['result']
+            assert question['text'] and question['free_text']
+            params = {'project_id': state['project_id'],'expected_revision': state['revision'],
+                          'request_id': 'pilot','domain': 'goal','value': '整理週報','evidence_refs': ['對話草稿'],
+                          'confidence': 0.8}
+            denied = await call(client,'studio_submit_answer',**params,status='confirmed')
+            assert denied['error']['code'] == 'USER_CONFIRMATION_REQUIRED'
+            saved = (await call(client,'studio_submit_answer',**params))['result']
+            assert saved['coverage']['goal']['status'] == 'inferred'
+            shown = (await call(client,'studio_next_question',project_id=state['project_id'],domain='goal'))['result']
+            saved = (await call(client,'studio_record_reply',project_id=state['project_id'],domain='goal',
+                                question_id=shown['question_id'],expected_revision=shown['revision'],
+                                request_id='chat-2',user_text='整理每週的銷售報表'))['result']
+        async with client_for(tmp_path) as client:
+            reopened = (await call(client,'studio_get_project',project_id=state['project_id']))['result']
+            assert reopened.pop("design_progress")["stage"] == "draft_required"
+            assert reopened == saved and reopened['coverage']['goal']['origin'] == 'desktop_conversation'
+            assert reopened['coverage']['goal']['value'] == '整理每週的銷售報表'
+            batch = (await call(client, "studio_next_questions", project_id=state["project_id"],
+                                domains=["inputs", "outputs", "review"]))["result"]
+            answers = {"inputs": "銷售 CSV", "outputs": "週報 PDF"}
+            submitted = (await call(
+                client, "studio_record_replies", project_id=state["project_id"],
+                expected_revision=batch["revision"], request_id="chat-3",
+                user_text="輸入銷售 CSV，交付週報 PDF",
+                replies=[
+                    {"domain": q["domain"], "question_id": q["question_id"],
+                     "answer_text": answers[q["domain"]]}
+                    for q in batch["questions"] if q["domain"] in answers
+                ],
+            ))["result"]
+            assert submitted["revision"] == batch["revision"] + 1
+            assert submitted["coverage"]["inputs"]["value"] == "銷售 CSV"
+            assert submitted["coverage"]["outputs"]["value"] == "週報 PDF"
+            assert submitted["coverage"]["review"]["status"] == "unknown"
+    asyncio.run(exercise())
+
+
+def test_stdio_requires_two_review_turns_and_returns_both_diagrams(tmp_path, workflow_design_review):
+    from test_graph_builder import data_graph
+
+    async def exercise():
+        graph = data_graph()
+        graph["quality_contract"]["success_criteria"] = ["交付原文及大寫"]
+        async with client_for(tmp_path) as client:
+            created = await call(
+                client, "studio_create_project", name="文字流程", task=graph["workflow"]["goal"],
+            )
+            project = created["result"]
+            drafted = await call(
+                client, "studio_preview_blueprint", project_id=project["project_id"],
+                expected_revision=project["revision"], request_id="draft", graph=graph,
+                design={"rules": "保留原文"},
+            )
+            draft = drafted["result"]
+            assert "底座" not in draft["draft_design"]["diagram"]
+            params = {
+                "project_id": project["project_id"], "expected_revision": draft["revision"],
+                "request_id": "finalize", "draft_id": draft["proposal_id"],
+                "review": workflow_design_review(draft),
+                "shown_sections": {key: item["sha256"] for key, item in draft["review_sections"].items()},
+            }
+            blocked = await call(client, "studio_finalize_workflow_design", **params)
+            assert blocked["error"]["code"] == "BLUEPRINT_BLOCKED"
+            assert "初稿" in blocked["error"]["message"]
+        async with client_for(tmp_path) as client:
+            finalized = await call(
+                client, "studio_finalize_workflow_design", **params, draft_reply="初稿可進入定稿",
+            )
+            final = finalized["result"]
+            diagram = final["design_review"]["final_diagram"]
+            assert "底座 · 檢核輸入" in diagram
+            assert "底座 · 檢核與交付輸出" in diagram
+            assert "工作流 · copy" in diagram
+            approval = {
+                "project_id": project["project_id"], "expected_revision": final["revision"],
+                "request_id": "export", "proposal_id": final["proposal_id"],
+                "review_hash": final["review_hash"], "decision": "approve",
+                "shown_sections": {key: item["sha256"] for key, item in final["review_sections"].items()},
+            }
+            wrong = await call(client, "studio_export_blueprint", **approval, user_text="初稿可進入定稿")
+            assert wrong["error"]["code"] == "BLUEPRINT_BLOCKED"
+            exported = await call(client, "studio_export_blueprint", **approval, user_text="確認定稿並匯出")
+            assert exported["result"]["status"] == "exported"
+
+    asyncio.run(exercise())
+
+
+async def call(client, tool_name, **arguments):
+    response = await client.call_tool(tool_name, arguments)
     assert not response.is_error, response.content
     return json.loads(response.content[0].text)
 
@@ -42,7 +135,26 @@ def test_stdio_negotiation_queue_tool_set_and_path_boundary(workspace):
             names = {tool.name for tool in (await client.list_tools()).tools}
             assert names == {'list_workflows', 'describe_workflow', 'plan_workflow',
                              'submit_workflow', 'get_workflow_status',
-                             'get_workflow_result', 'cancel_workflow'}
+                             'get_workflow_result', 'cancel_workflow', 'preview_workflow_update',
+                             'update_workflow', 'rollback_workflow_update', 'recover_workflow_update',
+                             'install_workflow', 'blueprint_task',
+                             'studio_create_project', 'studio_list_projects', 'studio_get_project',
+                             'studio_update_project', 'studio_archive_project', 'studio_restore_project',
+                             'studio_next_question', 'studio_submit_answer', 'studio_pause_interview',
+                             'studio_resume_interview', 'studio_preview_source', 'studio_start_interview',
+                             'studio_record_reply', 'studio_preview_blueprint', 'studio_export_blueprint',
+                             'studio_finalize_workflow_design', 'studio_research_parameter_source',
+                             'studio_next_questions', 'studio_record_replies',
+                             'studio_extract_pattern', 'studio_get_pattern_extraction',
+                             'studio_export_pattern_extraction',
+                             'studio_qualify_pattern', 'studio_get_pattern_trial',
+                             'studio_generalize_patterns',
+                             'studio_recommend_patterns', 'studio_decide_pattern',
+                             'studio_inspect_pattern', 'studio_configure_patterns',
+                             'studio_compose_pattern',
+                             'studio_propose_pattern_improvement', 'studio_get_pattern_improvement',
+                             'studio_compare_pattern_improvement',
+                             'resolve_blueprint_capabilities','workflow_quality','workflow_evolution','agent_workflow'}
             forbidden = await call(client, 'submit_workflow', workflow_id='ai_flow02',
                                    source=str(outside))
             assert forbidden['error']['code'] == 'PERMISSION_DENIED'
@@ -66,18 +178,15 @@ def test_client_exit_reconnects_to_independent_worker_by_execution_id(workspace)
     source = workspace / 'input.txt'
     source.write_text('queued result after client exit', encoding='utf-8')
     output = workspace / 'result'
-    worker = subprocess.Popen([sys.executable, '-m', 'flow_base', '--workspace', str(workspace),
-                               'queue-worker', '--idle-timeout', '3', '--poll-interval', '0.1'],
-                              stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                              stderr=subprocess.PIPE, text=True)
+    worker = None
     try:
         async def submit():
             async with client_for(workspace) as client:
                 planned = await call(client, 'plan_workflow', workflow_id='ai_flow02',
                                      source=str(source), output=str(output))
-                args = dict(workflow_id='ai_flow02', source=str(source), output=str(output),
-                            idempotency_key='mcp-queued-fixture',
-                            execution_spec_hash=planned['result']['execution_spec_hash'])
+                args = {'workflow_id': 'ai_flow02', 'source': str(source), 'output': str(output),
+                            'idempotency_key': 'mcp-queued-fixture',
+                            'execution_spec_hash': planned['result']['execution_spec_hash']}
                 first = await call(client, 'submit_workflow', **args)
                 second = await call(client, 'submit_workflow', **args)
                 assert first['result']['execution_id'] == second['result']['execution_id']
@@ -86,15 +195,19 @@ def test_client_exit_reconnects_to_independent_worker_by_execution_id(workspace)
 
         execution_id = asyncio.run(submit())
         assert execution_id.startswith('execution_')
+        # The first client is now gone and the job is durably queued. Start the independent worker here.
+        worker = subprocess.Popen([sys.executable, '-m','flow_base','--workspace',str(workspace),
+                                   'queue-worker','--once'],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE,text=True)
 
         async def reconnect():
             async with client_for(workspace) as client:
-                deadline = time.monotonic() + 20
-                while time.monotonic() < deadline:
-                    response = await call(client, 'get_workflow_status', execution_id=execution_id)
-                    if response['result']['status'] in {'succeeded', 'failed', 'interrupted'}:
-                        break
-                    await asyncio.sleep(0.1)
+                first = await call(client,'get_workflow_status',execution_id=execution_id)
+                assert first['result']['execution_id'] == execution_id
+                # --once exits after recording the terminal queue state. Cold environment
+                # preparation is not a 20-second service contract.
+                await asyncio.to_thread(worker.wait, timeout=120)
+                response = await call(client, 'get_workflow_status', execution_id=execution_id)
                 assert response['result']['status'] == 'succeeded'
                 result = await call(client, 'get_workflow_result', execution_id=execution_id)
                 assert result['result']['result_available']
@@ -109,7 +222,7 @@ def test_client_exit_reconnects_to_independent_worker_by_execution_id(workspace)
         stdout, stderr = worker.communicate(timeout=12)
         assert worker.returncode == 0, stdout + stderr
     finally:
-        if worker.poll() is None:
+        if worker is not None and worker.poll() is None:
             worker.terminate()
             worker.communicate(timeout=5)
 
@@ -141,7 +254,9 @@ def test_queued_cancel_and_active_cancel_request(workspace):
                                                  workspace / 'active-result')
     store = RunStore(service.workspace.runtime)
     store.transition(run_id, 'created', 'queued')
-    store.claim(run_id, token='fixture-supervisor', pid=123, started_at=1.0)
+    from flow_base.execution.supervisor import process_started_at
+    pid = os.getpid()
+    store.claim(run_id, token='fixture-supervisor', pid=pid, started_at=process_started_at(pid))
     queue.mark_running(active, token, run_id)
     atomic_json(service.workspace.runtime.logs / item['flow_id'] / run_id / 'live_progress.json',
                 {'step_id': 'copy', 'progress': {'completed': 126, 'total': 391,
@@ -199,7 +314,7 @@ def test_mcp_stdio_process_has_no_listening_tcp_port(workspace):
         async with Client(params) as client:
             await client.list_tools()
             pid = pidfile.read_text(encoding='utf-8').strip()
-            observed = subprocess.run(['netstat', '-ano', '-p', 'tcp'],
+            observed = await asyncio.to_thread(subprocess.run, ['netstat', '-ano', '-p', 'tcp'],
                                       capture_output=True, text=True, check=True)
             rows = [line for line in observed.stdout.splitlines()
                     if line.strip().split()[-1:] == [pid] and 'LISTEN' in line.upper()]

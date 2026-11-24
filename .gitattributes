@@ -9,3 +9,4 @@
 *.png binary
 *.whl binary
 *.zip binary
+/workflow_studio/src/workflow_studio/compiler/templates/** text eol=lf

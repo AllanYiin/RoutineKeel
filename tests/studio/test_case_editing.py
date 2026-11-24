@@ -2,11 +2,11 @@ import zipfile
 
 import pytest
 from workflow_studio.contracts import StudioError
-from workflow_studio.ui.model import StudioUIModel
+from workflow_studio.conversation.session import StudioSession
 
 
 def setup(tmp_path):
-    model = StudioUIModel(tmp_path / "studio")
+    model = StudioSession(tmp_path / "studio")
     model.create_project("案例編輯", "整理資料", "符合樣本")
     original = tmp_path / "input.txt"
     original.write_text('{"x":1}', encoding="utf-8")
@@ -103,10 +103,10 @@ def test_case_editor_invalidates_old_approval_but_retains_original_report(tmp_pa
     from workflow_studio.service import StudioService
     from workflow_studio.verifier.report import Verifier
 
-    studio, p, build, cases, verifier, policy, approval = verified_approval(tmp_path)
+    studio, p, _build, cases, verifier, policy, approval = verified_approval(tmp_path)
     report = verifier.get(p.project_id, approval["report_id"])
     studio.close()
-    model = StudioUIModel(tmp_path / "studio")
+    model = StudioSession(tmp_path / "studio")
     model.select_project(p.project_id)
     model.update_case(
         cases[0]["case_id"],

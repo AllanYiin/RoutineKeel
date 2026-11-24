@@ -1,0 +1,2125 @@
+{
+  "pack": {
+    "$defs": {
+      "AssetOrigin": {
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Source",
+            "type": "string"
+          },
+          "license": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "License",
+            "type": "string"
+          },
+          "source_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Source Sha256"
+          }
+        },
+        "required": [
+          "source",
+          "license"
+        ],
+        "title": "AssetOrigin",
+        "type": "object"
+      },
+      "PackIdentity": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-z][a-z0-9_-]{0,63}(?:\\.[a-z][a-z0-9_-]{0,63}){1,7}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "version": {
+            "maxLength": 40,
+            "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$",
+            "title": "Version",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "domains": {
+            "items": {
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Domains",
+            "type": "array"
+          },
+          "publisher": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Publisher",
+            "type": "string"
+          },
+          "runtime_compatibility": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Runtime Compatibility",
+            "type": "string"
+          },
+          "trust": {
+            "const": "pending_approval",
+            "default": "pending_approval",
+            "title": "Trust",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "title",
+          "domains",
+          "publisher",
+          "runtime_compatibility"
+        ],
+        "title": "PackIdentity",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "pack_schema_version": {
+        "const": "1.0",
+        "title": "Pack Schema Version",
+        "type": "string"
+      },
+      "pack": {
+        "$ref": "#/$defs/PackIdentity"
+      },
+      "capability_refs": {
+        "items": {
+          "maxLength": 560,
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?:\\.[a-z][a-z0-9_-]{0,63}){1,7}@(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$",
+          "type": "string"
+        },
+        "title": "Capability Refs",
+        "type": "array"
+      },
+      "pattern_refs": {
+        "items": {
+          "maxLength": 560,
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?:\\.[a-z][a-z0-9_-]{0,63}){1,7}@(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$",
+          "type": "string"
+        },
+        "title": "Pattern Refs",
+        "type": "array"
+      },
+      "policy_refs": {
+        "items": {
+          "maxLength": 560,
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?:\\.[a-z][a-z0-9_-]{0,63}){1,7}@(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$",
+          "type": "string"
+        },
+        "title": "Policy Refs",
+        "type": "array"
+      },
+      "profile_schema_refs": {
+        "items": {
+          "maxLength": 560,
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?:\\.[a-z][a-z0-9_-]{0,63}){1,7}@(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$",
+          "type": "string"
+        },
+        "title": "Profile Schema Refs",
+        "type": "array"
+      },
+      "dependencies": {
+        "items": {
+          "maxLength": 560,
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?:\\.[a-z][a-z0-9_-]{0,63}){1,7}@(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$",
+          "type": "string"
+        },
+        "title": "Dependencies",
+        "type": "array"
+      },
+      "provenance": {
+        "$ref": "#/$defs/AssetOrigin"
+      },
+      "assets": {
+        "additionalProperties": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "minProperties": 1,
+        "title": "Assets",
+        "type": "object"
+      }
+    },
+    "required": [
+      "pack_schema_version",
+      "pack",
+      "provenance",
+      "assets"
+    ],
+    "title": "PackManifest",
+    "type": "object"
+  },
+  "capability": {
+    "$defs": {
+      "CapabilityPort": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "enum": [
+              "string",
+              "integer",
+              "number",
+              "boolean",
+              "object",
+              "array",
+              "file",
+              "json",
+              "null"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "format": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Format"
+          },
+          "required": {
+            "default": true,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CapabilityPort"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "schema_id": {
+            "anyOf": [
+              {
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?:\\.[a-z][a-z0-9_-]{0,63}){1,7}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Schema Id"
+          },
+          "enum": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Enum",
+            "type": "array"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "CapabilityPort",
+        "type": "object"
+      },
+      "JsonValue": {},
+      "Substitution": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "flexible",
+              "pinned"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "requires": {
+            "items": {
+              "enum": [
+                "contract_conformance",
+                "behavioral_qualification"
+              ],
+              "type": "string"
+            },
+            "title": "Requires",
+            "type": "array"
+          }
+        },
+        "required": [
+          "mode",
+          "requires"
+        ],
+        "title": "Substitution",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "pattern": "^[a-z][a-z0-9_-]{0,63}(?:\\.[a-z][a-z0-9_-]{0,63}){1,7}$",
+        "title": "Id",
+        "type": "string"
+      },
+      "version": {
+        "maxLength": 40,
+        "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$",
+        "title": "Version",
+        "type": "string"
+      },
+      "kind": {
+        "enum": [
+          "deterministic",
+          "deterministic_validation",
+          "model_inference",
+          "llm",
+          "external_tool"
+        ],
+        "title": "Kind",
+        "type": "string"
+      },
+      "inputs": {
+        "patternProperties": {
+          "^[a-z][a-z0-9_-]{0,63}$": {
+            "$ref": "#/$defs/CapabilityPort"
+          }
+        },
+        "title": "Inputs",
+        "type": "object"
+      },
+      "outputs": {
+        "minProperties": 1,
+        "patternProperties": {
+          "^[a-z][a-z0-9_-]{0,63}$": {
+            "$ref": "#/$defs/CapabilityPort"
+          }
+        },
+        "title": "Outputs",
+        "type": "object"
+      },
+      "invariants": {
+        "items": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "minItems": 1,
+        "title": "Invariants",
+        "type": "array"
+      },
+      "permissions": {
+        "items": {
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?:\\.[a-z][a-z0-9_-]{0,63}){1,7}$",
+          "type": "string"
+        },
+        "title": "Permissions",
+        "type": "array"
+      },
+      "side_effects": {
+        "enum": [
+          "none",
+          "local_write",
+          "external"
+        ],
+        "title": "Side Effects",
+        "type": "string"
+      },
+      "substitution": {
+        "$ref": "#/$defs/Substitution"
+      },
+      "execution_loci": {
+        "items": {
+          "enum": [
+            "local_runtime",
+            "host_mediated",
+            "external_service"
+          ],
+          "type": "string"
+        },
+        "minItems": 1,
+        "title": "Execution Loci",
+        "type": "array"
+      },
+      "errors": {
+        "items": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "title": "Errors",
+        "type": "array"
+      },
+      "platforms": {
+        "items": {
+          "enum": [
+            "windows",
+            "macos",
+            "linux"
+          ],
+          "type": "string"
+        },
+        "title": "Platforms",
+        "type": "array"
+      },
+      "resources": {
+        "patternProperties": {
+          "^[a-z][a-z0-9_-]{0,63}$": {
+            "type": "integer"
+          }
+        },
+        "title": "Resources",
+        "type": "object"
+      },
+      "quality": {
+        "patternProperties": {
+          "^[a-z][a-z0-9_-]{0,63}$": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        "title": "Quality",
+        "type": "object"
+      }
+    },
+    "required": [
+      "id",
+      "version",
+      "kind",
+      "inputs",
+      "outputs",
+      "invariants",
+      "permissions",
+      "side_effects",
+      "substitution",
+      "execution_loci"
+    ],
+    "title": "CapabilityContract",
+    "type": "object"
+  },
+  "pattern": {
+    "$defs": {
+      "CapabilityConstraints": {
+        "additionalProperties": false,
+        "properties": {
+          "contract_hash": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Contract Hash"
+          },
+          "max_cost_micro_usd": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Max Cost Micro Usd",
+            "type": "integer"
+          },
+          "max_latency_ms": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max Latency Ms"
+          },
+          "max_data_age_seconds": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max Data Age Seconds"
+          },
+          "numeric_representation": {
+            "anyOf": [
+              {
+                "enum": [
+                  "decimal",
+                  "integer",
+                  "binary_float"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Numeric Representation"
+          },
+          "offline_only": {
+            "default": false,
+            "title": "Offline Only",
+            "type": "boolean"
+          },
+          "error_codes": {
+            "items": {
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+              "type": "string"
+            },
+            "title": "Error Codes",
+            "type": "array"
+          }
+        },
+        "title": "CapabilityConstraints",
+        "type": "object"
+      },
+      "CapabilityPort": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "enum": [
+              "string",
+              "integer",
+              "number",
+              "boolean",
+              "object",
+              "array",
+              "file",
+              "json",
+              "null"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "format": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Format"
+          },
+          "required": {
+            "default": true,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CapabilityPort"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "schema_id": {
+            "anyOf": [
+              {
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?:\\.[a-z][a-z0-9_-]{0,63}){1,7}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Schema Id"
+          },
+          "enum": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Enum",
+            "type": "array"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "CapabilityPort",
+        "type": "object"
+      },
+      "CapabilityRequirement": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "capability": {
+            "pattern": "^[a-z][a-z0-9_-]{0,63}(?:\\.[a-z][a-z0-9_-]{0,63}){1,7}$",
+            "title": "Capability",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Version"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "portability": {
+            "enum": [
+              "flexible",
+              "pinned",
+              "unresolved"
+            ],
+            "title": "Portability",
+            "type": "string"
+          },
+          "requires_qualification": {
+            "const": true,
+            "default": true,
+            "title": "Requires Qualification",
+            "type": "boolean"
+          },
+          "execution_loci": {
+            "items": {
+              "enum": [
+                "local_runtime",
+                "host_mediated",
+                "external_service"
+              ],
+              "type": "string"
+            },
+            "title": "Execution Loci",
+            "type": "array"
+          },
+          "pinned_adapter": {
+            "anyOf": [
+              {
+                "maxLength": 560,
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?:\\.[a-z][a-z0-9_-]{0,63}){1,7}@(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Pinned Adapter"
+          },
+          "fallback_contract": {
+            "anyOf": [
+              {
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?:\\.[a-z][a-z0-9_-]{0,63}){1,7}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Fallback Contract"
+          },
+          "constraints": {
+            "$ref": "#/$defs/CapabilityConstraints"
+          }
+        },
+        "required": [
+          "id",
+          "capability",
+          "required",
+          "portability"
+        ],
+        "title": "CapabilityRequirement",
+        "type": "object"
+      },
+      "ControlPort": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "order",
+              "route"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "nodes": {
+            "items": {
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Nodes",
+            "type": "array"
+          },
+          "route": {
+            "anyOf": [
+              {
+                "enum": [
+                  "true",
+                  "false",
+                  "default",
+                  "error"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Route"
+          }
+        },
+        "required": [
+          "kind",
+          "nodes"
+        ],
+        "title": "ControlPort",
+        "type": "object"
+      },
+      "DesignTrigger": {
+        "additionalProperties": false,
+        "properties": {
+          "activation": {
+            "const": "suggest",
+            "title": "Activation",
+            "type": "string"
+          },
+          "task_categories": {
+            "items": {
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+              "type": "string"
+            },
+            "title": "Task Categories",
+            "type": "array"
+          },
+          "intents": {
+            "items": {
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+              "type": "string"
+            },
+            "title": "Intents",
+            "type": "array"
+          },
+          "positive_examples": {
+            "items": {
+              "maxLength": 4000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Positive Examples",
+            "type": "array"
+          },
+          "negative_examples": {
+            "items": {
+              "maxLength": 4000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Negative Examples",
+            "type": "array"
+          },
+          "prerequisites": {
+            "items": {
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+              "type": "string"
+            },
+            "title": "Prerequisites",
+            "type": "array"
+          },
+          "priority": {
+            "default": 50,
+            "maximum": 100,
+            "minimum": 0,
+            "title": "Priority",
+            "type": "integer"
+          },
+          "excluded_intents": {
+            "items": {
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+              "type": "string"
+            },
+            "title": "Excluded Intents",
+            "type": "array"
+          },
+          "conflicts_with": {
+            "items": {
+              "pattern": "^[a-z][a-z0-9_-]{0,63}(?:\\.[a-z][a-z0-9_-]{0,63}){1,7}$",
+              "type": "string"
+            },
+            "title": "Conflicts With",
+            "type": "array"
+          },
+          "suggests": {
+            "items": {
+              "maxLength": 560,
+              "pattern": "^[a-z][a-z0-9_-]{0,63}(?:\\.[a-z][a-z0-9_-]{0,63}){1,7}@(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$",
+              "type": "string"
+            },
+            "title": "Suggests",
+            "type": "array"
+          },
+          "gate": {
+            "anyOf": [
+              {
+                "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Gate"
+          },
+          "privacy": {
+            "default": "local_only",
+            "enum": [
+              "local_only",
+              "host_mediated",
+              "external"
+            ],
+            "title": "Privacy",
+            "type": "string"
+          },
+          "cost_micro_usd": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Cost Micro Usd",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "activation",
+          "task_categories",
+          "intents",
+          "positive_examples",
+          "negative_examples",
+          "prerequisites"
+        ],
+        "title": "DesignTrigger",
+        "type": "object"
+      },
+      "EvolutionTrigger": {
+        "additionalProperties": false,
+        "properties": {
+          "signals": {
+            "items": {
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+              "type": "string"
+            },
+            "title": "Signals",
+            "type": "array"
+          }
+        },
+        "required": [
+          "signals"
+        ],
+        "title": "EvolutionTrigger",
+        "type": "object"
+      },
+      "ForEach": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "depends_on": {
+            "items": {
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+              "type": "string"
+            },
+            "title": "Depends On",
+            "type": "array"
+          },
+          "inputs": {
+            "patternProperties": {
+              "^[a-z][a-z0-9_-]{0,63}$": {
+                "$ref": "#/$defs/InputBinding"
+              }
+            },
+            "title": "Inputs",
+            "type": "object"
+          },
+          "outputs": {
+            "patternProperties": {
+              "^[a-z][a-z0-9_-]{0,63}$": {
+                "$ref": "#/$defs/GraphPort"
+              }
+            },
+            "title": "Outputs",
+            "type": "object"
+          },
+          "evidence": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "kind": {
+            "const": "foreach",
+            "title": "Kind",
+            "type": "string"
+          },
+          "items": {
+            "title": "Items",
+            "type": "string"
+          },
+          "max_items": {
+            "exclusiveMinimum": 0,
+            "maximum": 10000,
+            "title": "Max Items",
+            "type": "integer"
+          },
+          "on_item_failure": {
+            "enum": [
+              "failed",
+              "review_required",
+              "collect_errors"
+            ],
+            "title": "On Item Failure",
+            "type": "string"
+          },
+          "limits": {
+            "$ref": "#/$defs/Limits"
+          },
+          "body": {
+            "$ref": "#/$defs/Graph"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "items",
+          "max_items",
+          "on_item_failure",
+          "limits",
+          "body"
+        ],
+        "title": "ForEach",
+        "type": "object"
+      },
+      "Graph": {
+        "additionalProperties": false,
+        "properties": {
+          "inputs": {
+            "patternProperties": {
+              "^[a-z][a-z0-9_-]{0,63}$": {
+                "$ref": "#/$defs/GraphPort"
+              }
+            },
+            "title": "Inputs",
+            "type": "object"
+          },
+          "nodes": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "foreach": "#/$defs/ForEach",
+                  "human_review": "#/$defs/Review",
+                  "join": "#/$defs/Join",
+                  "repeat_until": "#/$defs/Repeat",
+                  "switch": "#/$defs/Switch",
+                  "task": "#/$defs/Task"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/Task"
+                },
+                {
+                  "$ref": "#/$defs/Review"
+                },
+                {
+                  "$ref": "#/$defs/Switch"
+                },
+                {
+                  "$ref": "#/$defs/Join"
+                },
+                {
+                  "$ref": "#/$defs/ForEach"
+                },
+                {
+                  "$ref": "#/$defs/Repeat"
+                }
+              ]
+            },
+            "maxItems": 401,
+            "minItems": 1,
+            "title": "Nodes",
+            "type": "array"
+          },
+          "outputs": {
+            "minProperties": 1,
+            "patternProperties": {
+              "^[a-z][a-z0-9_-]{0,63}$": {
+                "type": "string"
+              }
+            },
+            "title": "Outputs",
+            "type": "object"
+          }
+        },
+        "required": [
+          "inputs",
+          "nodes",
+          "outputs"
+        ],
+        "title": "Graph",
+        "type": "object"
+      },
+      "GraphPort": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "enum": [
+              "string",
+              "integer",
+              "number",
+              "boolean",
+              "object",
+              "array",
+              "file",
+              "json",
+              "null"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "format": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Format"
+          },
+          "required": {
+            "default": true,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/GraphPort"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "GraphPort",
+        "type": "object"
+      },
+      "InputBinding": {
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "port": {
+            "$ref": "#/$defs/GraphPort"
+          }
+        },
+        "required": [
+          "source",
+          "port"
+        ],
+        "title": "InputBinding",
+        "type": "object"
+      },
+      "Join": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "depends_on": {
+            "items": {
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+              "type": "string"
+            },
+            "title": "Depends On",
+            "type": "array"
+          },
+          "inputs": {
+            "patternProperties": {
+              "^[a-z][a-z0-9_-]{0,63}$": {
+                "$ref": "#/$defs/InputBinding"
+              }
+            },
+            "title": "Inputs",
+            "type": "object"
+          },
+          "outputs": {
+            "patternProperties": {
+              "^[a-z][a-z0-9_-]{0,63}$": {
+                "$ref": "#/$defs/GraphPort"
+              }
+            },
+            "title": "Outputs",
+            "type": "object"
+          },
+          "evidence": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "kind": {
+            "const": "join",
+            "title": "Kind",
+            "type": "string"
+          },
+          "policy": {
+            "enum": [
+              "all_success",
+              "all_done",
+              "selected_branch"
+            ],
+            "title": "Policy",
+            "type": "string"
+          },
+          "switch": {
+            "anyOf": [
+              {
+                "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Switch"
+          },
+          "branches": {
+            "additionalProperties": {
+              "patternProperties": {
+                "^[a-z][a-z0-9_-]{0,63}$": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "title": "Branches",
+            "type": "object"
+          },
+          "fallbacks": {
+            "patternProperties": {
+              "^[a-z][a-z0-9_-]{0,63}$": {
+                "type": "string"
+              }
+            },
+            "title": "Fallbacks",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "policy"
+        ],
+        "title": "Join",
+        "type": "object"
+      },
+      "JsonValue": {},
+      "Limits": {
+        "additionalProperties": false,
+        "properties": {
+          "timeout_seconds": {
+            "exclusiveMinimum": 0,
+            "maximum": 86400,
+            "title": "Timeout Seconds",
+            "type": "integer"
+          },
+          "max_work": {
+            "exclusiveMinimum": 0,
+            "maximum": 10000,
+            "title": "Max Work",
+            "type": "integer"
+          },
+          "max_model_calls": {
+            "minimum": 0,
+            "title": "Max Model Calls",
+            "type": "integer"
+          },
+          "max_cost_micro_usd": {
+            "minimum": 0,
+            "title": "Max Cost Micro Usd",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "timeout_seconds",
+          "max_work",
+          "max_model_calls",
+          "max_cost_micro_usd"
+        ],
+        "title": "Limits",
+        "type": "object"
+      },
+      "PatternBoundary": {
+        "additionalProperties": false,
+        "properties": {
+          "inputs": {
+            "patternProperties": {
+              "^[a-z][a-z0-9_-]{0,63}$": {
+                "$ref": "#/$defs/CapabilityPort"
+              }
+            },
+            "title": "Inputs",
+            "type": "object"
+          },
+          "outputs": {
+            "minProperties": 1,
+            "patternProperties": {
+              "^[a-z][a-z0-9_-]{0,63}$": {
+                "$ref": "#/$defs/CapabilityPort"
+              }
+            },
+            "title": "Outputs",
+            "type": "object"
+          },
+          "control_inputs": {
+            "patternProperties": {
+              "^[a-z][a-z0-9_-]{0,63}$": {
+                "$ref": "#/$defs/ControlPort"
+              }
+            },
+            "title": "Control Inputs",
+            "type": "object"
+          },
+          "control_outputs": {
+            "patternProperties": {
+              "^[a-z][a-z0-9_-]{0,63}$": {
+                "$ref": "#/$defs/ControlPort"
+              }
+            },
+            "title": "Control Outputs",
+            "type": "object"
+          }
+        },
+        "required": [
+          "inputs",
+          "outputs"
+        ],
+        "title": "PatternBoundary",
+        "type": "object"
+      },
+      "PatternIdentity": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-z][a-z0-9_-]{0,63}(?:\\.[a-z][a-z0-9_-]{0,63}){1,7}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "version": {
+            "maxLength": 40,
+            "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$",
+            "title": "Version",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "kind": {
+            "const": "reusable_graph",
+            "title": "Kind",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PatternSource"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "declared_domains": {
+            "items": {
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Declared Domains",
+            "type": "array"
+          },
+          "trust_status": {
+            "const": "candidate",
+            "default": "candidate",
+            "title": "Trust Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "title",
+          "kind",
+          "declared_domains"
+        ],
+        "title": "PatternIdentity",
+        "type": "object"
+      },
+      "PatternSource": {
+        "additionalProperties": false,
+        "properties": {
+          "workflow_id": {
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+            "title": "Workflow Id",
+            "type": "string"
+          },
+          "version": {
+            "maxLength": 40,
+            "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$",
+            "title": "Version",
+            "type": "string"
+          },
+          "graph_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Graph Sha256",
+            "type": "string"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Revision"
+          }
+        },
+        "required": [
+          "workflow_id",
+          "version",
+          "graph_sha256"
+        ],
+        "title": "PatternSource",
+        "type": "object"
+      },
+      "PatternTests": {
+        "additionalProperties": false,
+        "properties": {
+          "golden_cases_manifest": {
+            "title": "Golden Cases Manifest",
+            "type": "string"
+          },
+          "required_edges": {
+            "items": {
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Required Edges",
+            "type": "array"
+          }
+        },
+        "required": [
+          "golden_cases_manifest",
+          "required_edges"
+        ],
+        "title": "PatternTests",
+        "type": "object"
+      },
+      "Predicate": {
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "op": {
+            "enum": [
+              "equals",
+              "less_than",
+              "greater_than"
+            ],
+            "title": "Op",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ],
+            "title": "Value"
+          },
+          "field": {
+            "anyOf": [
+              {
+                "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Field"
+          },
+          "field_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "string",
+                  "integer",
+                  "number",
+                  "boolean"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Field Type"
+          }
+        },
+        "required": [
+          "source",
+          "op",
+          "value"
+        ],
+        "title": "Predicate",
+        "type": "object"
+      },
+      "ProfileParameter": {
+        "additionalProperties": false,
+        "properties": {
+          "profile_schema": {
+            "maxLength": 560,
+            "pattern": "^[a-z][a-z0-9_-]{0,63}(?:\\.[a-z][a-z0-9_-]{0,63}){1,7}@(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$",
+            "title": "Profile Schema",
+            "type": "string"
+          },
+          "field": {
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+            "title": "Field",
+            "type": "string"
+          },
+          "node": {
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+            "title": "Node",
+            "type": "string"
+          },
+          "parameter": {
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+            "title": "Parameter",
+            "type": "string"
+          }
+        },
+        "required": [
+          "profile_schema",
+          "field",
+          "node",
+          "parameter"
+        ],
+        "title": "ProfileParameter",
+        "type": "object"
+      },
+      "Repeat": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "depends_on": {
+            "items": {
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+              "type": "string"
+            },
+            "title": "Depends On",
+            "type": "array"
+          },
+          "inputs": {
+            "patternProperties": {
+              "^[a-z][a-z0-9_-]{0,63}$": {
+                "$ref": "#/$defs/InputBinding"
+              }
+            },
+            "title": "Inputs",
+            "type": "object"
+          },
+          "outputs": {
+            "patternProperties": {
+              "^[a-z][a-z0-9_-]{0,63}$": {
+                "$ref": "#/$defs/GraphPort"
+              }
+            },
+            "title": "Outputs",
+            "type": "object"
+          },
+          "evidence": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "kind": {
+            "const": "repeat_until",
+            "title": "Kind",
+            "type": "string"
+          },
+          "initial": {
+            "$ref": "#/$defs/InputBinding"
+          },
+          "condition": {
+            "$ref": "#/$defs/Predicate"
+          },
+          "max_iterations": {
+            "exclusiveMinimum": 0,
+            "maximum": 10000,
+            "title": "Max Iterations",
+            "type": "integer"
+          },
+          "on_limit": {
+            "enum": [
+              "failed",
+              "review_required"
+            ],
+            "title": "On Limit",
+            "type": "string"
+          },
+          "limits": {
+            "$ref": "#/$defs/Limits"
+          },
+          "body": {
+            "$ref": "#/$defs/Graph"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "initial",
+          "condition",
+          "max_iterations",
+          "on_limit",
+          "limits",
+          "body"
+        ],
+        "title": "Repeat",
+        "type": "object"
+      },
+      "Review": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "depends_on": {
+            "items": {
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+              "type": "string"
+            },
+            "title": "Depends On",
+            "type": "array"
+          },
+          "inputs": {
+            "patternProperties": {
+              "^[a-z][a-z0-9_-]{0,63}$": {
+                "$ref": "#/$defs/InputBinding"
+              }
+            },
+            "title": "Inputs",
+            "type": "object"
+          },
+          "outputs": {
+            "patternProperties": {
+              "^[a-z][a-z0-9_-]{0,63}$": {
+                "$ref": "#/$defs/GraphPort"
+              }
+            },
+            "title": "Outputs",
+            "type": "object"
+          },
+          "evidence": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "kind": {
+            "const": "human_review",
+            "title": "Kind",
+            "type": "string"
+          },
+          "prompt": {
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "prompt"
+        ],
+        "title": "Review",
+        "type": "object"
+      },
+      "RuntimeTrigger": {
+        "additionalProperties": false,
+        "properties": {
+          "activation": {
+            "const": "compiled_graph_only",
+            "title": "Activation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "activation"
+        ],
+        "title": "RuntimeTrigger",
+        "type": "object"
+      },
+      "Switch": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "depends_on": {
+            "items": {
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+              "type": "string"
+            },
+            "title": "Depends On",
+            "type": "array"
+          },
+          "inputs": {
+            "patternProperties": {
+              "^[a-z][a-z0-9_-]{0,63}$": {
+                "$ref": "#/$defs/InputBinding"
+              }
+            },
+            "title": "Inputs",
+            "type": "object"
+          },
+          "outputs": {
+            "patternProperties": {
+              "^[a-z][a-z0-9_-]{0,63}$": {
+                "$ref": "#/$defs/GraphPort"
+              }
+            },
+            "title": "Outputs",
+            "type": "object"
+          },
+          "evidence": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "kind": {
+            "const": "switch",
+            "title": "Kind",
+            "type": "string"
+          },
+          "condition": {
+            "$ref": "#/$defs/Predicate"
+          },
+          "routes": {
+            "additionalProperties": {
+              "items": {
+                "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "propertyNames": {
+              "enum": [
+                "true",
+                "false",
+                "default",
+                "error"
+              ]
+            },
+            "title": "Routes",
+            "type": "object"
+          },
+          "on_error": {
+            "enum": [
+              "failed",
+              "review_required",
+              "route"
+            ],
+            "title": "On Error",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "condition",
+          "routes",
+          "on_error"
+        ],
+        "title": "Switch",
+        "type": "object"
+      },
+      "Task": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "depends_on": {
+            "items": {
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+              "type": "string"
+            },
+            "title": "Depends On",
+            "type": "array"
+          },
+          "inputs": {
+            "patternProperties": {
+              "^[a-z][a-z0-9_-]{0,63}$": {
+                "$ref": "#/$defs/InputBinding"
+              }
+            },
+            "title": "Inputs",
+            "type": "object"
+          },
+          "outputs": {
+            "patternProperties": {
+              "^[a-z][a-z0-9_-]{0,63}$": {
+                "$ref": "#/$defs/GraphPort"
+              }
+            },
+            "title": "Outputs",
+            "type": "object"
+          },
+          "evidence": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "kind": {
+            "const": "task",
+            "title": "Kind",
+            "type": "string"
+          },
+          "capability": {
+            "minLength": 1,
+            "title": "Capability",
+            "type": "string"
+          },
+          "capability_version": {
+            "minLength": 1,
+            "title": "Capability Version",
+            "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Permissions",
+            "type": "array"
+          },
+          "side_effect": {
+            "enum": [
+              "none",
+              "local_write",
+              "external",
+              "unresolved"
+            ],
+            "title": "Side Effect",
+            "type": "string"
+          },
+          "parameters": {
+            "additionalProperties": {
+              "$ref": "#/$defs/JsonValue"
+            },
+            "title": "Parameters",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "capability",
+          "capability_version",
+          "permissions",
+          "side_effect"
+        ],
+        "title": "Task",
+        "type": "object"
+      },
+      "Triggers": {
+        "additionalProperties": false,
+        "properties": {
+          "design": {
+            "$ref": "#/$defs/DesignTrigger"
+          },
+          "runtime": {
+            "$ref": "#/$defs/RuntimeTrigger"
+          },
+          "evolution": {
+            "$ref": "#/$defs/EvolutionTrigger"
+          }
+        },
+        "required": [
+          "design",
+          "runtime",
+          "evolution"
+        ],
+        "title": "Triggers",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "pattern_schema_version": {
+        "const": "1.0",
+        "title": "Pattern Schema Version",
+        "type": "string"
+      },
+      "pattern": {
+        "$ref": "#/$defs/PatternIdentity"
+      },
+      "boundary": {
+        "$ref": "#/$defs/PatternBoundary"
+      },
+      "requirements": {
+        "items": {
+          "$ref": "#/$defs/CapabilityRequirement"
+        },
+        "title": "Requirements",
+        "type": "array"
+      },
+      "triggers": {
+        "$ref": "#/$defs/Triggers"
+      },
+      "graph": {
+        "$ref": "#/$defs/Graph"
+      },
+      "tests": {
+        "$ref": "#/$defs/PatternTests"
+      },
+      "quality_contract": {
+        "patternProperties": {
+          "^[a-z][a-z0-9_-]{0,63}$": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        "title": "Quality Contract",
+        "type": "object"
+      },
+      "policy_refs": {
+        "items": {
+          "maxLength": 560,
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?:\\.[a-z][a-z0-9_-]{0,63}){1,7}@(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$",
+          "type": "string"
+        },
+        "title": "Policy Refs",
+        "type": "array"
+      },
+      "profile_schema_refs": {
+        "items": {
+          "maxLength": 560,
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?:\\.[a-z][a-z0-9_-]{0,63}){1,7}@(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$",
+          "type": "string"
+        },
+        "title": "Profile Schema Refs",
+        "type": "array"
+      },
+      "profile_parameters": {
+        "items": {
+          "$ref": "#/$defs/ProfileParameter"
+        },
+        "title": "Profile Parameters",
+        "type": "array"
+      }
+    },
+    "required": [
+      "pattern_schema_version",
+      "pattern",
+      "boundary",
+      "requirements",
+      "triggers",
+      "graph",
+      "tests"
+    ],
+    "title": "PatternManifest",
+    "type": "object"
+  },
+  "policy": {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "pattern": "^[a-z][a-z0-9_-]{0,63}(?:\\.[a-z][a-z0-9_-]{0,63}){1,7}$",
+        "title": "Id",
+        "type": "string"
+      },
+      "version": {
+        "maxLength": 40,
+        "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$",
+        "title": "Version",
+        "type": "string"
+      },
+      "policy_schema_version": {
+        "const": "1.0",
+        "title": "Policy Schema Version",
+        "type": "string"
+      },
+      "title": {
+        "maxLength": 4000,
+        "minLength": 1,
+        "title": "Title",
+        "type": "string"
+      },
+      "applicability": {
+        "enum": [
+          "required",
+          "recommended",
+          "optional",
+          "conditional",
+          "prohibited"
+        ],
+        "title": "Applicability",
+        "type": "string"
+      },
+      "subjects": {
+        "items": {
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?:\\.[a-z][a-z0-9_-]{0,63}){1,7}$",
+          "type": "string"
+        },
+        "minItems": 1,
+        "title": "Subjects",
+        "type": "array"
+      },
+      "conditions": {
+        "items": {
+          "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+          "type": "string"
+        },
+        "title": "Conditions",
+        "type": "array"
+      },
+      "invariants": {
+        "items": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "title": "Invariants",
+        "type": "array"
+      }
+    },
+    "required": [
+      "id",
+      "version",
+      "policy_schema_version",
+      "title",
+      "applicability",
+      "subjects"
+    ],
+    "title": "Policy",
+    "type": "object"
+  },
+  "profile_schema": {
+    "$defs": {
+      "ProfileField": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "enum": [
+              "string",
+              "integer",
+              "number",
+              "boolean",
+              "array",
+              "object"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "description": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "enum": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Enum",
+            "type": "array"
+          },
+          "affects_output": {
+            "title": "Affects Output",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "type",
+          "description",
+          "affects_output"
+        ],
+        "title": "ProfileField",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "pattern": "^[a-z][a-z0-9_-]{0,63}(?:\\.[a-z][a-z0-9_-]{0,63}){1,7}$",
+        "title": "Id",
+        "type": "string"
+      },
+      "version": {
+        "maxLength": 40,
+        "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$",
+        "title": "Version",
+        "type": "string"
+      },
+      "profile_schema_version": {
+        "const": "1.0",
+        "title": "Profile Schema Version",
+        "type": "string"
+      },
+      "title": {
+        "maxLength": 4000,
+        "minLength": 1,
+        "title": "Title",
+        "type": "string"
+      },
+      "scope": {
+        "enum": [
+          "user",
+          "project",
+          "workflow"
+        ],
+        "title": "Scope",
+        "type": "string"
+      },
+      "fields": {
+        "minProperties": 1,
+        "patternProperties": {
+          "^[a-z][a-z0-9_-]{0,63}$": {
+            "$ref": "#/$defs/ProfileField"
+          }
+        },
+        "title": "Fields",
+        "type": "object"
+      }
+    },
+    "required": [
+      "id",
+      "version",
+      "profile_schema_version",
+      "title",
+      "scope",
+      "fields"
+    ],
+    "title": "ProfileSchema",
+    "type": "object"
+  }
+}

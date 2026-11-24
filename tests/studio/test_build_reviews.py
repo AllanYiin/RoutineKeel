@@ -5,12 +5,16 @@ from test_governance import verified_approval
 from test_verifier import verification_case
 from workflow_studio.compiler.generator import Compiler
 from workflow_studio.contracts import StudioError
+from workflow_studio.conversation.session import StudioSession
 from workflow_studio.governance.approvals import Approvals
 from workflow_studio.governance.release import Releases
 from workflow_studio.governance.reviews import ReviewStore
-from workflow_studio.storage.migrations import APPLICATION_ID, MIGRATIONS, SCHEMA_VERSION
+from workflow_studio.storage.migrations import (
+    APPLICATION_ID,
+    MIGRATIONS,
+    SCHEMA_VERSION,
+)
 from workflow_studio.storage.sqlite import SQLiteRepository
-from workflow_studio.ui.model import StudioUIModel
 from workflow_studio.verifier.golden_cases import GoldenCases
 
 
@@ -164,7 +168,7 @@ def test_new_case_and_updated_case_source_invalidate_old_acceptance(tmp_path):
     with pytest.raises(StudioError, match="案例來源"):
         Approvals(studio).validate_cases(p.project_id, report)
     studio.close()
-    model = StudioUIModel(tmp_path / "studio")
+    model = StudioSession(tmp_path / "studio")
     model.select_project(p.project_id)
     new = model.update_case(
         first["case_id"],
@@ -195,7 +199,7 @@ def test_explicit_case_output_mapping_cannot_be_rebound(tmp_path):
 
 
 def test_historical_flag_cannot_bypass_current_project_gate(tmp_path):
-    studio, p, build, _, _, policy, approval = verified_approval(tmp_path)
+    studio, p, _build, _, _, policy, approval = verified_approval(tmp_path)
     with pytest.raises(StudioError, match="歷史回復"):
         Releases(studio).publish(
             p.project_id, approval["approval_id"], tmp_path / "installed", policy, historical=True
@@ -232,7 +236,7 @@ def test_build_preview_and_review_scope_are_project_bound(tmp_path):
     with pytest.raises(StudioError):
         studio.reviews(policy).details(other.project_id, build["build_id"])
     studio.close()
-    model = StudioUIModel(tmp_path / "studio")
+    model = StudioSession(tmp_path / "studio")
     model.select_project(p.project_id)
     assert model.build_file(build["build_id"], "workflow.ir.json")
     with pytest.raises(StudioError):
@@ -316,14 +320,14 @@ def test_return_during_identical_manifest_publish_does_not_advance_pointer(tmp_p
 
 
 def test_workbench_can_disable_current_release_with_reason(tmp_path):
-    studio, p, build, _, _, policy, approval = verified_approval(tmp_path)
+    studio, p, _build, _, _, policy, approval = verified_approval(tmp_path)
     root = tmp_path / "installed"
     release = Releases(studio).publish(p.project_id, approval["approval_id"], root, policy)
     folder = root / release["workflow_id"]
     (folder / "outputs").mkdir()
     (folder / "outputs/keep.txt").write_text("keep")
     studio.close()
-    model = StudioUIModel(tmp_path / "studio")
+    model = StudioSession(tmp_path / "studio")
     model.select_project(p.project_id)
     disabled = model.disable_release(release["release_id"], "operator", "manual stop")
     assert disabled["state"] == "disabled"
@@ -352,7 +356,7 @@ def test_review_history_is_immutable_and_case_sources_can_be_previewed_before_up
         source_id=source["source_id"],
     )
     studio.close()
-    model = StudioUIModel(tmp_path / "studio")
+    model = StudioSession(tmp_path / "studio")
     model.select_project(p.project_id)
     assert model.case_assets(case["case_id"], 1)["input"]["content"] == b"sample"
     assert (

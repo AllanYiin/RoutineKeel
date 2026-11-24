@@ -7,15 +7,15 @@ from test_branches import branch_ir
 from test_llm_runtime import llm_ir
 from test_verifier import verification_case
 from workflow_studio.contracts import StudioError
+from workflow_studio.conversation.parameters import numeric
+from workflow_studio.conversation.session import StudioSession
 from workflow_studio.llm.usage import UsageLedger
 from workflow_studio.registry.policy import ToolPolicy
-from workflow_studio.ui.model import StudioUIModel
-from workflow_studio.ui.node_settings import numeric
 from workflow_studio.verifier.authorization import RuntimeAuthorization
 
 
 def test_manual_first_flow_runs_without_model_or_code_editing(tmp_path):
-    model = StudioUIModel(tmp_path / "studio", runtime_python=runtime_python())
+    model = StudioSession(tmp_path / "studio", runtime_python=runtime_python())
     project = model.create_project("手動複製", "保留輸入檔案內容", "輸出位元組完全相同")
     source = model.import_text("需要完整保留輸入內容，不改寫檔案。")
     revision = model.initialize_flow(
@@ -47,7 +47,7 @@ def test_manual_first_flow_runs_without_model_or_code_editing(tmp_path):
 
 @pytest.mark.parametrize("fault", ["format", "path", "source", "stale", "tool"])
 def test_failed_manual_initialization_is_atomic(tmp_path, fault):
-    model = StudioUIModel(tmp_path)
+    model = StudioSession(tmp_path)
     model.create_project("初稿", "整理文字", "符合成功案例")
     source = model.import_text("來源")
     before = model.project()
@@ -84,7 +84,7 @@ def test_branch_settings_execute_both_paths_with_common_typed_output(
 ):
     studio, p, original, policy = build_ir(tmp_path, branch_ir())
     studio.close()
-    model = StudioUIModel(tmp_path / "studio", runtime_python=runtime_python())
+    model = StudioSession(tmp_path / "studio", runtime_python=runtime_python())
     model.select_project(p.project_id)
     params = copy.deepcopy(original.ir["nodes"][0]["parameters"])
     for side in ("when_true", "when_false"):
@@ -123,9 +123,9 @@ def test_branch_settings_execute_both_paths_with_common_typed_output(
 
 
 def test_incompatible_branch_and_missing_completion_contract_are_rejected(tmp_path):
-    studio, p, original, policy = build_ir(tmp_path, branch_ir())
+    studio, p, original, _policy = build_ir(tmp_path, branch_ir())
     studio.close()
-    model = StudioUIModel(tmp_path / "studio")
+    model = StudioSession(tmp_path / "studio")
     model.select_project(p.project_id)
     before = model.project()
     params = copy.deepcopy(original.ir["nodes"][0]["parameters"])
@@ -146,11 +146,11 @@ def test_llm_settings_invalidate_authorization_and_enforce_aggregate_budget(tmp_
         True,
         100_000,
     )
-    studio, p, build, cases, verifier, policy = verification_case(
+    studio, p, build, _cases, _verifier, policy = verification_case(
         tmp_path, payload=llm_ir(), policy=policy
     )
     studio.close()
-    model = StudioUIModel(tmp_path / "studio")
+    model = StudioSession(tmp_path / "studio")
     model.select_project(p.project_id)
     model.policy = policy
     model.build_id = build["build_id"]
@@ -198,11 +198,11 @@ def test_money_form_rounds_up_to_micro_unit():
 
 
 def test_new_branch_and_model_templates_use_current_policy_and_symbolic_secret(tmp_path):
-    from workflow_studio.ui.graph_dialog import GraphDraft
+    from workflow_studio.conversation.graph import GraphDraft
 
-    studio, p, original, _ = build_ir(tmp_path)
+    studio, p, _original, _ = build_ir(tmp_path)
     studio.close()
-    model = StudioUIModel(tmp_path / "studio")
+    model = StudioSession(tmp_path / "studio")
     model.select_project(p.project_id)
     model.configure_provider(
         "https://fixture.invalid/chat",

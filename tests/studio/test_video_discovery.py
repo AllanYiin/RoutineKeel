@@ -1,7 +1,6 @@
 import json
 
 import pytest
-from test_video_ingestion import video_studio as video_studio
 from workflow_studio.contracts import StudioError
 from workflow_studio.discovery.evidence_fusion import fuse_claims
 from workflow_studio.discovery.video import VideoDiscovery

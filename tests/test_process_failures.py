@@ -8,7 +8,6 @@ import time
 from pathlib import Path
 
 import pytest
-
 from flow_base.execution.supervisor import process_started_at
 from flow_base.runtime import FlowError, run_process
 
@@ -79,11 +78,14 @@ def test_no_log_capture_is_bounded(tmp_path):
 
 def test_timeout_cleans_spawned_child_tree(tmp_path):
     log = tmp_path / 'tree.log'
+    # This fixture needs only the standard library. Start CPython directly so the
+    # original deadline exercises the spawned tree rather than venv/site initialization.
+    executable = getattr(sys, '_base_executable', sys.executable)
     code = ('import subprocess,sys,time; '
-            'child=subprocess.Popen([sys.executable,"-c","import time;time.sleep(30)"]); '
+            'child=subprocess.Popen([sys.executable,"-I","-S","-c","import time;time.sleep(30)"]); '
             'print(child.pid,flush=True); time.sleep(30)')
     with pytest.raises(FlowError) as error:
-        run_process([sys.executable, '-c', code], timeout=0.3, grace_seconds=0.1, log=log)
+        run_process([executable, '-I', '-S', '-c', code], timeout=0.3, grace_seconds=0.1, log=log)
     assert error.value.code == 'PROCESS_TIMEOUT'
     child_pid = int(log.read_text(encoding='utf-8').splitlines()[0])
     assert process_started_at(child_pid) is None
@@ -100,19 +102,19 @@ def test_worker_parent_exit_does_not_leave_child(tmp_path):
 
 
 def test_cancel_cleans_spawned_child_tree(tmp_path):
-    stop = threading.Event()
-    timer = threading.Timer(0.3, stop.set)
-    timer.start()
+    ready = tmp_path / 'child-spawned'
+
+    class CancelWhenChildExists:
+        def is_set(self):
+            return ready.is_file()
+
     log = tmp_path / 'cancel-tree.log'
-    code = ('import subprocess,sys,time; '
+    code = ('import pathlib,subprocess,sys,time; '
             'child=subprocess.Popen([sys.executable,"-c","import time;time.sleep(30)"]); '
-            'print(child.pid,flush=True); time.sleep(30)')
-    try:
-        with pytest.raises(FlowError) as error:
-            run_process([sys.executable, '-c', code], timeout=10, grace_seconds=0.1,
-                        cancel_event=stop, log=log)
-    finally:
-        timer.join(timeout=2)
+            'print(child.pid,flush=True); pathlib.Path(sys.argv[1]).touch(); time.sleep(30)')
+    with pytest.raises(FlowError) as error:
+        run_process([sys.executable, '-c', code, str(ready)], timeout=10, grace_seconds=0.1,
+                    cancel_event=CancelWhenChildExists(), log=log)
     assert error.value.code == 'PROCESS_CANCELLED'
     child_pid = int(log.read_text(encoding='utf-8').splitlines()[0])
     assert process_started_at(child_pid) is None
@@ -186,37 +188,37 @@ def test_final_evidence_failure_preserves_process_outcome(tmp_path, monkeypatch,
 
 @pytest.mark.skipif(os.name != 'nt', reason='Windows Job Object parent-death behavior')
 def test_abrupt_supervisor_death_closes_worker_job(tmp_path):
-    marker = tmp_path / 'worker-pid.txt'
+    ready = tmp_path / 'supervisor-ready'
     log = tmp_path / 'long-worker.log'
     code = """
-import json, sys, threading, time
+import sys
 from pathlib import Path
 from flow_base.runtime import run_process
-root, marker, log = map(Path, sys.argv[1:4])
-threading.Thread(target=lambda: run_process([sys.executable, '-c', 'import time;time.sleep(30)'], log=log), daemon=True).start()
-deadline = time.time() + 5
-while time.time() < deadline and not marker.exists():
-    for path in root.glob('proc_*.json'):
-        try:
-            data = json.loads(path.read_text())
-            if data.get('pid'):
-                marker.write_text(str(data['pid']))
-                break
-        except Exception:
-            pass
-    time.sleep(0.02)
-time.sleep(30)
+ready, log = map(Path, sys.argv[1:3])
+ready.touch()
+run_process([sys.executable, '-c', 'import time;time.sleep(30)'], log=log)
 """
     env = os.environ.copy()
-    env['PYTHONPATH'] = str(Path(__file__).resolve().parents[1] / 'routinekeel/flow_base/src')
-    parent = subprocess.Popen([sys.executable, '-c', code, str(tmp_path), str(marker), str(log)],
+    env['PYTHONPATH'] = str(Path(__file__).resolve().parents[1] / 'flow_base/src')
+    parent = subprocess.Popen([sys.executable, '-c', code, str(ready), str(log)],
                               env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     try:
-        deadline = time.monotonic() + 5
-        while time.monotonic() < deadline and not marker.exists():
+        # Cold interpreter/import time precedes the worker startup deadline.
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline and not ready.exists() and parent.poll() is None:
             time.sleep(0.05)
-        assert marker.exists(), parent.stderr.read().decode('utf-8', 'replace') if parent.poll() is not None else 'worker did not start'
-        worker_pid = int(marker.read_text())
+        assert ready.exists(), 'supervisor did not initialize'
+        deadline = time.monotonic() + 5
+        worker_pid = None
+        while time.monotonic() < deadline and worker_pid is None and parent.poll() is None:
+            for record in tmp_path.glob('proc_*.json'):
+                evidence = json.loads(record.read_text(encoding='utf-8'))
+                if evidence.get('pid'):
+                    assert evidence['windows_job_object']
+                    worker_pid = evidence['pid']
+            if worker_pid is None:
+                time.sleep(0.05)
+        assert worker_pid, parent.stderr.read().decode('utf-8', 'replace') if parent.poll() is not None else 'worker did not start'
         assert process_started_at(worker_pid) is not None
     finally:
         parent.kill()

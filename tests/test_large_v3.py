@@ -5,11 +5,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
-from flow_base.runtime import FlowError, Runtime, run_process
 from ai_flow01 import adapter, worker
 from ai_flow01.contracts import subtitle_workflow
 from ai_flow01.resources import catalogue
+from flow_base.runtime import FlowError, Runtime, run_process
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -24,14 +23,14 @@ def test_large_v3_is_default_and_has_complete_pinned_resources():
     assert all('/resolve/' + resource.revision + '/' in f.url for f in resource.files)
     assert sum(f.size for f in resource.files) > 3_000_000_000
     assert len({f.sha256 for f in resource.files}) == len(resource.files)
-    manifest = json.loads((ROOT/'routinekeel/flows/課程影片產生字幕/flow.template.json').read_text())
+    manifest = json.loads((ROOT/'workflows/FLOW_課程影片產生字幕/flow.template.json').read_text())
     assert manifest['defaults']['model'] == flow.model
     assert any(r.get('set', {}).get('model') == flow.model for r in manifest['rules'])
 
 
 @pytest.mark.parametrize('profile', ['asr-cpu', 'asr-cuda'])
 def test_legacy_ctranslate2_compatibility_is_locked_for_every_platform(profile):
-    root = ROOT/'routinekeel/flows/課程影片產生字幕/src/ai_flow01/profiles'/profile
+    root = ROOT/'workflows/FLOW_課程影片產生字幕/src/ai_flow01/profiles'/profile
     project = tomllib.loads((root/'pyproject.toml').read_text())
     lock = tomllib.loads((root/'uv.lock').read_text())
     assert 'setuptools==80.9.0' in project['project']['dependencies']
@@ -93,7 +92,7 @@ def test_memory_block_preserves_model(tmp_path, monkeypatch):
 
 
 def test_settings_example_is_valid_and_does_not_enable_paid_calls():
-    config = json.loads((ROOT/'routinekeel/flows/課程影片產生字幕/settings.example.json').read_text())
+    config = json.loads((ROOT/'workflows/FLOW_課程影片產生字幕/settings.example.json').read_text())
     flow = adapter.Adapter().configuration(config)
     assert flow.model == 'whisper-large-v3' and not flow.options.llm.enabled
 

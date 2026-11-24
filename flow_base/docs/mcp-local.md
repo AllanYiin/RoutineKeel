@@ -1,0 +1,39 @@
+# 桌面宿主的 MCP 連線與本機佇列
+
+0.2.14 加入 `install_workflow` 與 `blueprint_task`。從訪談附件到工作區首次安裝、宿主／真人待辦及續跑請見 [首次安裝藍圖](blueprint-install.md)。佇列執行到第一個宿主待辦後，`get_workflow_result` 會帶回 `blueprint_session_id`。
+
+RoutineKeel 的 MCP 入口只處理短時間的提交、查詢和取消。任務先寫入 SQLite，立即回 `execution_id`；**另外啟動**的本機 `queue-worker` 逐件領取，正式執行時才建立 `run_id`。關閉 Codex、重啟 MCP 或換對話，都可用相同 `execution_id` 查狀態與結果。若 Worker 未啟動，任務會保持 `queued`；提交成功並不代表流程已開始。
+
+## 啟動順序
+
+1. 在發行工作區另開啟 `flow_base/queue_worker.bat`（Windows）、`queue_worker.command`（macOS），或執行 `queue_worker.sh`（Linux）。它委派既有 `run_app` bootstrap，不開 Port。視窗須保持開啟才能領取後續工作；可用 Ctrl+C 停止，佇列資料仍留 SQLite。
+2. MCP 是選配套件。由安裝者為宿主執行一次選配安裝。Windows PowerShell 用 `& .\flow_base\start.ps1 --install-mcp`；macOS／Linux 用 `sh ./flow_base/start.sh --install-mcp`。一般 CLI／Worker 不需要 MCP 依賴。**宿主的 MCP command 不可指向會顯示 bootstrap 文字的 `run_app`／`start.ps1`**；Windows 指向工作區 `.venv\Scripts\python.exe`，macOS／Linux 指向 `.venv/bin/python`，參數依序為 `-X utf8 -I -m flow_base --workspace <工作區根目錄> mcp-stdio`。如此 `stdout` 只供 MCP 訊息，日誌走 stderr 或本機檔案。
+
+   在開發環境執行：
+
+   ```powershell
+   uv sync --project flow_base --extra mcp --group dev
+   uv run --locked --project flow_base --extra mcp flow_base --workspace <工作區根目錄> mcp-stdio
+   ```
+
+   MCP Client 以 stdio 啟動，使用官方 SDK 協商；安裝步驟與正式協定連線分開。
+3. 先 `plan_workflow`，再 `submit_workflow`；記下 `execution_id`。同一 `idempotency_key`＋相同有效規格重送會回原 ID，不同規格拒絕。`get_workflow_status` 回 queued／running／terminal、`run_id`（未開跑時為 null）、安全進度及建議輪詢間隔；`get_workflow_result` 回已驗證成果路徑和審閱狀態。`cancel_workflow` 在排隊時立即取消，執行中先回 `cancel_requested`，直到 Run 停止才算確認。
+
+MCP 工具：`list_workflows`、`describe_workflow`、`plan_workflow`、`submit_workflow`、`get_workflow_status`、`get_workflow_result`、`cancel_workflow`。CLI 也有 `submit`、`execution-status`、`execution-result`、`execution-cancel`、`queue-worker`，共用相同 Service。CLI 原有 `run` 仍可同步執行，不受佇列模式影響。
+
+0.2.13 新增 `preview_workflow_update`、`update_workflow`、`rollback_workflow_update`、`recover_workflow_update`。使用者要求以附件更新既有流程時，宿主先將指定 ZIP 放入工作區，再預覽並以回傳的 plan_hash 套用；不需手動解壓或覆蓋。更新工具只處理套件檔，不執行附件程式，也不啟動模型。設定、成果、歷史與快取保留；執行中／排隊工作會阻擋更新。CLI／復原及限制見 [流程更新](workflow-updates.md)。
+
+佇列第一版只接受工作區內的輸入與輸出；外部檔案須先明確匯入工作區。MCP 不允許任意 shell、不安裝未授權流程、不傳原始診斷或檔案內容，也不綁定 HTTP Port。`result_status=review_required` 表示處理完成但仍待人工審閱，與 `execution_status=succeeded` 分開。資料庫升級至 v005 前會建立可核對 SHA-256 的 SQLite 備份；回退舊版底座須先還原與舊版相容的 DB。
+
+MCP 2026-07-28 的協定核心無 Session；RoutineKeel 的持久化來自本機 SQLite，不能單靠協定無狀態推論程序會存活。Worker 必須獨立於 MCP 程序啟動。原生 MCP Tasks 擴充只在目標 Client 確認支援後另行映射，普通工具不依賴它。完整契約見 `specs/mcp-queue-v1.md`。
+
+驗證命令：
+
+```powershell
+uv run --locked --project flow_base --extra mcp --group dev python -m pytest tests/test_execution_queue.py tests/test_mcp_stdio.py tests/test_integration_mcp_cli.py -q
+```
+## 在對話裡接續工作
+
+`agent_workflow` 可列出已安裝流程。提供 `execution_id` 可回到同一次提交，提供 `session_id` 可查看待答問題和具名成果。加上 `proposal_id` 可接續版本比較。CLI 的對等入口是 `agent-workflow`，接受 `--execution-id`、`--session-id`、`--proposal-id`。
+
+排隊中的工作只有提交編號。Worker 啟動後才會產生 Run；需要使用者判斷時會另外顯示待辦節點。當次 Run 已結束時，工作仍可能停在校閱點。宿主以 `pending` 的問題及實際輸入向使用者提問，再使用 `next_actions` 中相符的工具與版本回傳答覆。結果品質另由 `workflow_quality` 查詢。

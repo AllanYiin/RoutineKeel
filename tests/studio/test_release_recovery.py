@@ -9,7 +9,11 @@ from workflow_studio.contracts import StudioError
 from workflow_studio.governance.approvals import Approvals
 from workflow_studio.governance.recovery import ReleaseRecovery
 from workflow_studio.governance.release import Releases
-from workflow_studio.storage.migrations import APPLICATION_ID, MIGRATIONS, SCHEMA_VERSION
+from workflow_studio.storage.migrations import (
+    APPLICATION_ID,
+    MIGRATIONS,
+    SCHEMA_VERSION,
+)
 from workflow_studio.storage.sqlite import SQLiteRepository
 
 
@@ -36,7 +40,7 @@ def failed_publish(tmp_path, monkeypatch, stage="before_manifest", *, existing=F
     def fail(path, data):
         if stage == "before_journal" and path.name == "journal.json":
             raise OSError("injected before journal")
-        if path.parent.name == "copy-example":
+        if path.parent.name in {"copy-example", "FLOW_copy-example"}:
             if stage == "wheel_partial" and path.suffix == ".whl":
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.with_name(path.name + "." + "a" * 32 + ".tmp").write_bytes(data[:20])
@@ -46,7 +50,7 @@ def failed_publish(tmp_path, monkeypatch, stage="before_manifest", *, existing=F
         write(path, data)
         if (
             stage == "after_manifest"
-            and path.parent.name == "copy-example"
+            and path.parent.name in {"copy-example", "FLOW_copy-example"}
             and path.name == "flow.json"
         ):
             raise OSError("injected after manifest")
@@ -238,7 +242,7 @@ def test_incomplete_wheel_is_not_marked_published(tmp_path, monkeypatch):
 
 
 def test_foreign_project_and_copied_target_cannot_claim_journal(tmp_path, monkeypatch):
-    studio, p, _, _, _, _, _, root, pending, _ = failed_publish(tmp_path, monkeypatch)
+    studio, _p, _, _, _, _, _, root, pending, _ = failed_publish(tmp_path, monkeypatch)
     other = studio.projects.create("other")
     with pytest.raises(StudioError):
         ReleaseRecovery(studio).inspect(other.project_id, pending["release_id"])
@@ -438,17 +442,17 @@ def test_missing_target_is_not_assumed_unapplied(tmp_path, monkeypatch):
 
 
 def test_ui_model_reopens_and_reconciles_prepared_release(tmp_path, monkeypatch):
-    from workflow_studio.ui.model import StudioUIModel
+    from workflow_studio.conversation.session import StudioSession
 
     studio, p, _, _, _, _, _, _, pending, _ = failed_publish(tmp_path, monkeypatch)
     studio.close()
-    model = StudioUIModel(tmp_path / "studio")
+    model = StudioSession(tmp_path / "studio")
     model.select_project(p.project_id)
     observed = model.inspect_release(pending["release_id"])
     assert observed["outcome"] == "not_applied"
     model.reconcile_release(
         pending["release_id"], observed["observation_hash"], "operator", "verified actual files"
     )
-    reopened = StudioUIModel(tmp_path / "studio")
+    reopened = StudioSession(tmp_path / "studio")
     reopened.select_project(p.project_id)
     assert reopened.release_history()[-1]["status"] == "abandoned"

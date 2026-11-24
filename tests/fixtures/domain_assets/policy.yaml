@@ -1,0 +1,7 @@
+policy_schema_version: '1.0'
+id: text.source_immutability
+version: 1.0.0
+title: 來源保全
+applicability: required
+subjects: [text.preserve]
+invariants: [preserve_original_text]

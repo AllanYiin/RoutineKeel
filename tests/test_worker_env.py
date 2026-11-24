@@ -1,6 +1,5 @@
 """Worker subprocesses receive required runtime controls but no host secrets."""
 import json
-import os
 import sys
 from pathlib import Path
 
