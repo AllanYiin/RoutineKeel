@@ -2,46 +2,48 @@
 
 ## SNAPSHOT — 當前狀態
 
-最後更新：2026-11-23T11:32+08:00
+最後更新：2026-11-24T12:59+08:00
 交接狀態：verified
 
 ### 目標與授權範圍
 
-修正 Workflow Studio 規格稽核缺口，並讓整合包以空白底座啟動。
+完成翻譯校訂 RWP 的設計期建議、嵌入及實際 Codex 宿主驗收，並將相關原始碼提交推送開發分支。
 
 ### 目前進度
 
-修正與本機驗證完成。Studio 稽核修正見 363f130。整合包收錄兩個待安裝範例 ZIP，布局與測試隨本交接提交。發行候選位於 dist/candidate-uninstalled-examples/release/。
+14d61df 已推送至 codex/workflow-zip-updates，包含單輪、兩輪回審 Pack、回歸測試與宿主驗收程式。前一筆 953fd84 同批推送。實跑停在 MAX_ITERATIONS 的人工待辦，最後修訂稿已保存。流程圖校閱修正、Windows 共用 Python 啟動修正與原有暫存項目仍保留在開發工作區。
 
 ### 下一步
 
-本機候選已建置。對外發布前依發行流程確認平台驗收及發布授權。
+回審測試已驗收。保留隔離工作區的人工待辦。若要將宿主派工整合到正式環境，依該環境的工具與資格收據重新執行驗收。
 
 ### DECISIONS
 
-- 整合包的 workflows、share_states、share_logs 初始空白。範例沿用現成分包，置於 examples/workflows，使用者選擇後解壓至 RoutineKeel 根目錄。開發用 dist/workspace 可直接用既有已裝好的測試布局。
-- 定稿包含每步用途、完成條件、關鍵性及理由，並封存已顯示的藍圖、品質規則和技能指紋。網頁研究先由宿主搜尋，Studio 擷取支援的 HTTPS 文字來源並核對原文和採用值。
-- 更正交付重新評估原生產節點，必要人審須重新取得。Pack 停用阻擋新建置與安裝，Pattern 控制邊以隔離測具驗證，改版須有回歸比較。
+- 執行者位於外層流程，RWP 內僅有批評者與修訂者兩個代理角色。
+- 回審版最多兩輪，缺少通過判定時等待人工決定並保留未交付譯稿。
+- 設計校閱與工具綁定分屬設計與建置階段。
+- Windows 共用 Python 修正仍沿用本機同批底座及 Studio 候選 ZIP。
 
 ### LANDMINES
 
-- 本輪驗證於 Windows。macOS、真人宿主與真實模型驗收尚待。來源核對接受支援網域的 HTML、純文字與 Markdown。
-- 本輪範例安裝沿用 ZIP 解壓。沒有 SQLite schema 遷移。回退發行布局可還原 tools/release.py 的全包組裝與相應測試指引。
+- 此次以 Codex 對話逐步派工及傳回實際子代理回執，後續自動化宿主接線未在正式工作區驗證。
+- 本機驗收來源、宿主清冊、回執、產物與共享 Python 候選包保留在 dist。
+- 先前 Windows 啟動修正已本機驗證，macOS 與 Linux 只有腳本語法檢查。
 
 ### 證據索引
 
-- tools/release.py
-- tests/test_release_layout.py
-- tests/test_studio_design_contract.py
-- workflow_studio/docs/host-conversation.md
-- dist/candidate-uninstalled-examples/release/versions.json
+- https://github.com/AllanYiin/RoutineKeel/commit/14d61dfbe356efa7553580a3e9aacdf6cb41b1ac
+- dist/rwp-codex-subagent-live/acceptance.json
+- tools/subagent_rwp_acceptance.py
+- docs/specs/domain-packs.md
+- dist/candidate-shared-python-bootstrap/release/versions.json
 
 ### VALIDATION
 
-- 全包、首次空白 catalog、單獨啟用複製流程與快取 — PASS：dist/uninstalled-examples-layout.xml，15 passed。實際解壓候選 ZIP，空工作區無狀態檔，選擇複製分包後 catalog 只列該流程，並實際執行與重跑。
-- 發行包與流程更新 — PASS：dist/uninstalled-examples-release.xml，87 passed。兩個內嵌分包與獨立分包位元相同。
-- 定稿、交付、Graph、Pattern 與整合回歸 — PASS：dist/studio-audit-base.xml 38 passed，dist/studio-audit-studio.xml 29 passed，dist/studio-audit-graph.xml 81 passed，另驗證經 join 轉送的交付更正會重做原節點檢核。
-- 公開真實原文擷取 — PASS：Studio CLI 從 Python 官方 3.12 文件擷取測試引文，回傳查閱日期與來源 SHA-256。
+- 翻譯 RWP 與回審回歸 — PASS：推送前重跑兩個測試檔，共 4 項通過。
+- 實際 Codex 宿主流程與續編 — PASS：dist/rwp-codex-subagent-live/acceptance.json 記錄五次真實子代理派工、兩輪均拒絕、續讀後仍 waiting，交付 withheld。
+- 開發分支推送 — PASS：HEAD 與上游追蹤分支皆為 14d61dfbe356efa7553580a3e9aacdf6cb41b1ac。
+- 正式工作區的自動子代理派工 — NOT_RUN：本次驗收對象為獨立工作區及 Codex 對話派工。
 
 # HISTORY
 
@@ -589,3 +591,17 @@ Windows 及 WSL 實測逐一核對 1,190 個唯一測例，補驗逾時與所有
 <!-- devnote-review:99b992b521885deced8e3ae1 -->
 
 將已驗證的修正拆為 Studio 稽核與空白底座發行布局兩項提交。保留既有測試紀錄。
+
+
+## [2026-11-24T00:38+08:00] 校閱流程正式發布與共用 Python 候選包
+
+<!-- devnote-review:be172b91d947d8dbb8f2fdc8 -->
+
+PR #16 合併。Windows 驗收首次逾時，預算恢復後正式發布成功並核對附件。另完成整合 Studio 共用底座 .venv、保留舊環境及避免升級重複解壓 Python 的 Windows 候選包。
+
+
+## [2026-11-24T12:59+08:00] 翻譯 RWP 實際宿主驗收與開發分支推送
+
+<!-- devnote-review:d76eeaed01db70c04c31a1cd -->
+
+已完成單輪與兩輪回審參考 Pack。實際宿主派出五個子代理任務，僅批評者與修訂者屬於 RWP。兩輪仍未通過時保持人工待辦，重開驗證未交付。推送前 4 項回歸通過，相關程式與測試隨 14d61df 推送。
