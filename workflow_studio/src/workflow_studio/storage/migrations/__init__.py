@@ -1,11 +1,7 @@
 """Ordered, transactional Studio schema migrations."""
 
 APPLICATION_ID = 0x53545544  # STUD; rejects accidentally selected Runtime databases.
-<<<<<<< HEAD:routinekeel/workflow_studio/src/workflow_studio/storage/migrations/__init__.py
-SCHEMA_VERSION = 15
-=======
-SCHEMA_VERSION = 18
->>>>>>> origin/main:workflow_studio/src/workflow_studio/storage/migrations/__init__.py
+SCHEMA_VERSION = 19
 
 V001 = (
     """CREATE TABLE studio_projects (
@@ -205,16 +201,12 @@ V014 = (
 )
 
 V015 = (
-<<<<<<< HEAD:routinekeel/workflow_studio/src/workflow_studio/storage/migrations/__init__.py
     # Retained for compatibility with workspaces created by the retired web workflow.
     # Removing that UI must not remove existing session data or rewrite migration history.
     """CREATE TABLE studio_guided_sessions (
         project_id TEXT PRIMARY KEY REFERENCES studio_projects(project_id),
         version INTEGER NOT NULL CHECK(version > 0), state_json TEXT NOT NULL,
         updated_at TEXT NOT NULL)""",
-)
-
-=======
     """CREATE TABLE studio_interviews (
         session_id TEXT PRIMARY KEY, project_id TEXT NOT NULL UNIQUE REFERENCES studio_projects(project_id))""",
     """CREATE TABLE studio_interview_revisions (
@@ -312,7 +304,20 @@ V018 = (
 )
 
 
->>>>>>> origin/main:workflow_studio/src/workflow_studio/storage/migrations/__init__.py
+V019 = (
+    """CREATE TABLE IF NOT EXISTS studio_interviews (
+        session_id TEXT PRIMARY KEY, project_id TEXT NOT NULL UNIQUE REFERENCES studio_projects(project_id))""",
+    """CREATE TABLE IF NOT EXISTS studio_interview_revisions (
+        session_id TEXT NOT NULL REFERENCES studio_interviews(session_id), revision INTEGER NOT NULL,
+        request_id TEXT NOT NULL, request_hash TEXT NOT NULL, snapshot_json TEXT NOT NULL,
+        created_at TEXT NOT NULL, PRIMARY KEY(session_id, revision), UNIQUE(session_id,request_id))""",
+    """CREATE TRIGGER IF NOT EXISTS immutable_interview_snapshot BEFORE UPDATE ON studio_interview_revisions
+        BEGIN SELECT RAISE(ABORT,'immutable interview revision'); END""",
+    """CREATE TRIGGER IF NOT EXISTS retain_interview_snapshot BEFORE DELETE ON studio_interview_revisions
+        BEGIN SELECT RAISE(ABORT,'retain interview revision'); END""",
+)
+
+
 MIGRATIONS = {
     1: V001,
     2: V002,
@@ -329,10 +334,8 @@ MIGRATIONS = {
     13: V013,
     14: V014,
     15: V015,
-<<<<<<< HEAD:routinekeel/workflow_studio/src/workflow_studio/storage/migrations/__init__.py
-=======
     16: V016,
     17: V017,
     18: V018,
->>>>>>> origin/main:workflow_studio/src/workflow_studio/storage/migrations/__init__.py
+    19: V019,
 }

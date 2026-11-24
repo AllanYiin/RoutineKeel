@@ -1,6 +1,5 @@
 # Workflow Compiler & Studio 階段清單
 
-<<<<<<< HEAD:routinekeel/workflow_studio/todo.md
 ## 現行宿主互動工作
 
 - 已移除舊網頁流程、MCP 引導入口與專屬測試，保留通用服務、既有 Tk 及資料庫相容性。
@@ -13,7 +12,7 @@
 ## 既有套件階段紀錄
 
 以下保留原套件的歷史進度，不代表新的宿主流程已完成。
-=======
+
 RK-NEXT v1.3.0 的 [Stage 17 資產契約](../docs/development/stage-17-report.md)及
 [Stage 18 Registry](../docs/development/stage-18-report.md)已通過 Windows 專項。
 [Stage 19 子圖擷取](../docs/development/stage-19-report.md)已由已安裝工作流實際驗證。
@@ -33,7 +32,6 @@ RK-NEXT Stage 2 的 Graph v2 格式與具名交付已完成靜態驗證。Stage 
 
 - [x] 將初稿圖、同版次校閱、定稿圖及獨立匯出確認接到 Studio 共用流程。已驗證 CLI、MCP、改版與候選 wheel。真人宿主圖面走查及正式部署另行驗收。驗證與回滾見 `docs/test-report.md`。
 - [x] 預設先擬可刪改的完整草案，初稿與定稿的預填內容逐章展示並共用批次確認。章節漏列或版次不符會阻擋定稿或匯出。專項、跨宿主與候選 wheel 已驗證。
->>>>>>> origin/main:workflow_studio/todo.md
 
 來源為 `specs/requirements.txt`；此清單只追蹤 Studio，與舊底座 Stage 0–13 分開。
 一次只有一個主要階段進行中。詳細步驟、檔案、測試與 DoD 以原文各 Stage 為準。

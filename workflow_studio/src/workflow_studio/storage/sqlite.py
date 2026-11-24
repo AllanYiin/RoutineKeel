@@ -83,10 +83,11 @@ class SQLiteRepository:
             if SCHEMA_VERSION >= 14:
                 required |= {"studio_release_reconciliations"}
             if SCHEMA_VERSION >= 15:
-<<<<<<< HEAD:routinekeel/workflow_studio/src/workflow_studio/storage/sqlite.py
-                required |= {"studio_guided_sessions"}
-=======
-                required |= {"studio_interviews", "studio_interview_revisions"}
+                required |= {
+                    "studio_guided_sessions",
+                    "studio_interviews",
+                    "studio_interview_revisions",
+                }
             if SCHEMA_VERSION >= 16:
                 required |= {
                     "studio_domain_packs",
@@ -103,7 +104,6 @@ class SQLiteRepository:
                 required.add("studio_pattern_extractions")
             if SCHEMA_VERSION >= 18:
                 required |= {"studio_pattern_improvements", "studio_pattern_improvement_revisions"}
->>>>>>> origin/main:workflow_studio/src/workflow_studio/storage/sqlite.py
             actual = {
                 row[0]
                 for row in self.connection.execute(

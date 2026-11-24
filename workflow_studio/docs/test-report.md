@@ -479,8 +479,6 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
   正式發布仍須 main／人工 workflow_dispatch／publish_release=true，且新增 Studio 成功依賴。
 - YAML 解析及矩陣／發布依賴檢查通過；本機 ci_environment 確認 Runtime 無 Studio 可匯入。
   Ruff check／format 通過。CI 執行結果待實際 run 證據，真人／模型與交付 Gate 仍未完成。
-<<<<<<< HEAD:routinekeel/workflow_studio/docs/test-report.md
-
 ## 三平台 CI 修正與持久操作事件
 
 - PR #9 的第一次 run 44236192522：底座三平台成功；Studio Windows 518 passed／1 failed，
@@ -584,7 +582,6 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
 - distribution_package／distribution_bootstrap：**13 passed、1 POSIX symlink skip，0.51 秒**，
   `dist/distribution-link-regression.xml`。GitHub Actions 帳戶限制尚未排除，此修正先留本機驗證，未觸發新 CI。
 
-
 ## 移除舊網頁引導流程（2026-11-20）
 
 - 依作者明確確認，移除整個舊 `guided/`、CLI `mcp` 指令、`StudioService.guided()`、Studio MCP extra 及三個專屬測試檔；同步核對鎖檔。
@@ -596,5 +593,3 @@ macOS／Linux 與真人 UI 尚未執行；舊底座歷史 CI 不能算成 Studio
 - 曾啟動完整 Studio 套件，在既有 Runtime 的 20 種故障注入案例期間主動停止，**未取得全套終態，不宣稱完整回歸通過**。本次以受影響的入口、專案、儲存遷移與打包定向回歸作為清理驗證。
 - 新方向只保留宿主對話逐層確認與藍圖包；本機 Codex 已實際送出選擇題並收到人類回覆。完整 Studio 新流程、Claude Code／Codex 端對端操作及外觀一致性尚未驗收。
 - 既有 Tk 與通用服務保留；沒有修改底座或已安裝流程。本節記錄提交前的本機驗證，提交與推送結果以 Git 紀錄為準。
-=======
->>>>>>> origin/main:workflow_studio/docs/test-report.md
