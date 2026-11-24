@@ -1,4 +1,4 @@
-"""Install the packaged Studio into its own environment after Runtime bootstrap."""
+"""Install the packaged Studio into the workspace Runtime environment."""
 
 import argparse
 import hashlib
@@ -60,7 +60,7 @@ def verify_bundle(root):
     return bundle
 
 
-def clean_environment(root):
+def clean_environment(runtime_state):
     names = {
         "SYSTEMROOT",
         "WINDIR",
@@ -74,10 +74,12 @@ def clean_environment(root):
         "LOCALAPPDATA",
         "LANG",
         "LC_ALL",
+        "UV_OFFLINE",
     }
     env = {k: v for k, v in os.environ.items() if k.upper() in names}
     env.update(
-        UV_CACHE_DIR=str(root / "share_states/packages"),
+        UV_CACHE_DIR=str(runtime_state / "packages"),
+        UV_PYTHON_DOWNLOADS="never",
         UV_NO_ENV_FILE="1",
         UV_NO_CONFIG="1",
         UV_NO_MODIFY_PATH="1",
@@ -89,7 +91,7 @@ def clean_environment(root):
     return env
 
 
-def find_uv(root):
+def find_uv(workspace, runtime_state):
     system = shutil.which("uv")
     if system:
         return system
@@ -100,7 +102,7 @@ def find_uv(root):
         else platform.machine()
     )
     candidate = owned(
-        root, root / f"share_states/bootstrap/{platform.system()}-{architecture}/{suffix}"
+        workspace, runtime_state / f"bootstrap/{platform.system()}-{architecture}/{suffix}"
     )
     if not candidate.is_file():
         raise ValueError("Run the packaged launcher to prepare uv and Runtime first")
@@ -111,15 +113,14 @@ def check_environment(python, environment, version, *, runtime=False):
     if not python.is_file():
         return False
     module = "flow_base" if runtime else "workflow_studio"
-    forbidden = "workflow_studio" if runtime else "flow_base"
     imports = "import flow_base.core.service" if runtime else "import workflow_studio.service"
     script = (
-        "import importlib.util,pathlib,sys; "
+        "import pathlib,sys; "
         f"import {module}; {imports}; "
         "assert sys.version_info[:2] == (3,12); "
         "assert pathlib.Path(sys.prefix).resolve() == pathlib.Path(sys.argv[1]).resolve(); "
         f"assert {module}.__version__ == sys.argv[2]; "
-        f"assert importlib.util.find_spec('{forbidden}') is None"
+        f"assert pathlib.Path({module}.__file__).resolve().is_relative_to(pathlib.Path(sys.prefix).resolve())"
     )
     try:
         result = subprocess.run(
@@ -132,29 +133,18 @@ def check_environment(python, environment, version, *, runtime=False):
     return result.returncode == 0
 
 
-def move_owned(root, source, destination):
-    owned(root, source)
-    owned(root, destination)
-    if destination.exists():
-        raise ValueError("Refusing to overwrite a preserved environment")
-    source.rename(destination)
-
-
-def prepare(root, bundle):
+def prepare(root, bundle, workspace):
     executable = "Scripts/python.exe" if os.name == "nt" else "bin/python"
-    runtime_env = owned(root, root / ".venv")
-    runtime_python = runtime_env / executable
+    runtime_env = owned(workspace, workspace / ".venv")
+    python = runtime_env / executable
     # POSIX venv Python is intentionally a symlink to the base interpreter.
     # Validate the containing directories and the launched sys.prefix instead.
-    owned(root, runtime_python.parent)
-    if not check_environment(runtime_python, runtime_env, bundle["runtime_version"], runtime=True):
-        raise ValueError(
-            "Runtime is missing, incompatible, or contains Studio. "
-            "Preserve this folder and extract a fresh copy."
-        )
-    studio_env = owned(root, root / ".studio-venv")
-    python = studio_env / executable
-    owned(root, python.parent)
+    owned(workspace, python.parent)
+    runtime_dir = root / "runtime" if workspace == root else workspace / "flow_base"
+    runtime_state = owned(
+        workspace,
+        (runtime_dir if (workspace / "workflows").is_dir() else workspace) / "share_states",
+    )
     state = owned(root, root / "share_states")
     state.mkdir(exist_ok=True)
     marker = owned(root, state / "studio-environment.json")
@@ -163,41 +153,32 @@ def prepare(root, bundle):
         "contracts": bundle["files"][bundle["contracts_wheel"]],
         "requirements": bundle["files"]["studio-requirements.txt"],
         "root": str(root),
+        "environment": str(runtime_env),
         "platform": platform.system(),
         "machine": platform.machine(),
     }
     lock = owned(root, state / "studio-bootstrap.lock")
     with FileLock(str(lock), timeout=120):
+        if not check_environment(python, runtime_env, bundle["runtime_version"], runtime=True):
+            raise ValueError("底座工作區的 .venv 缺失或版本不符，請先執行同次發行的底座啟動器。")
         if marker.is_file():
             try:
                 valid_marker = json.loads(marker.read_text(encoding="utf-8")) == expected
             except (OSError, ValueError):
                 valid_marker = False
-            if valid_marker and check_environment(python, studio_env, bundle["studio_version"]):
-                return python, runtime_python
-        uv = find_uv(root)
-        retired = owned(root, state / "retired_studio_envs")
-        retired.mkdir(exist_ok=True)
-        old = None
-        if studio_env.exists():
-            if not (studio_env / "pyvenv.cfg").is_file():
-                raise ValueError(
-                    ".studio-venv is not a recognized environment; preserve it separately"
-                )
-            old = retired / ("previous-" + uuid4().hex)
-            move_owned(root, studio_env, old)
+            if valid_marker and check_environment(python, runtime_env, bundle["studio_version"]):
+                return python
+        uv = find_uv(workspace, runtime_state)
+        runtime_lock = owned(workspace, runtime_state / "bootstrap.lock")
         try:
-            env = clean_environment(root)
+            runtime_lock.mkdir()
+        except FileExistsError as exc:
+            raise ValueError("底座正在準備共用環境。請等啟動器結束後再開啟 Studio。") from exc
+        try:
+            if not check_environment(python, runtime_env, bundle["runtime_version"], runtime=True):
+                raise ValueError("底座環境已變更，請重新啟動 Studio。")
+            env = clean_environment(runtime_state)
             commands = [
-                [
-                    uv,
-                    "venv",
-                    "--no-config",
-                    "--no-project",
-                    "--python",
-                    str(runtime_python),
-                    str(studio_env),
-                ],
                 [
                     uv,
                     "pip",
@@ -219,14 +200,15 @@ def prepare(root, bundle):
                     "--python",
                     str(python),
                     "--no-deps",
+                    "--reinstall-package",
+                    "workflow-studio",
                     str(root / bundle["studio_wheel"]),
-                    str(root / bundle["contracts_wheel"]),
                 ],
                 [uv, "pip", "check", "--no-config", "--python", str(python)],
             ]
             for command in commands:
                 subprocess.run(command, check=True, env=env, cwd=root, timeout=600)
-            if not check_environment(python, studio_env, bundle["studio_version"]):
+            if not check_environment(python, runtime_env, bundle["studio_version"]):
                 raise ValueError("Installed Studio core imports/version check failed")
             temporary = owned(root, state / ("studio-environment-" + uuid4().hex + ".tmp"))
             with temporary.open("x", encoding="utf-8") as stream:
@@ -234,13 +216,9 @@ def prepare(root, bundle):
                 stream.flush()
                 os.fsync(stream.fileno())
             os.replace(temporary, marker)
-        except BaseException:
-            if studio_env.exists():
-                move_owned(root, studio_env, retired / ("failed-" + uuid4().hex))
-            if old is not None:
-                move_owned(root, old, studio_env)
-            raise
-    return python, runtime_python
+        finally:
+            runtime_lock.rmdir()
+    return python
 
 
 def main(argv=None):
@@ -254,11 +232,15 @@ def main(argv=None):
     root = Path(__file__).resolve().parent
     try:
         bundle = verify_bundle(root)
-        python, runtime = prepare(root, bundle)
+        runtime_env = Path(sys.prefix).resolve()
+        workspace = runtime_env.parent
+        if runtime_env.name != ".venv" or workspace not in {root, root.parent}:
+            raise ValueError("請透過安裝包啟動器使用工作區的 .venv。")
+        python = prepare(root, bundle, workspace)
         if args.prepare_only:
             print(
                 json.dumps(
-                    {"ok": True, "studio_python": str(python), "runtime_python": str(runtime)}
+                    {"ok": True, "studio_python": str(python), "runtime_python": str(python)}
                 )
             )
             return 0
@@ -270,9 +252,12 @@ def main(argv=None):
             "-m",
             "workflow_studio",
             "--workspace",
-            str(args.workspace or (root.parent if (root.parent / "workflows").is_dir() else root)),
+            str(
+                args.workspace
+                or (root.parent if (root.parent / "workflows").is_dir() else workspace)
+            ),
             "--runtime-python",
-            str(runtime),
+            str(python),
             args.command,
         ]
         # Pass model credentials only when the user starts the actual Studio process.

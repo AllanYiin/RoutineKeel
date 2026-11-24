@@ -53,6 +53,23 @@ def test_unmanaged_virtualenv_preserved_when_repair_fails(launch):
     assert not (root/'share_states/unexpected-install').exists()
 
 
+def test_upgrade_reuses_the_previous_base_interpreter(launch):
+    root, run = launch
+    old = root / '.venv'
+    (old / 'bin').mkdir(parents=True)
+    (old / 'pyvenv.cfg').write_text('version = 3.12.11\n')
+    existing = root / 'existing-python'
+    existing.touch()
+    python = old / 'bin/python'
+    python.write_text('#!/bin/sh\ncase "$*" in *sys._base_executable*) printf "%s\\n" "' + str(existing) + '" ;; esac\n')
+    python.chmod(0o755)
+    uv = root / 'commands/uv'
+    original = uv.read_text()
+    uv.write_text(original.replace('if [ "$1" = venv ]; then', 'if [ "$1" = venv ]; then\n  printf "%s\\n" "$5" > "$FLOW_BASE_HOME/interpreter"'))
+    assert run().returncode != 0
+    assert (root / 'share_states/interpreter').read_text().strip() == str(existing)
+
+
 def test_matching_marker_cannot_bypass_interpreter_check(launch):
     root, run = launch
     (root/'.venv/bin').mkdir(parents=True)

@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+from importlib.util import find_spec
 from pathlib import Path
 
 from routinekeel_contracts.domain_assets import content_hash
@@ -20,7 +21,11 @@ def studio_python():
         if candidate.is_absolute() and candidate.is_file():
             return candidate
         raise FlowError("DEPENDENCY_UNAVAILABLE", "設定的 Studio Python 路徑不存在。")
-    root = Path(sys.prefix).resolve().parent
+    prefix = Path(sys.prefix).resolve()
+    installed = find_spec("workflow_studio")
+    if installed and installed.origin and Path(installed.origin).resolve().is_relative_to(prefix):
+        return Path(sys.executable)
+    root = prefix.parent
     candidates = [root / "workflow_studio/.studio-venv", root / ".studio-venv"]
     source = Path(__file__).resolve()
     if source.parent.parent.name == "src" and source.parents[2].name == "flow_base":

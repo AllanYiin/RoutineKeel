@@ -1,8 +1,11 @@
 import importlib.util
 import io
 import json
+import os
+import subprocess
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -26,6 +29,69 @@ def test_studio_is_not_a_domain_workflow_example(monkeypatch):
     assert release.STUDIO not in projects
     assert release.BASE in projects
     assert all((p / "flow.template.json").is_file() for p in projects if p != release.BASE)
+
+
+@pytest.mark.parametrize("integrated", [False, True])
+def test_packaged_studio_reuses_runtime_python_and_leaves_legacy_env(
+    tmp_path, monkeypatch, integrated
+):
+    source = Path(__file__).resolve().parents[2] / "workflow_studio/scripts/studio_bootstrap.py"
+    spec = importlib.util.spec_from_file_location("studio_bootstrap_tests", source)
+    bootstrap = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bootstrap)
+    root = (tmp_path / "workflow_studio").resolve()
+    workspace = root.parent if integrated else root
+    state = workspace / "share_states"
+    if integrated:
+        (workspace / "workflows").mkdir()
+        state = workspace / "flow_base/share_states"
+    state.mkdir(parents=True)
+    venv = workspace / ".venv"
+    python = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    python.parent.mkdir(parents=True)
+    python.write_text("already prepared")
+    legacy = root / ".studio-venv/keep.txt"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("legacy")
+    hashes = dict.fromkeys(("studio.whl", "contracts.whl", "studio-requirements.txt"), "fixture")
+    bundle = {
+        "runtime_version": "0.3.0",
+        "studio_version": "0.3.0",
+        "studio_wheel": "studio.whl",
+        "contracts_wheel": "contracts.whl",
+        "files": hashes,
+    }
+    monkeypatch.setattr(bootstrap, "check_environment", lambda *args, **kwargs: True)
+    monkeypatch.setattr(bootstrap, "find_uv", lambda *args: "uv")
+    calls = []
+
+    def run(command, *, env, **kwargs):
+        calls.append(command)
+        assert (state / "bootstrap.lock").is_dir()
+        assert env["UV_CACHE_DIR"] == str(state / "packages")
+        assert env["UV_PYTHON_DOWNLOADS"] == "never"
+
+    monkeypatch.setattr(bootstrap, "subprocess", SimpleNamespace(run=run))
+    assert bootstrap.prepare(root, bundle, workspace) == python
+    assert bootstrap.prepare(root, bundle, workspace) == python
+    assert len(calls) == 3
+    assert all(command[1] == "pip" for command in calls)
+    assert all(command[command.index("--python") + 1] == str(python) for command in calls)
+    assert legacy.read_text() == "legacy"
+    assert python.read_text() == "already prepared"
+    assert not (state / "bootstrap.lock").exists()
+
+    def failed_install(*args, **kwargs):
+        raise subprocess.CalledProcessError(1, "uv")
+
+    changed = {**bundle, "files": {**hashes, "studio.whl": "changed"}}
+    monkeypatch.setattr(bootstrap.subprocess, "run", failed_install)
+    with pytest.raises(subprocess.CalledProcessError):
+        bootstrap.prepare(root, changed, workspace)
+    assert not (state / "bootstrap.lock").exists()
+    assert python.read_text() == "already prepared"
+    marker = json.loads((root / "share_states/studio-environment.json").read_text(encoding="utf-8"))
+    assert marker["wheel"] == "fixture"
 
 
 def test_public_documents_preserve_urls_but_remove_machine_paths(monkeypatch):

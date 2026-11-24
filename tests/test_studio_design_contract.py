@@ -2,6 +2,7 @@
 
 import copy
 import json
+from types import SimpleNamespace
 from zipfile import ZipFile
 
 import pytest
@@ -12,6 +13,27 @@ from routinekeel_contracts.errors import StudioError
 from routinekeel_contracts.graph_validator import validate_blueprint
 from test_graph_builder import data_graph
 from test_quality_feedback import decision
+
+
+def test_runtime_prefers_studio_in_shared_environment_over_legacy(tmp_path, monkeypatch):
+    from flow_base import studio
+
+    prefix = tmp_path / ".venv"
+    executable = "Scripts/python.exe" if studio.os.name == "nt" else "bin/python"
+    shared = prefix / executable
+    legacy = tmp_path / "workflow_studio/.studio-venv" / executable
+    legacy.parent.mkdir(parents=True)
+    legacy.touch()
+    monkeypatch.delenv("ROUTINEKEEL_STUDIO_PYTHON", raising=False)
+    monkeypatch.setattr(studio.sys, "prefix", str(prefix))
+    monkeypatch.setattr(studio.sys, "executable", str(shared))
+    monkeypatch.setattr(
+        studio, "find_spec",
+        lambda name: SimpleNamespace(origin=str(prefix / "site-packages/workflow_studio/__init__.py")),
+    )
+    assert studio.studio_python() == shared
+    monkeypatch.setattr(studio, "find_spec", lambda name: None)
+    assert studio.studio_python() == legacy
 
 
 def sketch(workspace, graph):

@@ -1,5 +1,12 @@
 # Studio 驗證紀錄
 
+## 發行包共用 Python 環境（2026-11-24）
+
+- Windows 以 `tools/release.py --candidate shared-python-bootstrap` 建置底座、Studio、範例與完整工作區 ZIP。用實際壓縮包驗證整合安裝及單獨安裝的 `--prepare-only`、`guide` 與底座的 Studio 介接。兩個入口回報同一份 `.venv` Python。整合安裝的舊 `.studio-venv` 測試檔保留，重新啟動時既有 `pyvenv.cfg` 內容與時間戳一致。
+- 啟動實測使用已備妥的 CPython 3.12 與鎖定依賴，並在離線條件下完成。以 Windows 升級測具確認底座在環境需要重建時向 uv 傳入既有 CPython 路徑，舊 `.venv` 移入 `retired_envs`。用不同發行的底座與 Studio 實測，啟動器在建立環境前回報版本組合不一致。
+- `dist/shared-python-runtime.xml` 記錄 23 passed、17 skipped，略過的是需 POSIX 主機的腳本測試。`dist/shared-python-studio.xml` 記錄 19 passed。兩個 POSIX 啟動腳本均通過 `sh -n`，未實跑 macOS/Linux 發行包。缺少可用 Python 的新機仍需首次安裝，受本機解壓權限影響。
+- 無資料庫遷移。降版請先備份工作區和資料，使用上一份相符的底座與 Studio ZIP。對需要重建的環境，可從底座 `share_states/retired_envs` 保留的環境查核，再在獨立工作區驗證原啟動器及資料。
+
 ## 主動預填與逐章確認（2026-11-23）
 
 - 底座、Studio 設計合約、MCP stdio 及改版端到端回歸，26 passed。Studio 訪談、封裝匯出與 Pattern 專項，19 passed。含本機 Data Adapter 的跨宿主 Pattern 端到端回歸，1 passed。結果在 `dist/studio-prefill-review-base.xml`、`dist/studio-prefill-review-studio.xml` 及 `dist/studio-prefill-review-portability.xml`。

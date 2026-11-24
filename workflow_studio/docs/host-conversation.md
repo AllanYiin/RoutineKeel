@@ -56,4 +56,4 @@ uv run --project workflow_studio python -m workflow_studio --workspace <RoutineK
 
 Studio CLI 支援 `interview next_batch|reply_batch` 及既有單題操作，參數透過 `--payload` 傳入。底座 CLI 使用相同操作名。另有 `interview stream` 可逐行接收含 text 的 JSON 文字增量，立即輸出 delta，正常收束時才輸出 completed。此入口不會保存回答。
 
-完整發行包以 Studio 啟動器的 `--prepare-only` 建立隔離環境。若缺少 `workflow_studio/runtime/`，先核對完整發行包再開始訪談。開發工作樹可執行 `uv sync --locked --project workflow_studio --group dev`。另裝的 Studio 可用本機設定 `ROUTINEKEEL_STUDIO_PYTHON` 指向已信任的絕對 Python 路徑。工作區路徑僅用於資料。
+完整發行包以 Studio 啟動器的 `--prepare-only` 安裝到根層底座 `.venv`。整合安裝請使用同一次發行的底座與 Studio ZIP。單獨安裝的 Studio 使用隨附底座建立的 `.venv`。開發工作樹可執行 `uv sync --locked --project workflow_studio --group dev`。另裝的 Studio 可用本機設定 `ROUTINEKEEL_STUDIO_PYTHON` 指向已信任的絕對 Python 路徑。`--workspace` 選擇的是資料目錄。

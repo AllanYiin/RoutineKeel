@@ -69,12 +69,12 @@ def verify_wheel_sources(wheel, root, component, tracked, private_roots, module=
                     raise ValueError("Test-machine path found in wheel: " + name)
 
 
-def launcher_files():
+def launcher_files(base_wheel, contracts_wheel):
     shell = """#!/bin/sh
 set -eu
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cd "$HERE"
-for item in .venv .studio-venv share_states share_logs runtime; do
+for item in .venv share_states share_logs runtime; do
   [ ! -L "$HERE/$item" ] || { echo "Refusing linked installation path: $item" >&2; exit 2; }
 done
 if command -v sha256sum >/dev/null 2>&1; then
@@ -82,14 +82,29 @@ if command -v sha256sum >/dev/null 2>&1; then
 else
   shasum -a 256 -c bundle.sha256 >/dev/null
 fi
-sh "$HERE/runtime/start.sh" --version
-exec "$HERE/.venv/bin/python" -X utf8 -I "$HERE/studio_bootstrap.py" "$@"
+workspace="$HERE"
+runtime="$HERE/runtime"
+parent=$(CDPATH= cd -- "$HERE/.." && pwd)
+if [ -f "$parent/flow_base/start.sh" ]; then
+  workspace="$parent"
+  runtime="$parent/flow_base"
+  for item in "$runtime" "$runtime/start.sh" "$workspace/.venv" "$runtime/share_states" "$runtime/share_logs"; do
+    [ ! -L "$item" ] || { echo "Refusing linked installation path: $item" >&2; exit 2; }
+  done
+  for wheel in '@BASE_WHEEL@' '@CONTRACTS_WHEEL@'; do
+    [ ! -L "$runtime/$wheel" ] && cmp -s "$runtime/$wheel" "$HERE/runtime/$wheel" || {
+      echo 'Install the Studio and Runtime ZIPs from the same release.' >&2; exit 2;
+    }
+  done
+fi
+sh "$runtime/start.sh" --version
+exec "$workspace/.venv/bin/python" -X utf8 -I "$HERE/studio_bootstrap.py" "$@"
 """
     powershell = """$ErrorActionPreference = 'Stop'
 $Arguments = @($args)
 try {
     $Root = $PSScriptRoot
-    foreach ($Name in @('.venv', '.studio-venv', 'share_states', 'share_logs', 'runtime')) {
+    foreach ($Name in @('.venv', 'share_states', 'share_logs', 'runtime')) {
         $Item = Get-Item -LiteralPath (Join-Path $Root $Name) -Force -ErrorAction SilentlyContinue
         if ($Item -and ($Item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
             throw ('Refusing linked installation path: ' + $Name)
@@ -97,6 +112,12 @@ try {
     }
     $Bundle = Get-Content -LiteralPath (Join-Path $Root 'bundle.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($Bundle.schema_version -ne 1) { throw 'Unsupported Studio bundle manifest' }
+    function Get-StudioSha256($Path) {
+        $Stream = [IO.File]::OpenRead($Path)
+        $Hash = [Security.Cryptography.SHA256]::Create()
+        try { return ([BitConverter]::ToString($Hash.ComputeHash($Stream))).Replace('-', '').ToLowerInvariant() }
+        finally { $Hash.Dispose(); $Stream.Dispose() }
+    }
     foreach ($Entry in $Bundle.files.PSObject.Properties) {
         if ($Entry.Name -notmatch '^[a-zA-Z0-9_./-]+$' -or $Entry.Name.StartsWith('/') -or $Entry.Name.Split('/') -contains '..') { throw 'Invalid bundle path' }
         $Path = $Root
@@ -105,15 +126,34 @@ try {
             $Item = Get-Item -LiteralPath $Path -Force
             if ($Item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Linked bundle file' }
         }
-        $Stream = [IO.File]::OpenRead($Path)
-        $Hash = [Security.Cryptography.SHA256]::Create()
-        try { $Actual = ([BitConverter]::ToString($Hash.ComputeHash($Stream))).Replace('-', '').ToLowerInvariant() }
-        finally { $Stream.Dispose(); $Hash.Dispose() }
-        if ($Actual -ne $Entry.Value) { throw ('Package integrity mismatch: ' + $Entry.Name) }
+        if ((Get-StudioSha256 $Path) -ne $Entry.Value) { throw ('Package integrity mismatch: ' + $Entry.Name) }
     }
-    & (Join-Path $Root 'runtime/start.ps1') --version
+    $Workspace = $Root
+    $Runtime = Join-Path $Root 'runtime'
+    $ParentWorkspace = Split-Path -Parent $Root
+    $Adjacent = Join-Path $ParentWorkspace 'flow_base'
+    if (Test-Path -LiteralPath (Join-Path $Adjacent 'start.ps1') -PathType Leaf) {
+        $Workspace = $ParentWorkspace
+        $Runtime = $Adjacent
+        foreach ($Path in @($Runtime, (Join-Path $Runtime 'start.ps1'), (Join-Path $Workspace '.venv'), (Join-Path $Runtime 'share_states'), (Join-Path $Runtime 'share_logs'))) {
+            $Item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+            if ($Item -and ($Item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                throw ('Refusing linked installation path: ' + $Path)
+            }
+        }
+        foreach ($Wheel in @('@BASE_WHEEL@', '@CONTRACTS_WHEEL@')) {
+            $Item = Get-Item -LiteralPath (Join-Path $Runtime $Wheel) -Force -ErrorAction SilentlyContinue
+            if (-not $Item -or $Item.PSIsContainer -or ($Item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                throw 'Install the Studio and Runtime ZIPs from the same release.'
+            }
+            if ((Get-StudioSha256 $Item.FullName) -ne $Bundle.files.PSObject.Properties[('runtime/' + $Wheel)].Value) {
+                throw 'Install the Studio and Runtime ZIPs from the same release.'
+            }
+        }
+    }
+    & (Join-Path $Runtime 'start.ps1') --version
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    & (Join-Path $Root '.venv/Scripts/python.exe') -X utf8 -I (Join-Path $Root 'studio_bootstrap.py') @Arguments
+    & (Join-Path $Workspace '.venv/Scripts/python.exe') -X utf8 -I (Join-Path $Root 'studio_bootstrap.py') @Arguments
     exit $LASTEXITCODE
 } catch {
     Write-Host 'Studio setup failed. Project data has been preserved.' -ForegroundColor Red
@@ -128,11 +168,15 @@ set "STUDIO_EXIT=%ERRORLEVEL%"
 if not "%STUDIO_EXIT%"=="0" pause
 exit /b %STUDIO_EXIT%
 """
-    return {
+    scripts = {
         "studio.bat": batch,
         "start_studio.ps1": powershell,
         "studio.sh": shell,
         "studio.command": shell,
+    }
+    return {
+        name: body.replace("@BASE_WHEEL@", base_wheel).replace("@CONTRACTS_WHEEL@", contracts_wheel)
+        for name, body in scripts.items()
     }
 
 
@@ -279,7 +323,7 @@ def build_studio(project, staging, *, root, base, run, write_bootstrap):
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(data)
     zip_files(dest / "source.zip", source_files)
-    for name, body in launcher_files().items():
+    for name, body in launcher_files(base_wheel.name, contracts_wheel.name).items():
         if name.endswith(".bat"):
             body = body.replace("\r\n", "\n").replace("\n", "\r\n")
         (dest / name).write_bytes(body.encode("utf-8-sig" if name.endswith(".ps1") else "utf-8"))
@@ -290,11 +334,11 @@ def build_studio(project, staging, *, root, base, run, write_bootstrap):
 將整個資料夾解壓到可寫入的位置，保留所有檔案及子目錄。
 主要入口是在 Codex／Claude Code 對話讀取本目錄 AGENTS.md，由宿主集中詢問相關決策。
 命令檢查使用 studio.bat／studio.command／studio.sh，預設輸出 guide，不開原生視窗。
-首次啟動會下載 uv／Python 3.12 及鎖定依賴，需要網路；不會自動呼叫模型，也不需要 Tk。
+首次準備底座時可能需要下載 uv、Python 3.12 及鎖定依賴。Studio 沿用底座準備好的 Python，並安裝 Studio 所需依賴。不會自動呼叫模型，也不需要 Tk。
 若作業系統阻擋未簽章程式，請由管理者核對來源與發行 ZIP 的 SHA256SUMS，不要停用系統整體安全設定。
 
-本元件的 Runtime 與 Studio 隔離環境分別位於 .venv、.studio-venv。
-整合工作區的專案位於 ../flow_base/share_states/workflow_studio；獨立使用此元件時保存在 share_states/workflow_studio。
+整合工作區的底座與 Studio 共用 RoutineKeel 根層的 .venv，請使用同一次發行的兩個元件。單獨使用 Studio 時，使用 Studio 目錄下由隨附底座建立的 .venv。
+整合工作區的專案位於 ../flow_base/share_states/workflow_studio，獨立使用此元件時保存在 share_states/workflow_studio。舊 .studio-venv 可留作降版備份。
 保留整個資料夾才能保留專案與版本。失敗時保留訊息，環境更新會保留舊環境供診斷。
 SHA-256 用來檢查完整性，不等於發行者的數位簽章。
 

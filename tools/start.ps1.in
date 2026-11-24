@@ -141,6 +141,14 @@ if (($Saved -ne $Expected) -or (-not (Test-FlowRuntime))) {
         if ((Test-Path $Venv) -and ((Get-Item -Force $Venv).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
             throw 'Refusing to replace a symbolic-link .venv.'
         }
+        $Interpreter = '3.12'
+        if (Test-FlowPython) {
+            $PreviousPython = & $Python -I -c 'import json,sys; from pathlib import Path; p=Path(sys._base_executable).resolve(); print(json.dumps(str(p) if p.is_file() and not p.is_relative_to(Path(sys.prefix).resolve()) else None))'
+            if ($LASTEXITCODE -eq 0 -and $PreviousPython) {
+                $Candidate = $PreviousPython | ConvertFrom-Json
+                if ($Candidate) { $Interpreter = $Candidate }
+            }
+        }
         if (Test-Path -LiteralPath $Venv) {
             if (-not (Test-Path -LiteralPath (Join-Path $Venv 'pyvenv.cfg'))) {
                 throw '.venv is not a recognized virtual environment. Move that directory aside before retrying.'
@@ -153,7 +161,7 @@ if (($Saved -ne $Expected) -or (-not (Test-FlowRuntime))) {
         }
         Write-Host 'Creating local .venv from the pinned runtime package...'
         Set-Content -Path $Creating -Value 'creating' -Encoding ASCII
-        & $UvExe venv --no-config --no-project --python 3.12 $Venv
+        & $UvExe venv --no-config --no-project --python $Interpreter $Venv
         if ($LASTEXITCODE -ne 0) { throw 'Virtual environment creation failed.' }
         if (-not (Test-FlowPython)) { throw 'Expected local .venv with Python 3.12; refusing to install into another interpreter.' }
         $ContractsWheel = Join-Path $PSScriptRoot '@CONTRACTS_WHEEL@'
