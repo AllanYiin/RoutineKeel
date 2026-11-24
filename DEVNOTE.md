@@ -2,59 +2,46 @@
 
 ## SNAPSHOT — 當前狀態
 
-最後更新：2026-11-24T23:22+08:00
+最後更新：2026-11-25T06:12+08:00
 交接狀態：verified
 
 ### 目標與授權範圍
 
-依 /prompts:devloop 執行底座通用步驟與 Documa 修改規格 Stage 0–6。
+依 /prompts:devloop 實作與驗收通用工具鏈補全規格 Stage 0–7，交付本機候選。
 
 ### 目前進度
 
-底座通用步驟 Stage 0–6 均已完成。暫緩交付與前次成果分隔、異常模型回執正常結束、Documa 與模型診斷補齊。最終固定快照 1,314 個不同測例通過，隔離安裝後實際交付勾稽成果。
-
-藍圖補強 Stage 0–6 亦已完成，包含資格鎖定、案例補件、隔離試做及安裝／升級續接。驗收與回退記錄見 `docs/specs/blueprint-completion.md`。
+Stage 0–7 已完成。底座能解析一般 Graph 2.3 和 Pattern 的能力需求，從受信清冊規劃、準備依賴、建置 Adapter、取得行為及候選驗收。執行失效時保留原工作與 Run，狀態可透過 CLI 或 MCP 接續。底座、Studio 操作指南及入口均已隨兩平台最終候選驗證。
 
 ### 下一步
 
-本輪授權的開發與本機驗收無待辦。正式發布、私人已安裝環境及正式模型品質驗收另依原授權。
+本次本機交付已完成。正式部署、外部付費／外傳及私人工作區操作適用各自授權與驗收。
 
 ### DECISIONS
 
-- 預檢缺口屬候選試做，藍圖設計與匯入依原契約繼續。底座保存補強工作並自動續行。
-- 有效工具與案例證據可獨立補強；新業務版本、宿主副作用及既有版本升級沿既有核准與回歸入口。
-- 本機候選以 HEAD 加本輪改動製作固定快照，保留共用工作樹的並行修改。
-- 清除前次具名成果只作用於本次暫存副本，正式上一版及其回退入口保留。
+- 等效換綁建立同一工作下的續做 Run，連回原 Run 並沿用可驗證的成果。
+- 外部配置、補償及重綁授權以實際操作與證據範圍為準。
+- 任一已領取外部操作的結果不明時保留原請求待查。
+- 程式 Adapter 採無宿主匯入的 WebAssembly；依賴準備使用受信鎖定配方。
 
 ### LANDMINES
 
-- Windows 候選底座與 MCP 可用，Studio 冷啟動依賴準備在測試環境逾時。Linux 實際冷啟動及最終 wheel 交付路徑通過。
-- 回退到底座 v6 前先留存 v7 資料副本，並使用已實測還原的遷移前備份。
-- 模型測試使用本機宿主測試回執，正式模型品質依實際綁定及授權驗收。
-- 本輪 Windows 封裝使用兩個獨立 wheel 環境；完整原生啟動器冷啟動與非 PDF／DOCX 解析品質保留各環境驗收。
+- 實際 Documa 文件案例於 Windows 驗證。macOS、真實付費或外傳服務及使用者私人已安裝工作區未納入本次驗收。
+- 受影響的巢狀步驟若無法證明既有外部效果可安全沿用，保留待處理狀態。
 
 ### 證據索引
 
-- docs/specs/blueprint-completion.md
+- docs/specs/toolchain-completion/verification.md
 - flow_base/docs/blueprint-install.md
 - workflow_studio/docs/host-conversation.md
-- dist/blueprint-completion-final-by5dkfp_/evidence.json
-- dist/blueprint-completion-audit-p9w74nc7/dist/candidate-completion-final/release/SHA256SUMS
-- docs/specs/base-steps/verification.md
-- workflow_studio/todo.md
-- dist/base-steps-devloop-final-audit.json
-- dist/base-steps-devloop-final-integrity.json
-- dist/base-steps-final-snapshot-ib7yhhrs/dist/candidate-base-steps-devloop-final/release/SHA256SUMS
+- dist/candidate-toolchain-final-windows/release/SHA256SUMS
+- dist/candidate-toolchain-final-linux/release/SHA256SUMS
 
 ### VALIDATION
 
-- 固定快照回歸 — PASS：依實際 JUnit 去重後 1,299 個不同測例通過，包含 Studio 566、Linux 81、工作流 105，以及 MCP、封包與資料還原補測。
-- 最終本機 ZIP 與 wheel — PASS：五個封包雜湊及本輪 wheel 原始碼核對一致。最終獨立環境實際執行 Studio 與便攜能力兩條交付路徑。
-- Windows Studio 原生冷啟動 — NOT_RUN：底座啟動及 MCP 安裝通過，Studio 依賴準備超過測試時限；Linux 已覆蓋完整發行包路徑。
-- 底座通用步驟 Stage 0–2 — PASS：29、72、5 項。命令及回滾見 docs/specs/base-steps/verification.md。
-- 底座通用步驟 Stage 3–4 — PASS：真實 Documa 4 項，模型回執及 Graph 30 項。見 dist/base-steps-devloop-stage3.xml、dist/base-steps-devloop-stage4.xml。
-- 底座通用步驟 Stage 5 最終快照 — PASS：1,314 個不同測例，涵蓋 Windows Studio、底座、工作流、Linux 平台補測及跨宿主。見 dist/base-steps-devloop-final-audit.json。
-- 底座通用步驟 Stage 6 文件與交接 — PASS：文件連結、SVG、白話檢查、隔離 Studio guide／底座 catalog 及 Git whitespace 檢查通過。
+- Windows 最終候選 — PASS：dist/toolchain-final-windows.xml 28 項，0 跳過；Windows Studio 572 項通過，Documa 兩項。
+- Linux 最終候選 — PASS：dist/toolchain-final-linux.xml 119 項，0 跳過；Linux 隔離封包、CLI、MCP、回復矩陣 167 項通過。
+- 貼用維護與部署指引 — PASS：兩平台各 5 份發行 ZIP 與 5 個領域包項目校驗通過，4 份指南比對相同；兩平台獨立底座和 Studio 環境均通過 uv pip check。
 
 # HISTORY
 
@@ -665,3 +652,73 @@ Studio 定稿加入版本化底座步驟和資料埠。底座將輸出品質檢�
 <!-- devnote-review:b3a87fd8d0a5213ee74a0e44 -->
 
 補齊中文診斷並重建本機候選。固定快照回歸、平台補測、兩套隔離 wheel 真實交付及文件檢查均通過。
+
+
+## [2026-11-25T01:13+08:00] 核對通用工具鏈補全範圍
+
+<!-- devnote-review:fe18ffff8c131757d9c2a503 -->
+
+核對已完成的逐節點綁定、缺口續做及跨宿主和翻譯測例。確認由能力需求自行規劃多工具、補部署或建置 Adapter，及 Runtime 自動重綁尚未落地。重跑 29 項通過。
+
+
+## [2026-11-25T02:08+08:00] 通用工具鏈補全 Stage 0 基線
+
+<!-- devnote-review:2145cfa4a804ac44a5336d92 -->
+
+固定報表案例，重建具名候選並修正封包比對來源。146 項測試通過，兩套隔離環境完成 Studio 匯出至正式交付。
+
+
+## [2026-11-25T02:22+08:00] 通用工具鏈補全 Stage 1 驗收
+
+<!-- devnote-review:432a430f0e8077470882d582 -->
+
+一般與巢狀節點已可透過 Graph 2.3 使用與 Pattern 共用的能力需求及資格鎖。同一補強工作可查逐候選淘汰、過期觀測與續作，底座和 Studio 共 187 項通過。
+
+
+## [2026-11-25T02:32+08:00] 通用工具鏈補全 Stage 2 規劃與編譯切片
+
+<!-- devnote-review:421cdcc965e4e60fd633f06c -->
+
+補強預檢新增三工具報表方案，當前觀測編譯為 Graph，在獨立工作區以具名回執實跑並比對預期差異。40 項相容回歸全過，正式候選流程及搜尋檢查點待完成。
+
+
+## [2026-11-25T03:06+08:00] 通用工具鏈 Stage 2 驗收與 Stage 3 離線配方
+
+<!-- devnote-review:6e3a192bec22364993fbfaa2 -->
+
+完成可重開的搜尋、受控宿主提案、整鏈資格及兩種候選安裝。Stage 3 實測單工具與多工具缺 wheel 時依鎖定配方準備，再資格驗證與交付。宿主配置的授權、待查回執及補償待續。
+
+
+## [2026-11-25T03:37+08:00] 通用工具鏈 Stage 3–4 驗收及 Stage 5 原位復原
+
+<!-- devnote-review:82de23d3537275d882e7d4b0 -->
+
+實跑宿主配置斷線後的原操作查證與補償，完成 Documa 來源映射及隔離程式 Adapter 驗收。Stage 5 實測發現漂移、建立同一補強工作及原 Run 恢復，替代就緒後的續做 Run 仍待銜接。
+
+
+## [2026-11-25T04:02+08:00] 等效替換與同工作續做
+
+<!-- devnote-review:4977b4a0db18f73453cb440b -->
+
+Stage 5 以工作範圍套件啟動具原 Run 關聯的續做 Run。三個中斷點重啟後維持唯一派送，佇列查詢與成果交付跟隨續做 Run。
+
+
+## [2026-11-25T04:25+08:00] 跨平台三工具與續做整合驗收
+
+<!-- devnote-review:b464e905c08efbf3f1235dd4 -->
+
+Windows 與 Linux 的三步隔離安裝和同工作換綁皆已實跑，雙 CSV 讀取指紋跨 Run 相同，精確差額 0.10。Linux 套件驗收含真實 MCP、CLI、Studio、工作區搬移、回滾與資料還原。
+
+
+## [2026-11-25T04:39+08:00] 通用工具鏈補全本機交付
+
+<!-- devnote-review:d2c8c5172c9ba9f69a84de43 -->
+
+Stage 6 整合查出 Windows 讀取試做進度檔的共用衝突，修正後原失敗及新回歸通過。Stage 7 更新並核對隨附指南，以 Windows 與 Linux 最終具名候選重跑三工具與重綁等驗收。
+
+
+## [2026-11-25T06:12+08:00] 核對待提交的工具鏈成果
+
+<!-- devnote-review:f734e04b4af3109b83766ad7 -->
+
+對照工具鏈 checkpoint、Stage 0–7 驗證紀錄與兩平台最終候選。提交範圍為工具鏈、規格、指南及相應測試；共用工作樹內另有 Studio 子程序重用改動。

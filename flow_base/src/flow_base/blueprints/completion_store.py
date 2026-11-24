@@ -22,7 +22,7 @@ def _events(previous, state):
                         "actions": gap["actions"],
                     }
                 )
-    if state["status"] in {"qualifying", "trial_queued"}:
+    if state["status"] in {"preparing", "qualifying", "trial_queued"}:
         events.append({"type": "action_started", "phase": state["status"]})
     for key, outcome in state.get("qualification", {}).items():
         report = outcome.get("report") or {}
@@ -36,6 +36,13 @@ def _events(previous, state):
                     "request_hash": outcome["request_hash"],
                 }
             )
+    for key, preparation in state.get("preparations", {}).items():
+        if preparation.get("status") == "prepared" and preparation != previous.get("preparations", {}).get(key):
+            events.append({"type": "action_verified", "node": key, "operation_id": preparation["operation_id"]})
+    for key, operation in state.get("host_operations", {}).items():
+        status = operation["status"]
+        if status != previous.get("host_operations", {}).get(key, {}).get("status"):
+            events.append({"type": "host_preparation", "operation_id": key, "status": status})
     trial = state.get("trial", {})
     old_trial = previous.get("trial", {})
     if trial.get("outcome") and (trial.get("build_id"), trial["outcome"]) != (

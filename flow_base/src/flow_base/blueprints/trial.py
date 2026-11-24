@@ -2,6 +2,7 @@
 
 import shutil
 import sys
+from contextlib import suppress
 from pathlib import Path
 
 from ..outputs import reject_links
@@ -66,6 +67,12 @@ def matches(actual, expected, assets):
     return actual == expected
 
 
+def _write_progress(path, snapshot):
+    if path is not None:
+        with suppress(PermissionError):
+            atomic_json(path, snapshot)
+
+
 def exercise(root, workflow, measurements=None, progress=None, progress_path=None):
     from ..core.service import WorkflowService
 
@@ -74,8 +81,7 @@ def exercise(root, workflow, measurements=None, progress=None, progress_path=Non
     for index, case in enumerate(read_json(root / "cases.json")):
         if progress is not None:
             progress.update(case=index + 1, phase="prepare")
-            if progress_path is not None:
-                atomic_json(progress_path, progress)
+            _write_progress(progress_path, progress)
         request = root / f"input-{index}.json"
         require(
             isinstance(case.get("inputs"), dict) and case.get("expected"),
@@ -93,8 +99,7 @@ def exercise(root, workflow, measurements=None, progress=None, progress_path=Non
         report = service.run_workflow_sync(options)
         if progress is not None:
             progress["phase"] = "exercise"
-            if progress_path is not None:
-                atomic_json(progress_path, progress)
+            _write_progress(progress_path, progress)
         view = report["blueprint"]
         session = Session(service.workspace.runtime, view["session_id"])
         is_graph = read_json(session.path)["plan"].get("format") == 2
@@ -177,8 +182,7 @@ def exercise(root, workflow, measurements=None, progress=None, progress_path=Non
         require(view["status"] == "complete", "驗收案例仍有未完成步驟")
         if progress is not None:
             progress["phase"] = "compare"
-            if progress_path is not None:
-                atomic_json(progress_path, progress)
+            _write_progress(progress_path, progress)
         require(
             set(view["outputs"]) == set(case["expected"])
             and matches(view["outputs"], case["expected"], session.assets),

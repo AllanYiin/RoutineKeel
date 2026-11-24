@@ -17,6 +17,8 @@ def upper_cost(plan, bindings):
         elif node["kind"] == "task":
             descriptor = bindings[node["id"]]
             resources = descriptor.get("resources") or {}
+            if descriptor["provider"] == "toolchain":
+                estimate["work"] += resources["work"]
             for field in ("model_calls", "cost_micro_usd"):
                 cap = resources.get(field)
                 require(type(cap) is int and cap >= 0, "迭代前須有可核對的工具資源上限：" + field)
@@ -31,8 +33,9 @@ def merged_meter(nodes):
         for field, value in record.get("usage", {}).items():
             if field in {"model_calls", "cost_micro_usd"}:
                 actual[field] += value
-        for field, value in record.get("loop", {}).get("spent", {}).items():
-            actual[field] += value
+        for container in ("loop", "chain"):
+            for field, value in record.get(container, {}).get("spent", {}).items():
+                actual[field] += value
     return actual
 
 
@@ -254,6 +257,7 @@ def forward_reply(session, state, pending, operation, payload, request_id, stamp
     if (
         operation in {"authorize", "claim"}
         and not pending.get("claimed")
+        and "loop" in state["nodes"][key]
         and now() - state["nodes"][key]["loop"]["started"] > node["limits"]["timeout_seconds"]
     ):
         child.interact(

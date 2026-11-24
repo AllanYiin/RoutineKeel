@@ -195,7 +195,7 @@ def compose(
     for node in [*existing.values(), *internal.values()]:
         node["depends_on"] = list(dict.fromkeys(node["depends_on"]))
     base["nodes"].extend(internal.values())
-    base["graph_contract_version"] = "2.2"
+    base["graph_contract_version"] = max(base.get("graph_contract_version", "2.0"), "2.2")
     gate_kind = pattern.triggers.design.gate
     gate = None
     if gate_kind:
@@ -239,7 +239,7 @@ def compose(
                     rule
                     for rule in pattern.requirements
                     if rule.capability == node.capability
-                    and rule.version in {None, node.capability_version}
+                    and rule.accepts_version(node.capability_version)
                 )
             elif hasattr(node, "body"):
                 collect(node.body, key + "/")

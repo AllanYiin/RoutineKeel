@@ -219,17 +219,18 @@ def test_host_data_with_separate_qualification_waits_when_disconnected(
     assert pending["kind"] == "host" and pending["scope"]["tool"] == "provider.model"
     session_id = result["blueprint"]["session_id"]
     assert service.blueprint_task(session_id, "status")["pending"]["id"] == pending["id"]
-    with pytest.raises(FlowError):
-        service.blueprint_task(
-            session_id,
-            "claim",
-            {
-                "task_id": pending["id"],
-                "revision": result["blueprint"]["revision"],
-                "scope_hash": pending["scope_hash"],
-                "payload_hash": pending["payload_hash"],
-            },
-        )
+    blocked = service.blueprint_task(
+        session_id,
+        "claim",
+        {
+            "task_id": pending["id"],
+            "revision": result["blueprint"]["revision"],
+            "scope_hash": pending["scope_hash"],
+            "payload_hash": pending["payload_hash"],
+        },
+    )
+    assert blocked["code"] == "REBIND_REQUIRED" and "dispatch" not in blocked
+    assert blocked["pending"]["id"] == pending["id"]
     observed_inventory(tool)
     monkeypatch.setenv("ROUTINEKEEL_HOST_CATALOG", name)
     resumed = service.blueprint_task(
@@ -237,7 +238,7 @@ def test_host_data_with_separate_qualification_waits_when_disconnected(
         "claim",
         {
             "task_id": pending["id"],
-            "revision": result["blueprint"]["revision"],
+            "revision": blocked["revision"],
             "scope_hash": pending["scope_hash"],
             "payload_hash": pending["payload_hash"],
         },

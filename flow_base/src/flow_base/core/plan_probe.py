@@ -62,7 +62,9 @@ def probe(request, temporary):
         _, input_hash, _ = _execution_identity(workspace.runtime, task, source, resolved_output)
         fingerprint = _execution_spec_hash(workspace.runtime, task, workflow, input_hash,
                                            resolved_output, bool(request.get('offline')))
-    result["next_actions"]=([] if result.get("blocked") or not fingerprint else
+    blockers = result.get("blocked") or []
+    hard_blocked = any(item.get("recoverable_bindings") is not True for item in blockers)
+    result["next_actions"]=([] if hard_blocked or not fingerprint else
         [{"tool":"submit_workflow","arguments":{"workflow_id":task.manifest.id,"source":str(source),
           "output":str(output) if output else None,"overrides":request.get("overrides") or {},
           "offline":bool(request.get("offline")),"execution_spec_hash":fingerprint}}])

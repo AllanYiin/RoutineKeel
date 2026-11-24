@@ -56,9 +56,10 @@ class BlueprintAdapter(BaseAdapter):
             live = resolve_graph(
                 self.plan_data["graph"], runtime.workspace_root, admission=stored, allow_waiting=True
             )
-            ok=(stored is not None and digest(stored)==self.plan_data["bindings_hash"] and
-                live["status"]=="ready" and live["fingerprint"]==self.plan_data["capability_fingerprint"])
-            return {"ok":ok,"profile":"core","missing":[] if ok else ["graph_bindings"]}
+            intact = stored is not None and digest(stored) == self.plan_data["bindings_hash"]
+            ok = intact and live["status"] == "ready" and live["fingerprint"] == self.plan_data["capability_fingerprint"]
+            return {"ok": ok, "profile": "core", "missing": [] if ok else ["graph_bindings"],
+                    **({"recoverable_bindings": True} if intact and not ok else {})}
         installed = local_operations()
         missing = {
             n["operation"]
@@ -83,9 +84,12 @@ class BlueprintAdapter(BaseAdapter):
         result = super().plan(runtime, workflow, source, output)
         preflight = self.verify(runtime, workflow)
         if not preflight["ok"]:
-            result["blocked"].append(
-                {"code": "DEPENDENCY_UNAVAILABLE", "missing": preflight["missing"]}
-            )
+            from ..core.run_context import current
+
+            recoverable = preflight.get("recoverable_bindings", False)
+            if not recoverable or current(runtime) is None:
+                result["blocked"].append({"code": "DEPENDENCY_UNAVAILABLE", "missing": preflight["missing"],
+                                          **({"recoverable_bindings": True} if recoverable else {})})
         return result
 
     def run_step(self, ctx, step, dependencies, target):
@@ -96,7 +100,14 @@ class BlueprintAdapter(BaseAdapter):
         if plan["format"]==2:
             from ..graph.session import GraphSession
             session_type=GraphSession
-        if "session_id" in request:
+        if plan["format"] == 2 and "rebind_activation" in request:
+            session = session_type(ctx.runtime, "job_" + ctx.run_id.removeprefix("run_"))
+            state = read_json(session.path)
+            require(state.get("lineage", {}).get("scope_hash") == request["rebind_activation"]
+                    and state["run_id"] == ctx.run_id and state["plan_hash"] == digest(plan),
+                    "續做憑據與已啟用的 Run 不符。")
+            result = session.interact("next", {}, workflow=plan["workflow"])
+        elif "session_id" in request:
             session = session_type(ctx.runtime, request["session_id"])
             require(digest(plan)==digest(read_json(session.path)["plan"]),"工作執行版本已變更")
             result = session.interact("next", {}, workflow=plan["workflow"])
@@ -111,7 +122,7 @@ class BlueprintAdapter(BaseAdapter):
                 ctx.source.parent,
                 bindings,
                 key=ctx.run_id.removeprefix("run_"),
-                **({"offline":ctx.offline} if plan["format"]==2 else {}),
+                **({"offline": ctx.offline, "run_id": ctx.run_id} if plan["format"] == 2 else {}),
             )
         self.assets = Assets(ctx.runtime)
         atomic_json(target, result)

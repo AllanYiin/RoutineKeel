@@ -6,6 +6,7 @@ import tempfile
 from mimetypes import guess_type
 from pathlib import Path
 
+from routinekeel_contracts.base_steps import DESIGN_KEY, DOCUMENT_INDEXES
 from routinekeel_contracts.graph_trials import trial_case_gaps
 
 from ..graph.session import checked_value
@@ -78,6 +79,13 @@ def case_rows(graph, state):
     return result
 
 
+def _case_ports(graph):
+    return {
+        name: port for name, port in graph["inputs"].items()
+        if name != DOCUMENT_INDEXES or DESIGN_KEY not in graph["quality_contract"]
+    }
+
+
 def check_case(root, graph, case):
     require(
         not trial_case_gaps([case], graph["outputs"]),
@@ -86,7 +94,7 @@ def check_case(root, graph, case):
     require(len(canonical(case).encode()) <= 2 * 1024**2, "案例內容過大。")
     require(isinstance(case.get("config", {}), dict), "案例設定須為物件。")
     require(isinstance(case.get("replies", []), list), "案例回覆須為清單。")
-    ports = graph["inputs"]
+    ports = _case_ports(graph)
     require(set(case["inputs"]) <= set(ports), "案例含未知輸入。")
     require(
         all(
@@ -105,10 +113,11 @@ def check_case(root, graph, case):
 
 
 def case_draft(graph):
+    ports = _case_ports(graph)
     template = {
-        "inputs": {name: None for name in graph["inputs"]},
+        "inputs": {name: None for name in ports},
         "expected": {name: None for name in graph["outputs"]},
-        "input_ports": graph["inputs"],
+        "input_ports": ports,
     }
     transform = {
         "text.copy": lambda value: value,
@@ -125,13 +134,13 @@ def case_draft(graph):
         "json": {"sample": 1},
         "null": None,
     }
-    if any(port["type"] not in example for port in graph["inputs"].values()):
+    if any(port["type"] not in example for port in ports.values()):
         return template
     from routinekeel_contracts.graph_validator import validate_blueprint
 
     _, order = validate_blueprint(graph)
     nodes = {node["id"]: node for node in graph["nodes"]}
-    inputs = {name: example[port["type"]] for name, port in graph["inputs"].items()}
+    inputs = {name: example[port["type"]] for name, port in ports.items()}
     values = {"input://" + name: value for name, value in inputs.items()}
     for key in order:
         node = nodes[key]

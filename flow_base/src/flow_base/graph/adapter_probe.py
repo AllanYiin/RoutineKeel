@@ -21,7 +21,7 @@ def measure_local(request):
         failure = None
         outputs = None
         try:
-            outputs = execute_local(bindings, node, case["inputs"], node["parameters"])
+            outputs = execute_local(bindings, node, case["inputs"], node["parameters"], workspace=request.get("workspace"))
         except (ValueError, KeyError, TypeError):
             failure = "ADAPTER_INPUT_REJECTED"
         except FlowError as error:

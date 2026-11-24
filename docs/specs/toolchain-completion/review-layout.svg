@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 340" role="img" aria-labelledby="title desc">
+  <title id="title">對話中的工具補強選擇</title>
+  <desc id="desc">狀態摘要，其後是一項需確認的工具準備及目前已完成的工作。</desc>
+  <rect width="820" height="340" rx="20" fill="#eff3f8"/>
+  <rect x="28" y="24" width="764" height="292" rx="15" fill="#ffffff" stroke="#acbfd2"/>
+  <g font-family="Noto Sans CJK TC, Microsoft JhengHei, sans-serif" fill="#152b43">
+    <text x="54" y="66" font-size="22" font-weight="700">報表比對　等待你確認一項工具準備</text>
+    <text x="54" y="106" font-size="16">已完成　報表讀取與欄位核對</text>
+    <rect x="54" y="132" width="710" height="128" rx="12" fill="#edf5ff" stroke="#b6cde3"/>
+    <text x="75" y="163" font-size="18" font-weight="700">授權本次測試服務設定</text>
+    <text x="75" y="191" font-size="15">使用你指定的測試服務，僅送測試資料，費用為零。</text>
+    <rect x="75" y="211" width="136" height="32" rx="7" fill="#265982"/>
+    <text x="91" y="232" font-size="15" font-weight="700" fill="#ffffff">同意這次準備</text>
+    <text x="54" y="288" font-size="15">可回覆拒絕或查看方案細節。進度會保存在同一件工作。</text>
+  </g>
+</svg>

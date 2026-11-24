@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, JsonValue
 
 from .domain_assets import (
     AssetID,
@@ -56,6 +56,9 @@ class EnvironmentBinding(Contract):
     implementation_hash: Fingerprint
     environment_fingerprint: Fingerprint
     qualification_receipt: Fingerprint
+    toolchain_plan: dict[str, JsonValue] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class EnvironmentLock(Contract):

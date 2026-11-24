@@ -153,8 +153,11 @@ def _portable_graph_node(node, location, request, source, requirements, report):
     observed = source.dependency_evidence.get(location)
     provider = observed.provider if observed else None
     mapping = request.capability_map.get(location)
+    raw_requirement = node.pop("capability_requirement", None)
+    declared = CapabilityRequirement.model_validate(raw_requirement) if raw_requirement else None
     if (
         mapping is None
+        and declared is None
         and provider == "builtin"
         and node["capability"] in {"text.copy", "text.upper", "json.identity"}
     ):
@@ -166,7 +169,13 @@ def _portable_graph_node(node, location, request, source, requirements, report):
         "native": "local_runtime",
     }.get(provider)
     rule_id = f"requirement_{len(requirements) + 1}"
-    if mapping is None:
+    if mapping is None and declared is not None:
+        capability = declared.capability
+        version = node["capability_version"]
+        if version.isdecimal():
+            version += ".0.0"
+        portability = declared.portability
+    elif mapping is None:
         capability = f"unresolved.{rule_id}"
         version = "0.0.0"
         portability = "unresolved"
@@ -179,13 +188,17 @@ def _portable_graph_node(node, location, request, source, requirements, report):
     options = (
         mapping.model_dump(exclude={"capability", "version"}) if mapping else {"required": True}
     )
-    rule = CapabilityRequirement(
-        id=requirements[pair].id if pair in requirements else rule_id,
-        capability=capability,
-        version=version,
-        portability=portability,
-        **options,
-    )
+    declared_id = requirements[pair].id if pair in requirements else rule_id
+    if mapping is None and declared is not None:
+        rule = declared.model_copy(update={"id": declared_id})
+    else:
+        rule = CapabilityRequirement(
+            id=declared_id,
+            capability=capability,
+            version=version,
+            portability=portability,
+            **options,
+        )
     if pair not in requirements:
         requirements[pair] = rule
     elif requirements[pair] != rule:
@@ -200,7 +213,7 @@ def _portable_graph_node(node, location, request, source, requirements, report):
             "requirement": requirements[pair].id,
             "required": rule.required,
             "portability": portability,
-            "status": "needs_qualification" if mapping else "unresolved",
+            "status": "unresolved" if portability == "unresolved" else "needs_qualification",
         }
     )
     node["capability"] = capability

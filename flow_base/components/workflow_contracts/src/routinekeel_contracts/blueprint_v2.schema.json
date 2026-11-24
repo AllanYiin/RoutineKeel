@@ -1,5 +1,229 @@
 {
   "$defs": {
+    "CapabilityConstraints": {
+      "additionalProperties": false,
+      "properties": {
+        "contract_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contract Hash"
+        },
+        "max_cost_micro_usd": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Max Cost Micro Usd",
+          "type": "integer"
+        },
+        "max_latency_ms": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Latency Ms"
+        },
+        "max_data_age_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Data Age Seconds"
+        },
+        "numeric_representation": {
+          "anyOf": [
+            {
+              "enum": [
+                "decimal",
+                "integer",
+                "binary_float"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Numeric Representation"
+        },
+        "offline_only": {
+          "default": false,
+          "title": "Offline Only",
+          "type": "boolean"
+        },
+        "error_codes": {
+          "items": {
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+            "type": "string"
+          },
+          "title": "Error Codes",
+          "type": "array"
+        }
+      },
+      "title": "CapabilityConstraints",
+      "type": "object"
+    },
+    "CapabilityRequirement": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "capability": {
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?:\\.[a-z][a-z0-9_-]{0,63}){1,7}$",
+          "title": "Capability",
+          "type": "string"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        },
+        "required": {
+          "title": "Required",
+          "type": "boolean"
+        },
+        "portability": {
+          "enum": [
+            "flexible",
+            "pinned",
+            "unresolved"
+          ],
+          "title": "Portability",
+          "type": "string"
+        },
+        "requires_qualification": {
+          "const": true,
+          "default": true,
+          "title": "Requires Qualification",
+          "type": "boolean"
+        },
+        "execution_loci": {
+          "items": {
+            "enum": [
+              "local_runtime",
+              "host_mediated",
+              "external_service"
+            ],
+            "type": "string"
+          },
+          "title": "Execution Loci",
+          "type": "array"
+        },
+        "pinned_adapter": {
+          "anyOf": [
+            {
+              "maxLength": 560,
+              "pattern": "^[a-z][a-z0-9_-]{0,63}(?:\\.[a-z][a-z0-9_-]{0,63}){1,7}@(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pinned Adapter"
+        },
+        "fallback_contract": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_-]{0,63}(?:\\.[a-z][a-z0-9_-]{0,63}){1,7}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fallback Contract"
+        },
+        "constraints": {
+          "$ref": "#/$defs/CapabilityConstraints"
+        },
+        "version_range": {
+          "anyOf": [
+            {
+              "maxLength": 120,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version Range"
+        },
+        "input_semantics": {
+          "patternProperties": {
+            "^[a-z][a-z0-9_-]{0,63}$": {
+              "pattern": "^[a-z][a-z0-9_-]{0,63}(?:\\.[a-z][a-z0-9_-]{0,63}){1,7}$",
+              "type": "string"
+            }
+          },
+          "title": "Input Semantics",
+          "type": "object"
+        },
+        "output_semantics": {
+          "patternProperties": {
+            "^[a-z][a-z0-9_-]{0,63}$": {
+              "pattern": "^[a-z][a-z0-9_-]{0,63}(?:\\.[a-z][a-z0-9_-]{0,63}){1,7}$",
+              "type": "string"
+            }
+          },
+          "title": "Output Semantics",
+          "type": "object"
+        },
+        "allowed_destinations": {
+          "items": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Allowed Destinations",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "capability",
+        "required",
+        "portability"
+      ],
+      "title": "CapabilityRequirement",
+      "type": "object"
+    },
     "ForEach": {
       "additionalProperties": false,
       "properties": {
@@ -745,6 +969,17 @@
           },
           "title": "Parameters",
           "type": "object"
+        },
+        "capability_requirement": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CapabilityRequirement"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -862,7 +1097,8 @@
       "enum": [
         "2.0",
         "2.1",
-        "2.2"
+        "2.2",
+        "2.3"
       ],
       "title": "Graph Contract Version",
       "type": "string"

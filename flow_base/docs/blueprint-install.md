@@ -15,7 +15,7 @@ flow_base --workspace . blueprint-completion status --work-id <補強工作識�
 
 | 目前狀態 | 宿主接續動作 |
 | --- | --- |
-| `qualifying`、`trial_queued`、`trialing`、`installing` | 用 `status` 查證實際進度。試做程序中斷時，帶上當前修訂與新請求 ID 呼叫 `advance`。 |
+| `preparing`、`qualifying`、`trial_queued`、`trialing`、`installing` | 用 `status` 查證實際進度。`trial_progress.progress_available=false` 時，仍可讀取持久化狀態和 `worker_alive`。試做程序中斷時，帶上當前修訂與新請求 ID 呼叫 `advance`。 |
 | `needs_source`、`needs_input` | 使用缺口的 `id`、`scope_hash` 和 `actions` 選擇下一步。先說明底座已完成的部分，再請使用者補必要素材、回覆或授權。 |
 | `needs_update` | 依 `update.action` 接續既有演進提案。提交獨立比較案例，展示比較結果並取得具體核准後再 `activate_update`。 |
 | `verified`、`installed` | 回報已驗證候選或安裝位置、版本與逐案例證據。 |
@@ -34,6 +34,26 @@ RK-NEXT 開發版的底座及 Studio 隨附同一份 `routinekeel-contracts` 驗
 `resolve-blueprint --draft-id <ID> --offline` 會回傳各節點需要的能力、版本、埠、權限、指紋及缺口。底座可直接辨識內建的純資料操作。嵌入宿主可將已連接的 MCP client 交給 `flow_base.adapters.host_inventory.observe_tools`，以實際 tools/list 結果及宿主既有授權產生限時觀測。宿主在工作區外維護該觀測，並以 `ROUTINEKEEL_HOST_CATALOG` 指向它。權限與有效期由宿主維護，藍圖提供的 probe 自述無法授予操作權限。一般使用者不需逐步確認工具清冊。無可信記錄的外部工具會列為缺口。測試中的宿主替身與真實 MCP 清單觀測分開驗收。
 
 Graph v2 可在 Studio 預覽階段先查能力及案例。匯入後，`resolve-blueprint` 的 `gaps` 列出能力缺口，`build_gaps` 列出案例格式及建置支援缺口。兩者都空時 `build_status` 為 `ready`，候選包仍需實際試做。
+
+Graph 2.3 的一般或巢狀節點可用 `capability_requirement` 宣告相容版本、資料語意、可替換條件與限制。Pattern 及此類一般節點使用共用解析、資格與環境鎖。`blueprint_completion` 會保存觀測識別、淘汰候選和判定欄位。宿主更新受信清冊後，以同一工作識別碼 `recheck`。未宣告需求的既有節點沿用原指定工具及版本。
+
+宿主觀測多個連線時，可用 `observe_tools` 的 `source_id` 識別連線，為同名工具給 `routes` 派送名稱，再以 `merge_tool_observations` 合併。連線識別、派送名稱與實際工具名稱隨觀測保存。派送回覆提供 `source_id` 和 `provider_tool` 供宿主呼叫對應的連線。每個連線的授權仍由宿主提供。
+
+可替換需求若備有完整的輸入與輸出語意，且當前清冊沒有相符的單一工具，底座會搜尋並編譯多工具方案。`toolchain_planning` 記錄步驟、資料邊、合計費用、編譯圖指紋與搜尋進度。出現 `search_limit_reached` 時，對同一補強工作執行 `advance` 可繼續展開；`recheck` 會先核對觀測是否變動。
+
+宿主可經 `submit` 的 `propose_toolchain` 提供 `proposal.steps` 與 `proposal.outputs`。每個步驟宣告 `id`、清冊中的 `tool` 與具名 `inputs`，資料引用沿用 `input://` 和 `artifact://`。請求帶上目前的 `gap_id`、`scope_hash`、`expected_revision` 與 `request_id`。底座依現行清冊重建步驟，驗證資料語意、權限和整鏈成本，給出受控的候選識別。已有多個候選或需要宿主行為證據時，用 `select_adapter` 提交適用的選擇。
+
+合格的工具鏈會在環境鎖與候選中保存同一份編譯圖。純本機工具鏈以獨立程序比對已確認案例。宿主工具鏈須從受信清冊提供與目前資格範圍相符的 `portable_qualification`，含 `toolchain_graph_hash` 及每案各步驟的綁定指紋、成本與實際回執。候選試做中的宿主替身仍標為模擬，正式執行各子步驟依原權限逐次派送。
+
+尚未安裝的本機工具可由受信清冊提供 `install_locked_wheels`。宿主核准個別配方後，以 `preparation_allowed` 表示準備授權。底座從清冊所在目錄開啟宣告的 wheel，核對平台、名稱、版本、依賴與 SHA-256，在工作區隔離位置離線安裝。`preparations` 保存操作 ID、各項配方與收據。更新清冊後，呼叫原補強工作的 `recheck`，讓底座重新觀測並續接。
+
+比較候選時，核對 `candidate_rejections` 的原因與欄位，再檢查 `toolchain_planning.plans` 的具名輸入、資料邊、步驟、目的地和合計成本。對照資格報告與候選試做的獨立預期值。若用了宿主替身或校閱答覆，候選收據會列出模擬步驟。安裝前會再次核對收據、候選 ZIP、環境鎖和實際工具。每條能力需求都可以留在有續作動作的缺口狀態，直到取得相符工具、案例或授權。
+
+尚待設定的工具可由宿主清冊提供 `host_preparation`。底座只呈現當前需求或可行工具鏈所需的具名配置。操作者核對目的地、權限、參數與成本後，以 `authorize_host_preparation` 提交實際答覆。同一工作用 `claim_host_preparation` 領取單次 `host_dispatch`。以上動作均使用原 `operation_id`、`scope_hash`、目前 `expected_revision` 和請求識別碼。重送、連線中斷或同一服務已有待查操作時，先依原操作識別碼查詢服務結果。
+
+宿主持有外部回執。回執須包含原範圍、已觀測成本、目標指紋及實際配置指紋。以 `reconcile_host_preparation` 查證，刷新清冊後底座比對服務的實際狀態。若已知結果需要回復，`request_host_compensation` 產生另一個具名待辦，沿相同授權、派送與回執程序執行。程序失聯時，已確認的結果和回復證據仍可依原工作查閱。
+
+受信清冊也可提供 Adapter 的建置配方。`construct_mapping` 使用具名輸入、JSON Pointer 與欄位投影；逐列投影保留來源順序，缺少必要欄位時回報 `ADAPTER_INPUT_REJECTED`。`construct_wasm` 使用已鎖定的 WebAssembly 來源。底座在獨立程序檢查記憶體上限、無宿主匯入及 Adapter 介面，再封存程式與執行器指紋。兩種 Adapter 都須通過已確認案例及隔離候選試做，原案例的預期值仍用於驗收。若執行器或登錄產物改變，原資格即失效。
 
 Graph v2 的桌面宿主工具可在受信清冊提供 `parameters_schema`，採 JSON Schema Draft 2020-12 的物件契約。底座依契約驗證節點參數，並將參數與輸入一起綁定到待辦、核准及操作指紋。領取待辦後，宿主收到 `dispatch.arguments` 與 `dispatch.parameters`。宿主負責將兩者交給宣告該契約的工具。
 
@@ -76,8 +96,31 @@ MCP 使用 `install_workflow`，同名 JSON 參數，將 CLI 的三個文件參�
 
 external 或需防重送的操作先 claim，取回新 revision 後才執行。下次讀到 reconcile_receipt 時以原待辦 ID 查詢供應商紀錄，取得 receipt 才 complete。無法確認結果時保存待辦。revise 需要 revision、要退回的 step、reason，會使該步及之後的結果失效。完成時回傳正式 run_id 和 outputs 位置，results.json 以內容指紋連結實際素材。已領取對外請求時不可倒帶重送。
 
+### 原工作續做與重綁
+
+工具失效時，Runtime 停止受影響的派送，並回傳 `REBIND_REQUIRED` 與 `rebind_work_id`。對原 `execution_id` 查詢佇列，或以原 `session_id` 查詢 Graph 工作。用 `blueprint-completion status` 追蹤該次補強。修復後原綁定通過檢查時，`next` 繼續原 Run。等效替換通過同一 Builder 的資格與試做後，`next` 會建立同一工作下唯一的續做 Run，保留 `root_run_id`、`parent_run_id`、`active_run_id` 與原 Run 的成果紀錄。
+
+```powershell
+flow_base --workspace . blueprint-completion status --work-id $RebindWorkId
+flow_base --workspace . blueprint-task $SessionId status
+flow_base --workspace . blueprint-task $SessionId preview_rebind
+flow_base --workspace . blueprint-task $SessionId next
+```
+
+`preview_rebind` 在候選通過試做後取得可啟用的範圍。若回覆 `needs_approval`，向使用者顯示權限、目的地、連網和成本差異，並取得這次操作的實際同意。把 `scope_hash`、`source_checkpoint` 的值分別填入 `scope_hash`、`revision`，並把實際答覆填入 `user_text`。以 `flow_base --workspace . blueprint-task $SessionId activate_rebind --payload approval.json` 啟用。MCP 使用 `blueprint_task` 的相同操作與 payload。範圍改變時重新預覽。以同一 `scope_hash` 重送可取回已保留的續做 Run。
+
+持有已領取但尚無確定回執的外部操作時，先在原待辦查證結果。若不能證明既有外部效果可在原授權範圍內沿用，底座保留待處理狀態。已完成且可驗證的資料與校閱會在續做節點保留 `inherited_from`。最終交付以結果回覆的 `run_id` 及 `artifacts` 為準。要改業務規則或交付內容，先由 Studio 匯出新版本並走原有版次採用及驗收。
+
+雙 CSV 驗收先讀取兩份報表，再以正規化及逐鍵比較取得差異。替換中間工具後，續做 Run 沿用原讀取指紋，交付 `K01` 相符、`K02` 差 `0.10`、`K03` 僅出現在右表。測試按相同工作 ID 追查兩份候選收據與兩次 Run。
+
 ## 本機工具與復原
 
 媒體元件以獨立 wheel 隨底座 ZIP 發行。宿主在此流程需要時，以底座啟動器執行 `--install-blueprint-media`，核對內建 SHA-256 後離線安裝。另需 PATH 上的 FFmpeg 和 ffprobe。開發環境可將 `flow_base/components/blueprint_media` 安裝至實際執行底座的 Python。支援雙軌 WAV 組裝、時間軸轉 SRT，以及直式 MP4 合成。長字幕的時間分配及封面時長由已確認的 recipe 或設定決定。
 
 草稿在 share_states/blueprint_drafts。builds 下保留 resolution、案例、Studio WorkflowIR、工具簽章、workflow.zip、驗收及安裝收據。候選 zip 包含正式 manifest、wheel、IR、文件及來源指紋。wheel 內保留原藍圖作為資料、宿主步驟與受限程式。主機綁定、工作進度、核准紀錄、內容定址素材和角色設定分別保存在 share_states。無 SQLite 遷移。首次安裝以隱藏暫存目錄完成整包後更名。若程序中斷，重送同一 build 與 hash 即可辨識已完成的安裝。已安裝版本的升級與回退仍使用既有更新收據。
+
+續做使用工作範圍內的候選套件。回復原工具及其授權時，從原工作 `next` 觸發重驗。已啟用的續做及原 Run 都保留供查核。正式套件更新中斷時用 `recover-workflow-update`，已完成的套件更新以 `rollback-workflow-update <update_id>` 使用原快照。套件和產物保留規則見隨包 `workflow-updates.md`。
+
+需要驗證舊版資料庫備份時，先核對 `share_states/state.sqlite3.before-v007.sqlite3` 與同名 `.sha256`。以 SQLite 唯讀開啟備份，再用 SQLite 備份功能寫入獨立測試工作區。新副本執行 `PRAGMA integrity_check` 確認為 `ok`，以 `PRAGMA user_version` 確認為 6，再查驗代表性流程與 Run 記錄。其他舊版使用對應的遷移備份及其原資料版本。正式切換前保留目前資料庫、工作區與底座版本。
+
+部署驗收在拋棄式工作區核對 `SHA256SUMS`，再執行底座 `catalog`、Studio `guide`、真實 MCP 工具清單及已安裝工作流的案例。依流程確認有無適用的本機工具與外部授權。完成試做及資料還原演練後，保留舊版軟體、工作區備份、候選檔與驗收收據。

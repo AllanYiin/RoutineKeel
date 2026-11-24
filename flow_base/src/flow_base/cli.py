@@ -125,7 +125,10 @@ def parser():
     c.add_argument('--payload', type=Path)
     c = commands.add_parser('blueprint-task', help='取得待辦、回傳結果或退回重做')
     c.add_argument('session_id')
-    c.add_argument('operation', choices=['next','status','authorize','decline','claim','stream_delta','complete','reconcile','revise','retry','cancel'], nargs='?', default='next')
+    c.add_argument('operation', choices=[
+        'next', 'status', 'authorize', 'decline', 'claim', 'stream_delta', 'complete',
+        'reconcile', 'revise', 'retry', 'cancel', 'preview_rebind', 'activate_rebind',
+    ], nargs='?', default='next')
     c.add_argument('--payload', type=Path)
     c = commands.add_parser('update-workflow', help='預覽或套用新版流程 ZIP，保留設定、成果及歷史')
     c.add_argument('--archive', type=Path, required=True)

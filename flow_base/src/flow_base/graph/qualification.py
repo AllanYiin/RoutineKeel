@@ -72,7 +72,7 @@ def _source(ws, draft_id):
     return graph
 
 
-def _plan(ws, graph, draft_id, selections, *, offline=False, case_supplies=None):
+def _plan(ws, graph, draft_id, selections, *, offline=False, case_supplies=None, toolchain_plans=None):
     rules = graph_requirements(graph)
     tasks = _tasks(graph)
     if (
@@ -84,7 +84,11 @@ def _plan(ws, graph, draft_id, selections, *, offline=False, case_supplies=None)
         raise FlowError("INVALID_CONFIGURATION", "請指定藍圖中各必要能力的目標 Adapter。")
     choices = {}
     for key, adapter in sorted(selections.items()):
-        decision, candidates = resolve_requirement(key, tasks[key], rules[key], ws.root, offline=offline)
+        decision, candidates = resolve_requirement(
+            key, tasks[key], rules[key], ws.root, offline=offline,
+            workflow=graph.workflow.model_dump(mode="json"),
+            selected_plan=(toolchain_plans or {}).get(key),
+        )
         choice = candidates.get(adapter) if isinstance(adapter, str) else None
         if not choice or not choice[0]["allowed"] or choice[1] is None:
             raise FlowError(decision["code"], "選擇的 Adapter 未觀測到或現時無權使用。")
@@ -113,18 +117,26 @@ def describe_qualification(ws, draft_id, selections):
     return _plan(ws, graph, draft_id, selections)[0]
 
 
-def execute_local(binding, node, inputs, parameters):
+def execute_local(binding, node, inputs, parameters, *, workspace=None):
     from .session import checked_value
 
     for key, value in inputs.items():
         checked_value(value, node["inputs"][key]["port"])
-    if binding["provider"] == "builtin":
+    if binding["provider"] == "toolchain":
+        from .toolchain_plan import execute_local_chain
+
+        outputs = execute_local_chain(binding, inputs, workspace=workspace)
+    elif binding["provider"] == "builtin":
         value = next(iter(inputs.values()))
         if binding["tool"] == "text.upper":
             value = value.upper()
         elif binding["tool"] not in {"text.copy", "json.identity"}:
             raise FlowError("CAPABILITY_UNAVAILABLE", "缺少內建工具。")
         outputs = {next(iter(node["outputs"])): value}
+    elif "preparation" in binding:
+        from .preparation import execute_prepared
+
+        outputs = execute_prepared(workspace, binding, inputs, parameters)
     else:
         adapter = ImplementationAdapter.model_validate(binding["portable_adapter"])
         live = local_entry(adapter)
@@ -170,7 +182,7 @@ def validate_adapter_cases(ws, draft_id, key, raw_cases):
         raise FlowError("INVALID_CONFIGURATION", "請提供獨立預期值與至少兩組不同的 Adapter 輸入。") from exc
 
 
-def _measure(node, binding, raw_cases, limit_ms=None):
+def _measure(node, binding, raw_cases, limit_ms=None, *, workspace=None):
     try:
         cases = _adapter_cases(node, raw_cases)
     except (ValidationError, TypeError, ValueError):
@@ -180,6 +192,7 @@ def _measure(node, binding, raw_cases, limit_ms=None):
             "binding": binding,
             "node": node.model_dump(mode="json"),
             "limit_ms": limit_ms,
+            "workspace": str(workspace) if workspace is not None else None,
             "cases": [case.model_dump(mode="json") for case in cases],
         }
     )
@@ -192,7 +205,7 @@ def _measure(node, binding, raw_cases, limit_ms=None):
             input=raw,
             capture_output=True,
             env=worker_environment(),
-            timeout=25,
+            timeout=90,
             check=False,
         )
         evidence = json.loads(result.stdout)
@@ -223,6 +236,9 @@ def _host_measure(workspace, proposal, node_id, candidate, cases):
             or observed.get("case_hash") != proposal["case_hashes"][node_id]
             or observed.get("model_version") != candidate["model_version"]
         ):
+            return unavailable
+        chain = candidate.get("toolchain_plan")
+        if chain and observed.get("toolchain_graph_hash") != chain["compiled_graph_hash"]:
             return unavailable
         approval = observed.get("authorization_hash")
         if (
@@ -260,6 +276,8 @@ def _host_measure(workspace, proposal, node_id, candidate, cases):
                 or not 0 <= result["cost_micro_usd"] <= candidate["cost_micro_usd"]
             ):
                 return unavailable
+            if chain and not _host_chain_case(chain, result):
+                return unavailable
             passed = (
                 result.get("error") == case.expected_error
                 if case.expected_error
@@ -288,6 +306,34 @@ def _host_measure(workspace, proposal, node_id, candidate, cases):
     )
 
 
+def _host_chain_case(chain, result):
+    evidence = result.get("steps")
+    if not isinstance(evidence, list) or not evidence:
+        return False
+    expected = {step["id"]: step for step in chain["steps"]}
+    seen, total = set(), 0
+    for item in evidence:
+        if not isinstance(item, dict) or not isinstance(item.get("step_id"), str):
+            return False
+        key = item["step_id"]
+        step = expected.get(key)
+        cost = item.get("cost_micro_usd")
+        if (
+            step is None or key in seen
+            or item.get("binding_fingerprint") != step["binding_fingerprint"]
+            or not isinstance(item.get("provider_receipt"), str) or not item["provider_receipt"].strip()
+            or type(cost) is not int or not 0 <= cost <= step["cost_micro_usd"]
+        ):
+            return False
+        predecessors = {value[11:].split("/", 1)[0] for value in step["inputs"].values()
+                        if value.startswith("artifact://")}
+        if not predecessors <= seen:
+            return False
+        seen.add(key)
+        total += cost
+    return total == result["cost_micro_usd"] and (bool(result.get("error")) or seen == expected.keys())
+
+
 def qualify_bindings(ws, draft_id, selections, review):
     graph = _source(ws, draft_id)
     proposal, tasks, rules, choices, cases = _plan(ws, graph, draft_id, selections)
@@ -306,7 +352,7 @@ def qualify_bindings(ws, draft_id, selections, review):
 
 def _report(ws, proposal, key, candidate, transport, node, rule, cases, evidence):
     if candidate["locus"] == "local_runtime" and not transport["network"]:
-        conformance, behavior = _measure(node, transport, cases, rule.constraints.max_latency_ms)
+        conformance, behavior = _measure(node, transport, cases, rule.constraints.max_latency_ms, workspace=ws.root)
     else:
         conformance, behavior = _host_measure(ws.root, proposal, key, candidate, cases)
     statuses = {conformance["status"], behavior["status"]}
@@ -322,6 +368,9 @@ def _report(ws, proposal, key, candidate, transport, node, rule, cases, evidence
         "behavior": behavior,
         "case_hash": proposal["case_hashes"][key],
         "review_hash": content_hash([proposal["request_hash"], evidence]),
+        **({"toolchain_plan_id": candidate["toolchain_plan"]["plan_id"],
+            "toolchain_graph_hash": candidate["toolchain_plan"]["compiled_graph_hash"]}
+           if candidate.get("toolchain_plan") else {}),
     }
 
 
@@ -335,11 +384,13 @@ def _individual_scope(proposal, node):
     return {**body, "request_hash": content_hash(body)}
 
 
-def complete_bindings(ws, draft_id, selections, attempted, *, offline=False, case_supplies=None):
+def complete_bindings(ws, draft_id, selections, attempted, *, offline=False, case_supplies=None,
+                      toolchain_plans=None):
     """Probe pure local candidates or consume trusted, previously authorized host observations."""
     graph = _source(ws, draft_id)
     proposal, tasks, rules, choices, cases = _plan(
         ws, graph, draft_id, selections, offline=offline, case_supplies=case_supplies,
+        toolchain_plans=toolchain_plans,
     )
     outcomes, reports = {}, {}
     for key, (candidate, transport) in choices.items():
@@ -370,7 +421,7 @@ def _finish(ws, graph, proposal, rules, choices, reports, *, offline=False, case
             rule = rules[node_id]
             bindings[node_id] = EnvironmentBinding(
                 requirement_id=rule.id,
-                capability=f"{rule.capability}@{rule.version or '1.0.0'}",
+                capability=f"{rule.capability}@{candidate.get('capability_version', rule.version or '1.0.0')}",
                 adapter=candidate["adapter"],
                 execution_locus=candidate["locus"],
                 provider_version=candidate["provider_version"],
@@ -380,13 +431,18 @@ def _finish(ws, graph, proposal, rules, choices, reports, *, offline=False, case
                 implementation_hash=candidate["implementation_hash"],
                 environment_fingerprint=candidate["environment_fingerprint"],
                 qualification_receipt=content_hash(report),
+                toolchain_plan=candidate.get("toolchain_plan"),
             )
     workflow = graph.workflow
     lock = None
     if bindings.keys() == rules.keys():
         draft_id = proposal["blueprint_hash"]
         selections = {node: pair[0]["adapter"] for node, pair in choices.items()}
-        confirmation = _plan(ws, graph, draft_id, selections, offline=offline, case_supplies=case_supplies)[0]
+        selected_plans = {
+            node: pair[0]["toolchain_plan"] for node, pair in choices.items() if pair[0].get("toolchain_plan")
+        }
+        confirmation = _plan(ws, graph, draft_id, selections, offline=offline, case_supplies=case_supplies,
+                             toolchain_plans=selected_plans)[0]
         if confirmation["request_hash"] != proposal["request_hash"]:
             raise FlowError("BINDING_STALE", "試做期間 Adapter、權限或環境已更新。")
         selected = EnvironmentLock(
@@ -394,7 +450,7 @@ def _finish(ws, graph, proposal, rules, choices, reports, *, offline=False, case
             workflow=f"{workflow.id}@{workflow.version}",
             graph_hash=proposal["graph_hash"],
             blueprint_hash=draft_id,
-            pattern_refs=[record["ref"] for record in graph.provenance["pattern_compositions"]],
+            pattern_refs=[record["ref"] for record in graph.provenance.get("pattern_compositions", [])],
             bindings=bindings,
         )
         lock = persist_lock(ws.root, selected, reports)

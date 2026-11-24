@@ -666,6 +666,50 @@
           },
           "constraints": {
             "$ref": "#/$defs/CapabilityConstraints"
+          },
+          "version_range": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Version Range"
+          },
+          "input_semantics": {
+            "patternProperties": {
+              "^[a-z][a-z0-9_-]{0,63}$": {
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?:\\.[a-z][a-z0-9_-]{0,63}){1,7}$",
+                "type": "string"
+              }
+            },
+            "title": "Input Semantics",
+            "type": "object"
+          },
+          "output_semantics": {
+            "patternProperties": {
+              "^[a-z][a-z0-9_-]{0,63}$": {
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?:\\.[a-z][a-z0-9_-]{0,63}){1,7}$",
+                "type": "string"
+              }
+            },
+            "title": "Output Semantics",
+            "type": "object"
+          },
+          "allowed_destinations": {
+            "items": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Allowed Destinations",
+            "type": "array"
           }
         },
         "required": [
@@ -1833,6 +1877,17 @@
             },
             "title": "Parameters",
             "type": "object"
+          },
+          "capability_requirement": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CapabilityRequirement"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [

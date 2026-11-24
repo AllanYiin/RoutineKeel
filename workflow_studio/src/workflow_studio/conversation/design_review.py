@@ -191,6 +191,11 @@ def inventory(model):
                 "permissions": node.permissions,
                 "side_effect": node.side_effect,
             }
+            if node.capability_requirement is not None:
+                tools[path]["requirement"] = node.capability_requirement.model_dump(
+                    mode="json",
+                    exclude_none=True,
+                )
             _field_variables(
                 variables,
                 "parameter/" + path,

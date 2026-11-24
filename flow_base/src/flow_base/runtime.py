@@ -266,7 +266,8 @@ class Runtime:
                            (flow_id, task_id, version, fingerprint, title, now, now))
         return flow_id
 
-    def start_run(self, flow_id, source, output, *, job_id=None, spec_hash=None, idempotency_key=None):
+    def start_run(self, flow_id, source, output, *, job_id=None, spec_hash=None, idempotency_key=None,
+                  revision_fingerprint=None, revision_version=None):
         from .core.lifecycle import RunStore
         self.initialize()
         with closing(self.connect()) as db:
@@ -274,13 +275,15 @@ class Runtime:
         if flow is None:
             raise FlowError('FLOW_UNKNOWN', '找不到已登錄工作流', flow_id=flow_id)
         job_id = job_id or digest({'flow_id': flow_id, 'source': str(source), 'output': str(output)})[:32]
-        revision_id = 'rev_' + digest({'flow_id': flow_id, 'version': flow['version'], 'fingerprint': flow['fingerprint']})[:32]
+        fingerprint = revision_fingerprint if revision_fingerprint is not None else flow['fingerprint']
+        version = revision_version if revision_version is not None else flow['version']
+        revision_id = 'rev_' + digest({'flow_id': flow_id, 'version': version, 'fingerprint': fingerprint})[:32]
         spec_hash = spec_hash or digest({'revision_id': revision_id, 'source': str(source), 'output': str(output)})
         run_id = 'run_' + uuid.uuid4().hex
         actual = RunStore(self).create(run_id=run_id, job_id=job_id, revision_id=revision_id,
                                      spec_hash=spec_hash, idempotency_key=idempotency_key,
                                      flow_id=flow_id, source=source, output=output,
-                                     revision_fingerprint=flow['fingerprint'], revision_version=flow['version'])
+                                     revision_fingerprint=fingerprint, revision_version=version)
         if actual == run_id:
             from .observability.events import EventRecorder
             EventRecorder(self, run_id, self.logs / flow_id / run_id).record('run.created')

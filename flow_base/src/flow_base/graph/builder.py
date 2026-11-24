@@ -21,8 +21,8 @@ def verify_pattern_admission(graph, workspace):
         require(receipt.get("verified") is True, "缺少目前有效的 Pattern 與 Pack 資格。")
 
 
-def preflight_graph(graph, workspace, *, offline=False):
-    resolved = resolve_graph(graph, workspace, offline=offline)
+def preflight_graph(graph, workspace, *, offline=False, planning_search=None):
+    resolved = resolve_graph(graph, workspace, offline=offline, planning_search=planning_search)
     cases = graph["quality_contract"].get("golden_cases")
     build_gaps = trial_case_gaps(cases, graph["outputs"])
     admission_failed = False
@@ -36,11 +36,16 @@ def preflight_graph(graph, workspace, *, offline=False):
         for key, binding in resolved["bindings"].items()
         if binding["provider"] == "native"
     )
+    toolchains = {
+        row["node"]: row["toolchain_planning"] for row in resolved.get("portable_decisions", [])
+        if "toolchain_planning" in row
+    }
     return {
         **resolved,
         "status": "blocked" if admission_failed else resolved["status"],
         "build_status": "blocked" if resolved["gaps"] or build_gaps else "ready",
         "build_gaps": build_gaps,
+        **({"toolchain_planning": toolchains} if toolchains else {}),
     }
 
 
@@ -101,7 +106,7 @@ def compile_plan_tree(graph, source_hash, workspace, resolved, *, documents=None
         or (
             n["kind"] == "task"
             and resolved["bindings"][n["id"]]["provider"]
-            not in {"builtin", "desktop_host", "portable_local"}
+            not in {"builtin", "desktop_host", "portable_local", "toolchain"}
         )
         for n in graph["nodes"]
     ):

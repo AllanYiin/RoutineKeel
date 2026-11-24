@@ -277,15 +277,16 @@ def validate_blueprint(payload, *, dependencies=None, route_guards=None):
     order = validate_structure(
         graph,
         max_nodes=200 if graph.graph_contract_version == "2.0" else 401,
-        extended=graph.graph_contract_version == "2.2",
+        extended=graph.graph_contract_version in {"2.2", "2.3"},
         dependencies=tracked,
         route_guards=route_guards,
     )
     from .base_steps import validate_base_steps
     from .execution_review import validate_execution_review
-    from .pattern_composition import validate_pattern_records
+    from .pattern_composition import graph_requirements, validate_pattern_records
 
     validate_pattern_records(graph, order, tracked)
+    graph_requirements(graph)
     validate_base_steps(graph)
     validate_execution_review(graph)
     return graph, order

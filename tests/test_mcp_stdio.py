@@ -5,6 +5,8 @@ import os
 import shutil
 import subprocess
 import sys
+from contextlib import suppress
+from pathlib import Path
 
 import pytest
 
@@ -327,8 +329,26 @@ def test_submit_before_worker_exists_stays_queued_across_client_restart(workspac
     asyncio.run(reconnect())
 
 
-@pytest.mark.skipif(os.name != 'nt' or shutil.which('netstat') is None,
-                    reason='Windows netstat is required for process-level port observation')
+def _linux_listeners(pid):
+    process = Path('/proc') / pid
+    sockets = set()
+    for descriptor in (process / 'fd').iterdir():
+        with suppress(FileNotFoundError):
+            target = os.readlink(descriptor)
+            if target.startswith('socket:['):
+                sockets.add(target[8:-1])
+    listeners = []
+    for name in ('tcp', 'tcp6'):
+        for row in (process / 'net' / name).read_text(encoding='ascii').splitlines()[1:]:
+            fields = row.split()
+            if fields[3] == '0A' and fields[9] in sockets:
+                listeners.append(row)
+    return listeners
+
+
+@pytest.mark.skipif(not (sys.platform.startswith('linux') or (
+    os.name == 'nt' and shutil.which('netstat') is not None
+)), reason='Linux procfs or Windows netstat is required for process-level port observation')
 def test_mcp_stdio_process_has_no_listening_tcp_port(workspace):
     pidfile = workspace / 'mcp-server.pid'
     script = ('import os,sys,pathlib;'
@@ -342,6 +362,9 @@ def test_mcp_stdio_process_has_no_listening_tcp_port(workspace):
         async with Client(params) as client:
             await client.list_tools()
             pid = pidfile.read_text(encoding='utf-8').strip()
+            if sys.platform.startswith('linux'):
+                assert await asyncio.to_thread(_linux_listeners, pid) == []
+                return
             observed = await asyncio.to_thread(subprocess.run, ['netstat', '-ano', '-p', 'tcp'],
                                       capture_output=True, text=True, check=True)
             rows = [line for line in observed.stdout.splitlines()

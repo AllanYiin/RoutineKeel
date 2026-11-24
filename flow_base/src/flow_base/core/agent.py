@@ -140,8 +140,12 @@ def from_run(runtime, run_id):
 def session_status(service, sid):
     view = service.blueprint_task(sid, "status")
     pending = view.get("pending_tasks") or ([view["pending"]] if view.get("pending") else [])
+    rebind = view.get("rebind") or {}
+    affected = set(rebind.get("affected", []))
     next_actions = []
     for task in pending:
+        if task["step"] in affected and not task.get("claimed"):
+            continue
         op = (
             "reconcile"
             if task.get("claimed")
@@ -163,13 +167,18 @@ def session_status(service, sid):
             )
     if view.get("assessment_id"):
         next_actions.append(action("workflow_quality", session_id=sid, operation="preview"))
+    if view.get("rebind_work_id"):
+        next_actions.append(action("blueprint_completion", work_id=view["rebind_work_id"], operation="status"))
+        if rebind and not rebind.get("pending_operations"):
+            next_actions.append(action("blueprint_task", session_id=sid, operation="next"))
     return {
         "session_id": sid,
         "workflow_id": view["workflow_id"],
         "session_status": view["status"],
         "event_source": "workflow_execution",
         "display_text": (
-            "、".join(p.get("prompt") or p["step"] for p in pending)
+            "受影響的工具需要重驗，已完成成果已保存。"
+            if rebind else "、".join(p.get("prompt") or p["step"] for p in pending)
             if pending
             else {
                 "complete": "流程已完成",
@@ -183,6 +192,7 @@ def session_status(service, sid):
         "pending": [{"node_id": p["step"], **p} for p in pending],
         "outputs": view.get("outputs"),
         **({"pending_corrections": view["pending_corrections"]} if "pending_corrections" in view else {}),
+        **{key: view[key] for key in ("root_run_id", "active_run_id", "rebind_work_id", "rebind") if key in view},
         "next_actions": next_actions,
     }
 

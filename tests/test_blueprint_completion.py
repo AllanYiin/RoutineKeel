@@ -251,6 +251,25 @@ def test_described_case_can_be_completed_without_revising_source(tmp_path):
     assert service.install_workflow(draft_id=key)["source"] == source
 
 
+def test_trial_progress_sharing_conflict_keeps_status_available(tmp_path, monkeypatch):
+    from flow_base.blueprints import completion_delivery, trial
+
+    def locked(path, *_args):
+        assert path.name == "trial-progress.json"
+        raise PermissionError("fixture sharing violation")
+
+    monkeypatch.setattr(completion_delivery, "read_json", locked)
+    monkeypatch.setattr(completion_delivery, "worker_alive", lambda _state: True)
+    completion = {"draft_id": "a" * 64, "trial": {"build_id": "b" * 32}}
+    service = WorkflowService(tmp_path)
+    assert completion_delivery.trial_progress(service, completion) == {
+        "progress_available": False,
+        "worker_alive": True,
+    }
+    monkeypatch.setattr(trial, "atomic_json", locked)
+    trial._write_progress(tmp_path / "trial-progress.json", {"case": 1, "phase": "prepare"})
+
+
 def test_blueprint_assertions_supply_independent_expected_values(tmp_path):
     graph = data_graph()
     graph["quality_contract"] = {

@@ -1,0 +1,13 @@
+{
+  "inputs": {
+    "left": "id,amount\nK01,0.30\nK02,1.20\n",
+    "right": "id,amount\nK01,0.30\nK02,1.30\nK03,2.00\n"
+  },
+  "expected": {
+    "report": {
+      "matched": ["K01"],
+      "differences": [{"id": "K02", "right_minus_left": "0.10"}],
+      "right_only": ["K03"]
+    }
+  }
+}

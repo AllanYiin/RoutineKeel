@@ -9,6 +9,8 @@
 ## 共用工具情境
 
 - 要求將藍圖轉成可試做或可安裝的工作流時，使用 `blueprint-completion` 或 MCP `blueprint_completion`。依實際缺口與修訂接續補強，正式安裝須持有同一候選的必要驗證與試做收據。
+- Graph 2.3 的工具鏈規劃、隔離準備與資格驗證走底座通用契約。驗收使用已確認的案例；清冊及其實際授權由宿主管理。
+- Runtime 回 `REBIND_REQUIRED` 時保存原工作 ID、Run 及 `rebind_work_id`。以原 `session_id` 查詢、預覽和續做。續做允許沿用已驗證的成果。已領取且結果不明的外部操作先查回執。操作入口見 `docs/blueprint-install.md`。
 
 - 使用情境為 scene_b_shared_tool；錯誤需可複製、可追查、可重試。
 - 輸入、輸出、快取與版本的既有契約保持相容。

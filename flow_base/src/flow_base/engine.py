@@ -258,20 +258,27 @@ def run_demo(runtime, task, output):
         ACTIVE_RUN.reset(run_token)
 
 
-def reserve_workflow_run(runtime, task, workflow, source, output=None, *, offline=False, idempotency_key=None):
+def reserve_workflow_run(runtime, task, workflow, source, output=None, *, offline=False, idempotency_key=None,
+                         continuation_job_id=None):
     from .outputs import choose_output
     output = choose_output(runtime, task, source, output)
     job_id, input_hash, _ = _execution_identity(runtime, task, source, output)
     spec_hash = _execution_spec_hash(runtime, task, workflow, input_hash, output, offline)
-    run_id = runtime.start_run(task.flow_id, source, output, job_id=job_id, spec_hash=spec_hash,
-                               idempotency_key=idempotency_key)
+    revision = {"revision_fingerprint": task.fingerprint, "revision_version": task.manifest.version} if continuation_job_id else {}
+    run_id = runtime.start_run(task.flow_id, source, output, job_id=continuation_job_id or job_id,
+                               spec_hash=spec_hash, idempotency_key=idempotency_key, **revision)
     return run_id, output, spec_hash
 
 
-def run_workflow(runtime, task, workflow, source, output=None, *, offline=False, prepared=None, reserved_run_id=None):
+def run_workflow(runtime, task, workflow, source, output=None, *, offline=False, prepared=None, reserved_run_id=None,
+                 continuation_job_id=None):
     from .outputs import choose_output
     output = choose_output(runtime, task, source, output)
     job_id, input_hash, _ = _execution_identity(runtime, task, source, output)
+    if continuation_job_id is not None:
+        if reserved_run_id is None:
+            raise FlowError('RUN_SPEC_MISMATCH', '續做 Run 須先完成保留')
+        job_id = continuation_job_id
     spec_hash = _execution_spec_hash(runtime, task, workflow, input_hash, output, offline)
     if reserved_run_id is None:
         run_id = runtime.start_run(task.flow_id, source, output, job_id=job_id, spec_hash=spec_hash)
@@ -294,7 +301,8 @@ def run_workflow(runtime, task, workflow, source, output=None, *, offline=False,
         supervisor.__enter__()
         reporter.event_recorder.record('run.preparing')
         reporter.start()
-        report = _run_workflow(runtime, task, workflow, source, output, run_id=run_id, offline=offline, prepared=prepared)
+        report = _run_workflow(runtime, task, workflow, source, output, run_id=run_id, offline=offline, prepared=prepared,
+                               continuation_job_id=continuation_job_id)
         with SecondaryOperation('finalize published run') as post_delivery_update:
             if supervisor.heartbeat_error:
                 raise FlowError('SUPERVISOR_HEARTBEAT', '執行期間無法更新監督程序 lease') from supervisor.heartbeat_error
@@ -352,7 +360,8 @@ def run_workflow(runtime, task, workflow, source, output=None, *, offline=False,
         ACTIVE_RUN.reset(run_token)
 
 
-def _run_workflow(runtime, task, workflow, source, output, *, run_id, offline=False, prepared=None):
+def _run_workflow(runtime, task, workflow, source, output, *, run_id, offline=False, prepared=None,
+                  continuation_job_id=None):
     from .outputs import (
         artifact_directory,
         output_layout,
@@ -378,6 +387,7 @@ def _run_workflow(runtime, task, workflow, source, output, *, run_id, offline=Fa
         raise FlowError('PREFLIGHT_BLOCKED', 'Resolve preflight issues', blockers=p['blocked'])
     runtime.initialize()
     job, input_hash, location = _execution_identity(runtime, task, source, output)
+    job = continuation_job_id or job
     from .core.run_context import current
     current(runtime).job_id = job
     runtime.update_run(run_id, 'waiting', job_id=job)

@@ -13,7 +13,7 @@ from ..workspace import Workspace
 from .source import inspect_graph
 
 
-def installed_graph(workspace, workflow_ref):
+def installed_graph(workspace, workflow_ref, *, include_source=False):
     workflow_id, separator, version = workflow_ref.partition("@")
     if not separator or not workflow_id or not version:
         raise FlowError("INVALID_CONFIGURATION", "擷取來源需要明確的 workflow_id@version。")
@@ -57,6 +57,7 @@ def installed_graph(workspace, workflow_ref):
         "graph": graph,
         "blueprint_sha256": plan["source_hash"],
         "wheel_sha256": manifest.sha256,
+        **({"source": source} if include_source else {}),
         "dependency_evidence": {
             node: {"provider": binding.get("provider"), "fingerprint": digest(binding)}
             for node, binding in bindings.items()

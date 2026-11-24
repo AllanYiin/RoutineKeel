@@ -12,11 +12,13 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def write_wheel(path: Path, module: str, version: str, files: dict[str, bytes]):
+def write_wheel(path: Path, module: str, version: str, files: dict[str, bytes], *, dependencies=("flow-base>=0.2.14",)):
     metadata = f"{module}-{version}.dist-info"
     files = dict(files)
     files[f"{metadata}/METADATA"] = (
-        f"Metadata-Version: 2.1\nName: {module}\nVersion: {version}\nRequires-Python: >=3.11,<3.14\nRequires-Dist: flow-base>=0.2.14\n\nGenerated RoutineKeel workflow.\n"
+        f"Metadata-Version: 2.1\nName: {module}\nVersion: {version}\nRequires-Python: >=3.11,<3.14\n"
+        + "".join(f"Requires-Dist: {item}\n" for item in dependencies)
+        + "\nGenerated RoutineKeel workflow.\n"
     ).encode()
     files[f"{metadata}/WHEEL"] = (
         b"Wheel-Version: 1.0\nGenerator: routinekeel-blueprint\nRoot-Is-Purelib: true\nTag: py3-none-any\n"

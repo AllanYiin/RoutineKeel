@@ -13,28 +13,48 @@ from test_graph_contracts import example
 def test_observation_uses_an_actual_mcp_tool_listing_without_running_workflows(tmp_path):
     import asyncio
 
-    from flow_base.adapters.host_inventory import observe_tools
+    from flow_base.adapters.host_inventory import merge_tool_observations, observe_tools
     from test_mcp_stdio import client_for
 
     async def capture():
+        grants = {
+            "list_workflows": {
+                "allowed": True,
+                "network": False,
+                "platforms": [sys.platform],
+                "permissions": [],
+                "side_effect": "none",
+            }
+        }
         async with client_for(tmp_path) as client:
-            return await observe_tools(
+            legacy = await observe_tools(client, grants)
+            first = await observe_tools(
                 client,
-                {
-                    "list_workflows": {
-                        "allowed": True,
-                        "network": False,
-                        "platforms": [sys.platform],
-                        "permissions": [],
-                        "side_effect": "none",
-                    }
-                },
+                grants,
+                source_id="first",
+                routes={"list_workflows": "first.list_workflows"},
             )
+        async with client_for(tmp_path) as client:
+            second = await observe_tools(
+                client,
+                grants,
+                source_id="second",
+                routes={"list_workflows": "second.list_workflows"},
+            )
+        with pytest.raises(FlowError, match="不同派送名稱"):
+            merge_tool_observations(first, first)
+        return legacy, merge_tool_observations(first, second)
 
-    catalog = asyncio.run(capture())
+    catalog, merged = asyncio.run(capture())
     entry = catalog["tools"]["list_workflows"]
     assert entry["observed"] == "tools/list" and entry["input_schema"]["type"] == "object"
     assert entry["server"] == "RoutineKeel" and len(entry["receipt_id"]) == 64
+    sources = merged["tools"]
+    assert {key: item["source_id"] for key, item in sources.items()} == {
+        "first.list_workflows": "first", "second.list_workflows": "second",
+    }
+    assert {item["provider_tool"] for item in sources.values()} == {"list_workflows"}
+    assert len({item["receipt_id"] for item in sources.values()}) == 2
     assert not list(tmp_path.iterdir())
 
 

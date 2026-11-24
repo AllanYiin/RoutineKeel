@@ -166,8 +166,9 @@ class Workspace:
 
 
 class Task:
-    def __init__(self, folder, manifest):
+    def __init__(self, folder, manifest, *, package_folder=None):
         self.folder, self.manifest = folder, manifest
+        self.package_folder = package_folder if package_folder is not None else folder
         self._adapter = None
 
     @property
@@ -179,7 +180,7 @@ class Task:
         if self._adapter:
             return self._adapter
         m = self.manifest
-        wheel = self.folder / m.package
+        wheel = self.package_folder / m.package
         if not wheel.is_file() or wheel.is_symlink() or sha256(wheel) != m.sha256:
             raise FlowError('TASK_INTEGRITY', 'Task package is missing or differs from flow.json', task=m.id)
         if cache_root is not None:

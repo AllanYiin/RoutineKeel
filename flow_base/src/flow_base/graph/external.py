@@ -27,6 +27,9 @@ def scope_for(session_id, node_id, attempt, binding, values, configuration, *, p
     }
     if parameters:
         scope["parameters"] = parameters
+    for key in ("source_id", "provider_tool"):
+        if key in binding:
+            scope[key] = binding[key]
     return scope, digest(scope)
 
 

@@ -1,5 +1,18 @@
 # 一鍵啟動工作清單
 
+## 通用工具鏈補全
+
+- [x] Stage 0 固定底座、Studio、封包與資料復原基線。
+- [x] Stage 1 接上通用需求、工具清冊、候選診斷與資格鎖定。
+- [x] Stage 2 完成多工具搜尋續行、正式候選與相容性驗收。
+- [x] Stage 3 依受信配方準備套件和宿主配置，保存操作回執。
+- [x] Stage 4 建立與登錄 Adapter，驗收整鏈行為與獨立預期成果。
+- [x] Stage 5 在執行失效後重綁，沿同一工作建立續做 Run。
+- [x] Stage 6 驗收跨平台、既有流程與隔離發行候選。
+- [x] Stage 7 完成操作與回退文件及本機交付。
+
+[技術規格](../docs/specs/toolchain-completion/technical.md) · [驗證紀錄](../docs/specs/toolchain-completion/verification.md)
+
 ## 藍圖補強與接續建置
 
 - [x] Stage 0：固定 Studio 匯出與底座匯入基線；47 項關聯測試通過。

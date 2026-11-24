@@ -21,8 +21,8 @@ from .base_steps import LOCAL_STEPS
 BUILTINS = {"text.copy": "string", "text.upper": "string", "json.identity": "json"}
 
 
-def unavailable(message):
-    raise FlowError("CAPABILITY_UNAVAILABLE", message)
+def unavailable(message, **details):
+    raise FlowError("CAPABILITY_UNAVAILABLE", message, **details)
 
 
 def read_host_inventory(workspace):
@@ -41,7 +41,7 @@ def read_host_inventory(workspace):
             unavailable("宿主能力目錄格式無效。")
         expires = datetime.fromisoformat(data["expires_at"])
         if expires.tzinfo is None or expires <= datetime.now(UTC):
-            unavailable("工具清冊已過期，請由宿主重新取得。")
+            unavailable("工具清冊已過期，請由宿主重新取得。", observation_status="expired")
         return data
     except (OSError, TypeError, KeyError, ValueError):
         unavailable("無法讀取有效的宿主能力目錄。")
@@ -50,6 +50,25 @@ def read_host_inventory(workspace):
 def host_catalog(workspace):
     data = read_host_inventory(workspace)
     return data["tools"] if data else {}
+
+
+def capability_observation(workspace):
+    try:
+        data = read_host_inventory(workspace)
+        snapshot_id = digest([sys.platform, data])
+    except FlowError as error:
+        status = error.details.get("observation_status", "invalid")
+        return {}, {"id": digest([sys.platform, status]), "status": status}
+    except (TypeError, ValueError):
+        return {}, {"id": digest([sys.platform, "invalid"]), "status": "invalid"}
+    if data is None:
+        return {}, {"id": digest([sys.platform, "disconnected"]), "status": "disconnected"}
+    return data["tools"], {
+        "id": snapshot_id,
+        "status": "current",
+        "observed_at": data.get("observed_at"),
+        "expires_at": data["expires_at"],
+    }
 
 
 def plan_probe_catalog(workspace, task_id, destination):
@@ -68,9 +87,14 @@ def plan_probe_catalog(workspace, task_id, destination):
             if item.file_size > 2 * 1024**2:
                 return {}
             registry = json.loads(wheel.read(item))
+        bindings = registry.get("bindings", {}).values()
+        leaves = [
+            leaf for binding in bindings
+            for leaf in (binding["chain_bindings"].values() if binding.get("provider") == "toolchain" else [binding])
+        ]
         names = {
             b["tool"]
-            for b in registry.get("bindings", {}).values()
+            for b in leaves
             if b.get("provider") in {"desktop_host", "portable_local"}
         }
         if not names:
@@ -99,6 +123,9 @@ def plan_probe_catalog(workspace, task_id, destination):
         "destination",
         "portable",
         "scope_hash",
+        "source_id",
+        "provider_tool",
+        "preparation",
     }
     tools = {
         name: {k: v for k, v in row.items() if k in allowed}
@@ -109,8 +136,8 @@ def plan_probe_catalog(workspace, task_id, destination):
     return {"ROUTINEKEEL_HOST_CATALOG": str(destination)}
 
 
-def live_tool(workspace, tool, version, offline=False):
-    record = host_catalog(workspace).get(tool)
+def live_tool(workspace, tool, version, offline=False, *, catalog=None):
+    record = (host_catalog(workspace) if catalog is None else catalog).get(tool)
     if (
         not isinstance(record, dict)
         or record.get("version") != version
@@ -170,7 +197,7 @@ def validate_bindings(workspace, bindings, *, offline=False):
     return observed
 
 
-def resolve_task(node, workspace, *, offline=False):
+def resolve_task(node, workspace, *, offline=False, catalog=None):
     if node.side_effect == "unresolved":
         unavailable("請先釐清此能力的副作用。")
     if node.capability in LOCAL_STEPS:
@@ -206,7 +233,7 @@ def resolve_task(node, workspace, *, offline=False):
             "resources": {"network": False, "model_calls": 0, "cost_micro_usd": 0},
         }
     else:
-        record = live_tool(workspace, node.capability, node.capability_version, offline)
+        record = live_tool(workspace, node.capability, node.capability_version, offline, catalog=catalog)
         if (
             set(record.get("permissions", [])) != set(node.permissions)
             or record.get("side_effect") != node.side_effect
@@ -234,6 +261,9 @@ def resolve_task(node, workspace, *, offline=False):
             )
         }
         description.update(provider="desktop_host", tool=node.capability)
+        for key in ("source_id", "provider_tool"):
+            if key in record:
+                description[key] = record[key]
         schema = record.get("parameters_schema")
         if node.parameters or schema is not None:
             if not isinstance(schema, dict) or schema.get("type") != "object":
@@ -267,7 +297,7 @@ def resolve_task(node, workspace, *, offline=False):
     return {**description, "fingerprint": digest(description)}
 
 
-def resolve_graph(payload, workspace, *, offline=False, admission=None, allow_waiting=False):
+def resolve_graph(payload, workspace, *, offline=False, admission=None, allow_waiting=False, planning_search=None):
     from .locking import read_lock
     from .portable import graph_requirements, resolve_requirement
     from .qualification import graph_fingerprint
@@ -275,6 +305,7 @@ def resolve_graph(payload, workspace, *, offline=False, admission=None, allow_wa
     graph, _ = validate_blueprint(payload)
     reviewed_tools = graph.provenance.get("design_review", {}).get("details", {}).get("tools", {})
     requirements = graph_requirements(graph)
+    observation = capability_observation(workspace) if requirements else None
     resolved, gaps, decisions = {}, [], []
     locked = None
     lock_error = False
@@ -312,14 +343,18 @@ def resolve_graph(payload, workspace, *, offline=False, admission=None, allow_wa
                         check_locus(key, locus)
                         resolved[key] = binding
                     else:
-                        decision, candidates = resolve_requirement(
-                            key,
-                            node,
-                            rule,
-                            workspace,
-                            offline=offline,
-                        )
                         selected = locked.bindings.get(key) if locked else None
+                        resolution = {
+                            "offline": offline,
+                            "observation": observation,
+                            "workflow": graph.workflow.model_dump(mode="json"),
+                            "planning_search": planning_search,
+                        }
+                        decision, candidates = resolve_requirement(
+                            key, node, rule, workspace,
+                            selected_plan=selected.toolchain_plan if selected else None,
+                            **resolution,
+                        )
                         live = candidates.get(selected.adapter) if selected else None
                         if selected and live and live[0]["allowed"] and live[1] is not None:
                             candidate, concrete = live
@@ -352,6 +387,7 @@ def resolve_graph(payload, workspace, *, offline=False, admission=None, allow_wa
                         if (
                             allow_waiting
                             and selected
+                            and selected.toolchain_plan is None
                             and selected.execution_locus == "host_mediated"
                             and admission
                             and key in admission
@@ -359,7 +395,7 @@ def resolve_graph(payload, workspace, *, offline=False, admission=None, allow_wa
                             and admission[key].get("qualification_receipt")
                             == selected.qualification_receipt
                             and (decision["catalog_unavailable"]
-                                 or admission[key]["tool"] not in host_catalog(workspace))
+                                 or admission[key]["tool"] not in observation[0])
                         ):
                             check_locus(key, selected.execution_locus)
                             resolved[key] = admission[key]
@@ -370,6 +406,12 @@ def resolve_graph(payload, workspace, *, offline=False, admission=None, allow_wa
                             )
                             decisions.append(decision)
                             continue
+                        if admission is None and selected and selected.toolchain_plan:
+                            stale_planning = decision.get("toolchain_planning", {})
+                            decision, _ = resolve_requirement(key, node, rule, workspace, **resolution)
+                            planning = decision.get("toolchain_planning")
+                            if planning is not None and stale_planning.get("rejections"):
+                                planning.setdefault("rejections", []).extend(stale_planning["rejections"])
                         if lock_error or selected:
                             decision.update(status="blocked", code="BINDING_STALE")
                         decisions.append(decision)
@@ -399,4 +441,5 @@ def resolve_graph(payload, workspace, *, offline=False, admission=None, allow_wa
     }
     if decisions:
         report["portable_decisions"] = decisions
+        report["capability_observation"] = observation[1]
     return report

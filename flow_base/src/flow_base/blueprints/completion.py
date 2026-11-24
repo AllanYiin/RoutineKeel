@@ -17,7 +17,7 @@ from .completion_delivery import RUNNING, queue_trial, trial_key, worker_alive
 from .completion_store import CompletionStore
 from .source import require
 
-ACTIVE = {"needs_input", "needs_source", "ready_for_trial", "qualifying", *RUNNING}
+ACTIVE = {"needs_input", "needs_source", "ready_for_trial", "qualifying", "preparing", *RUNNING}
 
 
 def _gap(kind, code, location, reason, actions, **details):
@@ -55,17 +55,27 @@ def _capability_gap(item, decision, outcome):
         item["reason"],
         actions,
         capability=item["tool"],
+        requirement_id=decision.get("requirement_id"),
         candidates=decision.get("candidates", []),
+        candidate_rejections=decision.get("rejections", []),
+        observation=decision.get("observation"),
         qualification_scope=outcome.get("scope"),
         qualification_report=outcome.get("report"),
     )
 
 
-def _preflight(service, state):
+def _preflight(service, state, *, advance_search=False):
     key = state["draft_id"]
     if key is None:
         return state
-    report = service.resolve_blueprint_capabilities(key, offline=state["offline"])
+    from ..graph.toolchain_search import PlanningSearch
+
+    search = PlanningSearch(
+        service.workspace.runtime, state.get("toolchain_searches", {}), advance=advance_search,
+        selections=state.get("adapter_choices"),
+        suggestions=state.get("toolchain_suggestions"),
+    )
+    report = service.resolve_blueprint_capabilities(key, offline=state["offline"], planning_search=search)
     decisions = {item["node"]: item for item in report.get("portable_decisions", [])}
     graph = (
         service.install_workflow(draft_id=key)["source"]["graph"]
@@ -94,7 +104,21 @@ def _preflight(service, state):
     )
     rows = []
     if graph is not None:
+        from .host_preparation import offers
+
         _suggest_replacements(service, state, graph, gaps, decisions)
+        offers(service, state, graph, gaps)
+        for gap in gaps:
+            planning = report.get("toolchain_planning", {}).get(gap["location"])
+            if gap["kind"] == "capability" and planning is not None:
+                gap["toolchain_planning"] = planning
+                if planning["status"] not in {"needs_port_semantics", "not_substitutable"}:
+                    gap["actions"].append("propose_toolchain")
+                if planning["status"] == "search_limit_reached":
+                    gap["actions"].append("advance_toolchain_search")
+            preparations = state.get("preparations", {}).get(gap["location"], {})
+            if gap["kind"] == "capability" and preparations:
+                gap["preparation"] = preparations
         rows = case_rows(graph, state)
         if len(rows) > 20:
             gaps.append(
@@ -140,11 +164,17 @@ def _preflight(service, state):
                 "revise_blueprint",
                 "select_adapter",
             ]
+    if state.get("host_operations"):
+        from .host_preparation import append_waiting
+
+        append_waiting(state, gaps, _gap)
     state = {
         **state,
         "case_coverage": rows,
         "portable_decisions": list(decisions.values()),
+        "capability_observation": report.get("capability_observation"),
         "capability_fingerprint": report["fingerprint"],
+        "toolchain_searches": search.references,
     }
     if not gaps:
         try:
@@ -182,7 +212,7 @@ def _suggest_replacements(service, state, graph, gaps, decisions):
         return
     from routinekeel_contracts.graph_validator import validate_blueprint
 
-    from ..graph.portable import replacement_candidates
+    from ..graph.portable import replacement_decision
     from ..graph.qualification import _tasks
 
     model, _ = validate_blueprint(graph)
@@ -190,11 +220,13 @@ def _suggest_replacements(service, state, graph, gaps, decisions):
     for gap in targets:
         key = gap["location"]
         if key in tasks:
-            candidates = replacement_candidates(
+            decision = replacement_decision(
                 key, tasks[key], service.workspace.root, offline=state["offline"]
             )
-            gap["candidates"] = candidates
-            if candidates:
+            gap["candidates"] = decision["candidates"]
+            gap["candidate_rejections"] = decision["rejections"]
+            gap["observation"] = decision.get("observation")
+            if gap["candidates"]:
                 gap["requires_design_revision"] = True
                 gap["actions"] = ["revise_blueprint", *gap["actions"]]
 
@@ -254,6 +286,19 @@ def _trial_gap(state, trial):
     )
 
 
+def _prepare(service, state, checkpoint):
+    if state.get("draft_id") is None or state.get("blueprint_schema_version") != 2 or state["status"] in RUNNING:
+        return state
+    if not any(row["kind"] == "capability" and any(
+        item.get("recipe_id") for item in row.get("candidate_rejections", [])
+    ) for row in state["gaps"]):
+        return state
+    from .completion_preparation import prepare_missing_adapters
+
+    updated = prepare_missing_adapters(service, state, checkpoint)
+    return _preflight(service, updated) if updated is not state else state
+
+
 def _qualify(service, state, checkpoint):
     from ..graph.qualification import complete_bindings
 
@@ -262,6 +307,7 @@ def _qualify(service, state, checkpoint):
     decisions = state.get("adapter_choices", {})
     declined = state.get("declined_adapters", {})
     selections = {}
+    toolchain_plans = {}
     for decision in state["portable_decisions"]:
         node = decision["node"]
         choice = decisions.get(node, {})
@@ -284,6 +330,9 @@ def _qualify(service, state, checkpoint):
             selections[node] = choice["adapter"]
         elif len(automatic) == 1:
             selections[node] = automatic[0]
+        for candidate in decision["candidates"]:
+            if candidate["adapter"] == selections.get(node) and candidate.get("toolchain_plan"):
+                toolchain_plans[node] = candidate["toolchain_plan"]
     if not selections or not any(gap["kind"] == "capability" for gap in state["gaps"]):
         return state
     checkpoint(
@@ -297,6 +346,7 @@ def _qualify(service, state, checkpoint):
             state.get("qualification", {}),
             offline=state["offline"],
             case_supplies=state.get("adapter_case_supplies"),
+            toolchain_plans=toolchain_plans,
         )
     except FlowError as exc:
         if exc.code not in {
@@ -383,7 +433,7 @@ def _change(service, current, operation, payload):
     if (operation in {"advance", "recheck"} and status in ACTIVE | {"verified"}) or (
         operation == "resume" and status == "paused"
     ):
-        return _preflight(service, current)
+        return _preflight(service, current, advance_search=operation in {"advance", "resume"})
     transitions = {
         "pause": (ACTIVE, "paused"),
         "cancel": (ACTIVE | {"paused"}, "cancelled"),
@@ -398,11 +448,21 @@ def _change(service, current, operation, payload):
 
 
 def _submit(service, current, payload):
+    from .host_preparation import ACTIONS
+    from .host_preparation import submit as submit_host_setup
+
+    action = payload.get("action", "select_adapter")
+    if action in ACTIONS:
+        require(current["status"] not in RUNNING and (
+            current["status"] not in {"paused", "cancelled", "archived"} or action == "reconcile_host_preparation"
+        ), "目前工作狀態不可派送宿主配置。")
+        return submit_host_setup(service, current, payload)
     require(
         current["status"] in (ACTIVE - RUNNING) | {"needs_update"},
         "請先恢復或等待這項補強工作。",
     )
-    action = payload.get("action", "select_adapter")
+    if action == "propose_toolchain":
+        return _suggest_toolchain(service, current, payload)
     if action in {"compare_update", "activate_update"}:
         from .completion_update import submit_update
 
@@ -522,6 +582,7 @@ def _submit(service, current, payload):
         "environment_fingerprint": candidate["environment_fingerprint"],
         "scope_hash": gap["scope_hash"],
         "user_text": payload["user_text"],
+        **({"toolchain_plan": candidate["toolchain_plan"]} if candidate.get("toolchain_plan") else {}),
     }
     node = gap["location"]
     choices = dict(current.get("adapter_choices", {}))
@@ -538,6 +599,48 @@ def _submit(service, current, payload):
     return _preflight(
         service, {**live, "adapter_choices": choices, "declined_adapters": declined}
     )
+
+
+def _suggest_toolchain(service, current, payload):
+    from pydantic import ValidationError
+    from routinekeel_contracts.graph_validator import validate_blueprint
+    from routinekeel_contracts.pattern_composition import (
+        graph_requirements,
+        graph_task_paths,
+    )
+
+    from ..graph.capabilities import capability_observation
+    from ..graph.toolchain_plan import (
+        chain_candidate,
+        normalize_suggestion,
+        observed_tools,
+    )
+
+    live = _preflight(service, current)
+    gap = next((item for item in live["gaps"] if item["id"] == payload.get("gap_id")), None)
+    require(gap is not None and gap["scope_hash"] == payload.get("scope_hash")
+            and "propose_toolchain" in gap["actions"], "請指向目前可提出工具鏈的能力缺口。")
+    graph, _ = validate_blueprint(service.install_workflow(draft_id=live["draft_id"])["source"]["graph"])
+    node = gap["location"]
+    task, rule = graph_task_paths(graph)[node], graph_requirements(graph)[node]
+    inventory, observation = capability_observation(service.workspace.root)
+    require(gap["toolchain_planning"]["observation_id"] == observation["id"], "工具清冊已更新，請重讀缺口。")
+    operations = list(observed_tools(service.workspace.root, inventory))
+    try:
+        plan = normalize_suggestion(payload.get("proposal"), task, rule, operations, offline=live["offline"])
+    except ValidationError as exc:
+        raise FlowError("INVALID_CONFIGURATION", "工具鏈提案格式不符。") from exc
+    candidate, _binding = chain_candidate(
+        task, rule, plan, operations, graph.workflow.model_dump(mode="json"), service.workspace.root,
+        offline=live["offline"],
+    )
+    suggestions = dict(live.get("toolchain_suggestions", {}))
+    previous = suggestions.get(node, [])
+    plan = candidate["toolchain_plan"]
+    if all(row["plan_id"] != plan["plan_id"] for row in previous):
+        require(len(previous) < 5, "這個需求已有五項提案，請先評估現有候選。")
+        suggestions[node] = [*previous, plan]
+    return _preflight(service, {**live, "toolchain_suggestions": suggestions})
 
 
 def _supply_case(service, state, gap, payload):
@@ -621,7 +724,7 @@ def _adopt_revision(service, current, payload):
     )
 
 
-def completion(service, operation, work_id=None, payload=None):
+def completion(service, operation, work_id=None, payload=None, *, origin=None):
     require(operation in COMPLETION_OPERATIONS, "未支援的藍圖補強操作。")
     require(payload is None or isinstance(payload, dict), "補強參數須為物件。")
     payload = dict(payload or {})
@@ -657,7 +760,7 @@ def completion(service, operation, work_id=None, payload=None):
     if operation == "start":
         require(work_id is None, "建立補強工作時由底座分配識別碼。")
         work_id = "completion_" + digest(request_id)[:32]
-    request_hash = digest([operation, payload])
+    request_hash = digest([operation, payload] if origin is None else [operation, payload, origin])
     with runtime.lock("blueprint-completion:" + work_id, timeout=10):
         replay = store.replay(work_id, request_id, request_hash)
         if replay is not None:
@@ -672,6 +775,7 @@ def completion(service, operation, work_id=None, payload=None):
                 else {
                     **_start(service, payload, work_id),
                     "start_hash": request_hash,
+                    **({"origin": origin} if origin is not None else {}),
                 }
             )
         else:
@@ -695,7 +799,13 @@ def completion(service, operation, work_id=None, payload=None):
             }
             return store.save(value, identifier or f"internal:{revision}", request_hash)
 
-        if operation in {"start", "advance", "submit", "recheck", "resume"}:
+        dispatch = updated.pop("_host_dispatch", None)
+        if dispatch is not None:
+            return {**record(updated, request_id), "host_dispatch": dispatch}
+        if operation in {"start", "advance", "submit", "recheck", "resume"} and updated["status"] not in {
+            "paused", "cancelled", "archived", "installed",
+        }:
+            updated = _prepare(service, updated, record)
             updated = _qualify(service, updated, record)
             updated = queue_trial(service, updated, record)
         return record(updated, request_id)

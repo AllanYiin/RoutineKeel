@@ -52,10 +52,13 @@ def trial_progress(service, state):
     )
     progress = directory / "trial-progress.json"
     reject_links(progress)
-    return {
-        **(read_json(progress) if progress.is_file() else {}),
-        "worker_alive": worker_alive(state),
-    }
+    try:
+        snapshot = read_json(progress)
+    except FileNotFoundError:
+        snapshot = {}
+    except PermissionError:
+        snapshot = {"progress_available": False}
+    return {**snapshot, "worker_alive": worker_alive(state)}
 
 
 def queue_trial(service, state, record):

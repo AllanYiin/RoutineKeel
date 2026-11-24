@@ -59,6 +59,41 @@ def _task_paths(node, path):
             yield from _task_paths(child, path + "/" + child.id)
 
 
+def graph_task_paths(graph):
+    return dict(item for node in graph.nodes for item in _task_paths(node, node.id))
+
+
+def graph_requirements(graph):
+    rules = {
+        path: rule
+        for source in graph.provenance.get("pattern_compositions", [])
+        for path, rule in PatternComposition.model_validate(source).requirements.items()
+    }
+    from .graph_validator import require
+
+    for path, task in graph_task_paths(graph).items():
+        rule = task.capability_requirement
+        if rule is None:
+            continue
+        require(graph.graph_contract_version == "2.3", "節點能力需求須使用 Graph 2.3：" + path)
+        require(
+            rule.capability == task.capability
+            and rule.accepts_version(task.capability_version)
+            and rule.input_semantics.keys() <= task.inputs.keys()
+            and rule.output_semantics.keys() <= task.outputs.keys(),
+            "能力需求與節點的能力、版本或資料埠不符：" + path,
+        )
+        pattern_rule = rules.get(path)
+        require(
+            pattern_rule is None
+            or pattern_rule.model_dump(mode="json", exclude_defaults=True)
+            == rule.model_dump(mode="json", exclude_defaults=True),
+            "節點需求與已確認的 Pattern 能力需求衝突：" + path,
+        )
+        rules[path] = rule
+    return rules
+
+
 def validate_pattern_records(graph, order, dependencies):
     from pydantic import ValidationError
 
@@ -98,7 +133,7 @@ def validate_pattern_records(graph, order, dependencies):
             rule = record.requirements[key]
             require(
                 rule.capability == node.capability
-                and rule.version in {None, node.capability_version},
+                and rule.accepts_version(node.capability_version),
                 "Pattern 能力版本與工作節點不符",
             )
         for value in record.quality_outputs.values():

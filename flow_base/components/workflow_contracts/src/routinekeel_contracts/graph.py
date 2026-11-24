@@ -4,6 +4,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, JsonValue, model_validator
 
+from .capability_requirements import CapabilityRequirement
 from .models import Contract, Identifier
 
 
@@ -57,6 +58,9 @@ class Task(Node):
     permissions: list[str]
     side_effect: Literal["none", "local_write", "external", "unresolved"]
     parameters: dict[str, JsonValue] = Field(default_factory=dict)
+    capability_requirement: CapabilityRequirement | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class Review(Node):
@@ -117,7 +121,7 @@ class Workflow(Contract):
 
 class Blueprint(Graph):
     blueprint_schema_version: Literal[2]
-    graph_contract_version: Literal["2.0", "2.1", "2.2"] = "2.0"
+    graph_contract_version: Literal["2.0", "2.1", "2.2", "2.3"] = "2.0"
     workflow: Workflow
     quality_contract: dict[str, JsonValue]
     provenance: dict[str, JsonValue]

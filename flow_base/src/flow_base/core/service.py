@@ -26,6 +26,12 @@ from .types import (
 RUN_ID = re.compile(r'^run_[a-f0-9]{32}$')
 
 
+def _binding_drift_only(plan):
+    blockers = plan.get('blocked') or []
+    return blockers and all(item.get('code') == 'DEPENDENCY_UNAVAILABLE' and item.get('recoverable_bindings') is True
+                            for item in blockers)
+
+
 class WorkflowService:
     contract_version = '1.0'
 
@@ -83,7 +89,7 @@ class WorkflowService:
 
         return completion(self, operation, work_id, payload)
 
-    def resolve_blueprint_capabilities(self, draft_id, *, offline=False):
+    def resolve_blueprint_capabilities(self, draft_id, *, offline=False, planning_search=None):
         from ..blueprints.installer import draft_dir, read_archive
         from ..blueprints.source import inspect_blueprint, require
         from ..graph.capabilities import resolve_graph
@@ -95,7 +101,7 @@ class WorkflowService:
         if src.get("blueprint_schema_version") == 2:
             from ..graph.builder import preflight_graph
 
-            return preflight_graph(src["graph"], self.workspace.root, offline=offline)
+            return preflight_graph(src["graph"], self.workspace.root, offline=offline, planning_search=planning_search)
         return resolve_graph(src["graph"],self.workspace.root,offline=offline)
 
     def preview_binding_qualification(self, draft_id, selections):
@@ -174,6 +180,45 @@ class WorkflowService:
             from ..graph.session import GraphSession
             require(not snapshot.get("owner_session"),"請透過父工作處理迭代待辦")
             session=GraphSession(self.workspace.runtime,session_id)
+            if snapshot.get("rebind") or snapshot.get("lineage"):
+                from ..blueprints.completion_store import CompletionStore
+                from ..graph import continuation
+
+                payload = payload or {}
+                session, snapshot = continuation.follow(
+                    self.workspace.runtime, session, snapshot, stop_for_launch=operation == "next",
+                    stop_for_scope=payload.get("scope_hash") if operation == "activate_rebind" else None,
+                )
+                handoff = snapshot.get("handoff", {}).get("scope")
+                resume_launch = operation == "next" and continuation.launch_pending(self.workspace.runtime, snapshot)
+                explicit_replay = operation == "activate_rebind" and handoff and payload.get("scope_hash") == handoff["scope_hash"]
+                if resume_launch or explicit_replay:
+                    with package_lock(self.workspace):
+                        ensure_no_pending(self.workspace)
+                        return continuation.activate(self, session, {"scope_hash": handoff["scope_hash"]})
+                if operation == "preview_rebind":
+                    return continuation.preview(self, snapshot)
+                if operation == "activate_rebind":
+                    with package_lock(self.workspace):
+                        ensure_no_pending(self.workspace)
+                        return continuation.activate(self, session, payload)
+                repair = snapshot.get("rebind", {})
+                if operation == "next" and repair.get("status") == "needed" and repair.get("work_id") and not repair.get("pending_operations"):
+                    work = CompletionStore(self.workspace.runtime).read(repair["work_id"])
+                    if work["status"] == "verified":
+                        from ..graph.capabilities import resolve_graph
+
+                        original = resolve_graph(snapshot["plan"]["graph"], self.workspace.root,
+                                                 admission=snapshot["bindings"], offline=snapshot["offline"])
+                        if original["fingerprint"] != snapshot["plan"]["capability_fingerprint"]:
+                            with package_lock(self.workspace):
+                                ensure_no_pending(self.workspace)
+                                scope = continuation.preview(self, snapshot)
+                                if not scope["needs_approval"]:
+                                    return continuation.activate(self, session, {
+                                        "scope_hash": scope["scope_hash"], "revision": digest(snapshot),
+                                    })
+                                return {**session.interact("status", {}), "rebind_approval": scope}
             if operation in {"status","cancel"}:
                 return session.interact(operation,payload or {})
         with package_lock(self.workspace):
@@ -181,6 +226,7 @@ class WorkflowService:
             result = session.interact(operation, payload or {})
             if result['status'] == 'complete' and operation != 'status':
                 task = self.workspace.task(result['workflow_id'], read_only=True)
+                continuation_state = read_json(session.path) if snapshot.get("lineage") else None
                 if result.get("delivery_status")=="published":
                     with closing(self.workspace.runtime.connect()) as db:
                         prior=db.execute("""SELECT p.run_id,r.output FROM graph_published p JOIN runs r USING(run_id)
@@ -208,9 +254,14 @@ class WorkflowService:
                     require(report['blueprint']['revision'] == result['revision'], '成果版本已變更')
                     self.list_run_artifacts(report['run_id'])
                 else:
-                    ticket = session.folder / 'delivery.json'
-                    atomic_json(ticket, {'session_id': session.id})
-                    report = self._run_workflow_sync(StartRequest(task=task.manifest.id, source=ticket, output=output))
+                    if continuation_state is not None:
+                        from ..graph import continuation
+
+                        report = continuation.deliver(self, session, continuation_state, output, token)
+                    else:
+                        ticket = session.folder / 'delivery.json'
+                        atomic_json(ticket, {'session_id': session.id})
+                        report = self._run_workflow_sync(StartRequest(task=task.manifest.id, source=ticket, output=output))
                 require(report['blueprint']['status'] == 'complete', '正式成果未交付')
                 result.update(output=str(report["output"]), run_id=report['run_id'])
                 if report.get("delivery_status"): result["delivery_status"]=report["delivery_status"]
@@ -362,7 +413,7 @@ class WorkflowService:
 
         request = StartRequest.model_validate(request)
         planned = self.plan_workflow(PlanRequest(**request.model_dump(exclude={'idempotency_key', 'expected_spec_hash'})))
-        if planned.plan.get('blocked'):
+        if planned.plan.get('blocked') and not _binding_drift_only(planned.plan):
             raise FlowError('PREFLIGHT_BLOCKED', '請先處理計畫中的阻礙', blockers=planned.plan['blocked'])
         if planned.execution_spec_hash is None:
             raise FlowError('PREFLIGHT_BLOCKED', '缺少可驗證的輸入或執行規格')
@@ -395,7 +446,7 @@ class WorkflowService:
         request = SubmitRequest.model_validate(request)
         planned = self.plan_workflow(PlanRequest(**request.model_dump(
             exclude={'idempotency_key', 'expected_spec_hash'})))
-        if planned.plan.get('blocked') or not planned.plan.get('ready_to_prepare'):
+        if (planned.plan.get('blocked') or not planned.plan.get('ready_to_prepare')) and not _binding_drift_only(planned.plan):
             raise FlowError('PREFLIGHT_BLOCKED', '請先處理計畫中的阻礙',
                             blockers=planned.plan.get('blocked') or [])
         if not planned.execution_spec_hash:
@@ -418,19 +469,24 @@ class WorkflowService:
                             poll_after_ms=None if row['status'] in {'succeeded','failed','interrupted','cancelled'} else 1000)
 
     def get_workflow_status(self, execution_id):
+        from ..graph.continuation import execution_view
         from .queue import TERMINAL, QueueStore
 
         row = QueueStore(self.workspace.runtime).get(execution_id)
+        rebind = execution_view(self.workspace.runtime, row['run_id'])
+        run_id = rebind['run_id'] if rebind else row['run_id']
         status = row['status']
         run = None
-        if row['run_id']:
-            run = self.get_run_status(row['run_id'])
-            if run['execution_status'] in TERMINAL:
+        if run_id:
+            run = self.get_run_status(run_id)
+            if rebind or run['execution_status'] in TERMINAL:
                 status = run['execution_status']
+        if rebind and rebind['status'] and status not in {'failed', 'cancelled', 'interrupted'}:
+            status = rebind['status']
         progress = None
         current_step = None
-        if row['run_id']:
-            path = self.workspace.runtime.logs / row['flow_id'] / row['run_id'] / 'live_progress.json'
+        if run_id:
+            path = self.workspace.runtime.logs / row['flow_id'] / run_id / 'live_progress.json'
             try:
                 live = read_json(path)
                 current_step = live.get('step_id') if isinstance(live.get('step_id'), str) else None
@@ -441,26 +497,28 @@ class WorkflowService:
             except (OSError, ValueError, TypeError):
                 pass
         return {'contract_version': self.contract_version, 'execution_id': execution_id,
-                'status': status, 'run_id': row['run_id'], 'current_step': current_step,
+                'status': status, 'run_id': run_id, 'current_step': current_step,
                 'progress': progress, 'result_status': run['result_status'] if run else None,
                 'delivery_status':run['delivery_status'] if run else None,
                 'error_id': run['error_id'] if run else None,
                 'error_code': row['error_code'], 'submitted_at': row['submitted_at'],
                 'started_at': row['started_at'], 'finished_at': row['finished_at'],
-                'poll_after_ms': None if status in TERMINAL else 1000}
+                'poll_after_ms': None if status in TERMINAL else 1000,
+                **{key: rebind[key] for key in ('root_run_id', 'active_run_id', 'rebind_work_id', 'wait_reason') if rebind}}
 
     def get_workflow_result(self, execution_id):
         status = self.get_workflow_status(execution_id)
+        lineage = {key: status[key] for key in ('root_run_id', 'active_run_id', 'rebind_work_id', 'wait_reason') if key in status}
         if status['status'] != 'succeeded':
             return {'execution_id': execution_id, 'status': status['status'],
                     'run_id': status['run_id'], 'result_available': False,
                     'result_status': status['result_status'], 'error_id': status['error_id'],
-                    'error_code': status['error_code']}
+                    'error_code': status['error_code'], **lineage}
         result = {'execution_id': execution_id, 'status': 'succeeded',
                 'run_id': status['run_id'], 'result_available': True,
                 'result_status': status['result_status'],
                 'delivery_status':status['delivery_status'],
-                'artifacts': self.list_run_artifacts(status['run_id'])}
+                  'artifacts': self.list_run_artifacts(status['run_id']), **lineage}
         from .agent import from_run
         session_id = from_run(self.workspace.runtime,status['run_id'])
         if session_id:

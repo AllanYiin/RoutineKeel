@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 410" role="img" aria-labelledby="title desc">
+  <title id="title">通用工具鏈補全架構</title>
+  <desc id="desc">Studio 提交已確認需求給底座，底座使用受信清冊規劃、補全及試做。Runtime 失效時回送補強工作。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10Z" fill="#476784"/>
+    </marker>
+  </defs>
+  <rect width="1000" height="410" rx="20" fill="#f5f7fa"/>
+  <g font-family="Noto Sans CJK TC, Microsoft JhengHei, sans-serif" fill="#172c41">
+    <text x="38" y="48" font-size="26" font-weight="700">從能力需求到可重綁工作流</text>
+    <g stroke="#a4b8cb" fill="#ffffff">
+      <rect x="38" y="92" width="195" height="108" rx="12"/>
+      <rect x="280" y="92" width="200" height="108" rx="12"/>
+      <rect x="528" y="92" width="200" height="108" rx="12"/>
+      <rect x="776" y="92" width="186" height="108" rx="12"/>
+      <rect x="280" y="269" width="448" height="91" rx="12" fill="#e5edf6"/>
+    </g>
+    <g font-size="19" font-weight="700">
+      <text x="57" y="126">Studio</text>
+      <text x="298" y="126">底座規劃</text>
+      <text x="546" y="126">補全與隔離驗收</text>
+      <text x="793" y="126">Runtime</text>
+      <text x="301" y="302">受信清冊與不可變記錄</text>
+    </g>
+    <g font-size="15">
+      <text x="57" y="158">能力、交付與驗收意圖</text>
+      <text x="298" y="158">候選、資料邊與取捨</text>
+      <text x="546" y="158">準備環境、資格與啟用</text>
+      <text x="793" y="158">執行、重驗與續作</text>
+      <text x="301" y="333">工具實況、操作回執、環境鎖定、工作進度</text>
+    </g>
+    <g fill="none" stroke="#476784" stroke-width="2" marker-end="url(#arrow)">
+      <path d="M233 145H275"/>
+      <path d="M480 145H523"/>
+      <path d="M728 145H771"/>
+      <path d="M375 269V205"/>
+      <path d="M625 201V264"/>
+      <path d="M872 201V235H421V205"/>
+    </g>
+    <text x="698" y="258" font-size="14" fill="#314b64">失效證據觸發重綁</text>
+  </g>
+</svg>

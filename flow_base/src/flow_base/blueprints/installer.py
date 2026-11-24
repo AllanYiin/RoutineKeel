@@ -83,22 +83,10 @@ def import_source(ws, path):
             require(item.file_size <= MAX_ZIP, "藍圖來源過大")
             raw = wheel.read(item)
             suggested = json.loads(wheel.read(manifest.python_module + "/conversion.json"))
-    src, files = inspect_blueprint(raw)
-    if "graph" not in src:
-        try:
-            from ..graph.source import convert_linear
-
-            src["graph"], src["graph_order"] = convert_linear(src)
-        except ImportError:
-            src["findings"].append({"kind": "graph_conversion", "code": "VALIDATOR_UNAVAILABLE"})
-        except FlowError as exc:
-            src["findings"].append(
-                {"kind": "graph_conversion", "code": exc.code, "reason": str(exc)}
-            )
+    src = _draft_source(raw)
     folder = draft_dir(ws, src["source_hash"])
     with package_lock(ws):
-        atomic_bytes(folder / "source.zip", raw)
-        atomic_json(folder / "blueprint.json", src)
+        _write_draft(folder, raw, src)
         if suggested is not None:
             atomic_json(folder / ("proposal-" + digest(suggested) + ".json"), suggested)
     return {
@@ -116,6 +104,38 @@ def import_source(ws, path):
         "findings": src["findings"],
         "local_operations": {k: v.dist.version for k, v in local_operations().items()},
     }
+
+
+def _draft_source(raw):
+    src, _files = inspect_blueprint(raw)
+    if "graph" not in src:
+        try:
+            from ..graph.source import convert_linear
+
+            src["graph"], src["graph_order"] = convert_linear(src)
+        except ImportError:
+            src["findings"].append({"kind": "graph_conversion", "code": "VALIDATOR_UNAVAILABLE"})
+        except FlowError as exc:
+            src["findings"].append(
+                {"kind": "graph_conversion", "code": exc.code, "reason": str(exc)}
+            )
+    return src
+
+
+def _write_draft(folder, raw, source):
+    atomic_bytes(folder / "source.zip", raw)
+    atomic_json(folder / "blueprint.json", source)
+
+
+def recover_embedded_draft(ws, raw, source_hash):
+    """Recover only the exact content-addressed blueprint from a verified installed plan."""
+    src = _draft_source(raw)
+    require(src["source_hash"] == source_hash, "原 Run 的藍圖指紋已變更。")
+    folder = draft_dir(ws, source_hash)
+    with ws.runtime.lock("blueprint-draft:" + source_hash, timeout=10):
+        if not (folder / "source.zip").is_file() or not (folder / "blueprint.json").is_file():
+            _write_draft(folder, raw, src)
+    return source_hash
 
 
 def read_member(ws, key, name, offset):
@@ -259,7 +279,7 @@ def verify(ws, key, resolution, cases, *, build_id=None, coverage=None, offline=
             trial = Path(temp) / "workspace"
             trial.mkdir()
             trial_catalog = Path(temp) / "host" / "catalog.json"
-            if any(item["provider"] in {"desktop_host", "portable_local"}
+            if any(item["provider"] in {"desktop_host", "portable_local", "toolchain"}
                    for item in capability_evidence.values()):
                 # The trial can inspect already observed tool metadata; its receipts are disposable.
                 atomic_json(trial_catalog, read_json(Path(os.environ["ROUTINEKEEL_HOST_CATALOG"])))
@@ -283,6 +303,10 @@ def verify(ws, key, resolution, cases, *, build_id=None, coverage=None, offline=
                 resolution["bindings"],
             )
             if plan["format"] == 2:
+                from ..graph.preparation import copy_preparations
+                from ..workspace import Workspace
+
+                copy_preparations(ws.runtime, Workspace(trial).runtime, capability_evidence)
                 locks = {item["lock_hash"] for item in capability_evidence.values() if "lock_hash" in item}
                 if locks:
                     from routinekeel_contracts.graph_validator import validate_blueprint

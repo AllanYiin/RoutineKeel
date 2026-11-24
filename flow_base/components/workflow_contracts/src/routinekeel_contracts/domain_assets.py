@@ -7,25 +7,23 @@ from typing import Annotated, Literal
 from packaging.specifiers import SpecifierSet
 from pydantic import Field, JsonValue, field_validator, model_validator
 
+from .capability_requirements import (
+    AssetID,
+    AssetRef,
+    AssetVersion,
+    CapabilityConstraints,  # noqa: F401 - preserved Domain Pack import
+    CapabilityRequirement,
+    Fingerprint,
+    Locus,
+    unique,
+)
 from .graph import Graph, GraphPort, Task
 from .graph_validator import compatible, port_for, validate_structure
 from .models import Contract, Identifier, Platform
 from .paths import safe_relative
 
-_NAME = r"[a-z][a-z0-9_-]{0,63}(?:\.[a-z][a-z0-9_-]{0,63}){1,7}"
-_VERSION = r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
-AssetID = Annotated[str, Field(pattern=f"^{_NAME}$")]
-AssetVersion = Annotated[str, Field(pattern=f"^{_VERSION}$", max_length=40)]
-AssetRef = Annotated[str, Field(pattern=f"^{_NAME}@{_VERSION}$", max_length=560)]
-Fingerprint = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 Label = Annotated[str, Field(min_length=1, max_length=4000)]
-Locus = Literal["local_runtime", "host_mediated", "external_service"]
 SideEffect = Literal["none", "local_write", "external", "unresolved"]
-
-
-def unique(values):
-    if len(set(values)) != len(values):
-        raise ValueError("資產宣告含重複識別碼")
 
 
 def canonical_json(value):
@@ -198,38 +196,6 @@ class PatternBoundary(Contract):
     control_outputs: dict[Identifier, ControlPort] = Field(default_factory=dict)
 
 
-class CapabilityConstraints(Contract):
-    contract_hash: Fingerprint | None = None
-    max_cost_micro_usd: int = Field(default=0, ge=0)
-    max_latency_ms: int | None = Field(default=None, ge=1)
-    max_data_age_seconds: int | None = Field(default=None, ge=0)
-    numeric_representation: Literal["decimal", "integer", "binary_float"] | None = None
-    offline_only: bool = False
-    error_codes: list[Identifier] = Field(default_factory=list)
-
-
-class CapabilityRequirement(Contract):
-    id: Identifier
-    capability: AssetID
-    version: AssetVersion | None = None
-    required: bool
-    portability: Literal["flexible", "pinned", "unresolved"]
-    requires_qualification: Literal[True] = True
-    execution_loci: list[Locus] = Field(default_factory=list)
-    pinned_adapter: AssetRef | None = None
-    fallback_contract: AssetID | None = None
-    constraints: CapabilityConstraints = Field(default_factory=CapabilityConstraints)
-
-    @model_validator(mode="after")
-    def binding_policy(self):
-        unique(self.execution_loci)
-        if (self.portability == "pinned") != (self.pinned_adapter is not None):
-            raise ValueError("固定依賴須有具版本的 Adapter")
-        if self.required and self.fallback_contract is not None:
-            raise ValueError("必要能力不得宣告省略交付")
-        return self
-
-
 class DesignTrigger(Contract):
     activation: Literal["suggest"]
     task_categories: list[Identifier]
@@ -334,11 +300,13 @@ class PatternManifest(Contract):
                 if not set(edge.nodes) <= nodes.keys():
                     raise ValueError("Pattern 控制邊界缺少有效的節點")
         for node in graph_tasks(self.graph):
+            if node.capability_requirement is not None:
+                raise ValueError("Pattern 的能力需求須保存於 requirements")
             matches = [
                 rule
                 for rule in self.requirements
                 if rule.capability == node.capability
-                and rule.version in {None, node.capability_version}
+                and rule.accepts_version(node.capability_version)
             ]
             if len(matches) != 1:
                 raise ValueError("Graph 工作節點須對應唯一的能力需求")

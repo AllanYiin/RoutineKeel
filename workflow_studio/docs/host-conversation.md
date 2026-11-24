@@ -13,7 +13,7 @@
 使用宿主可用的提問介面，也接受直接文字修正、中途插話、取消與恢復。未回答不能視為同意。
 草案包含本次製作重點與方向提醒，並區分每次輸入、設定一次，以及由 Agent 當下判斷的項目與理由。
 技能須整份保存並標示對應步驟。設計時確認能力需求、資料契約和必要限制。執行位置尚未選定時，定稿的 `tool_locations` 對應步驟可填 `deferred`。實際工具綁定由底座在目標工作區建置時解析，正式安裝前重驗。
-一般 Graph 節點由底座按藍圖的能力識別與版本查找實作。由 Pattern 提供可攜能力需求時，底座可依需求選擇經資格驗證的 Adapter。
+一般 Graph 2.3 節點與 Pattern 可共用 `capability_requirement`。在定稿填妥能力、相容版本、具名輸入輸出的語意、允許執行位置、權限、成本及去向限制。目標工作區的底座依上述契約尋找單一工具或可驗證的組合。定稿保留獨立案例和預期成果，宿主可提出替代或 Adapter，資格、隔離試做與安裝依底座收據判定。
 
 藍圖是設計資料，不代表可執行成品或已核准安裝。宿主整理藍圖、合約、依賴、技能及缺口後，
 由底座的 `blueprint_completion` 接續補強、試做與安裝；付費、外傳、發布與真人審核沿用各自的授權要求。
@@ -56,6 +56,10 @@ uv run --project workflow_studio python -m workflow_studio --workspace <RoutineK
 
 保存底座回傳的 `work_id`。底座可獨立檢查工具、補齊可推導的驗收案例及試做候選。遇到需使用者介入的缺口，顯示目前成果、具體缺件及其影響，並把實際回覆、當前修訂及缺口範圍指紋一併送回。其他可做的項目可繼續，使用者回來時用同一 ID 續查。
 
+呈現候選時，顯示工具、資料轉換、權限、外部目的地、預估上限、淘汰理由和已完成的驗證。依賴安裝、外部服務配置與 Adapter 建置由底座按受信配方執行。新增授權、成本或外傳時，先取得操作者對具體範圍的回覆。候選可沿用已確認的案例，使用者要更改預期成果時須先確認新藍圖修訂。
+
+收到 Runtime 的 `REBIND_REQUIRED` 時，保留原 `execution_id`、`session_id` 與 `rebind_work_id`。底座以原藍圖續查候選。原綁定恢復時用 `next` 續跑原 Run。等效候選通過且範圍可沿用時，底座在同一工作建立連回原 Run 的續做 Run。若 `preview_rebind` 標示 `needs_approval`，展示該範圍，將使用者實際同意和指紋轉交 `activate_rebind`。已領取外部操作的結果未知時，先查原操作回執。
+
 工具替代變更了原交付或業務規則時，在 Studio 依原藍圖建立並確認衍生版本。匯出後由原補強工作接收新版本，再驗證受影響的項目。耗時試做時從 `status` 回報實際案例進度，最後依底座收據區分已驗證候選、待升級比較和已安裝。完整工作區的操作與回復例子見 `flow_base/blueprint-install.md`，原始碼儲存庫位於 `flow_base/docs/blueprint-install.md`。
 
 設計階段用完整預填減少使用者輸入，初稿與定稿各保留一次實際確認。使用者只回答部分內容時，保存已答覆項目，繼續呈現尚待校閱的項目。執行中只有藍圖指定的人工作業、關鍵校閱或需授權的動作才等待使用者，其餘步驟在自動契約檢查後繼續。
@@ -94,5 +98,7 @@ Studio 匯入特殊文件時保存 Documa 預覽及索引指紋。使用 `studio
 宿主先在自己管理的 Documa 技能目錄配置受信來源與索引，再把 `ROUTINEKEEL_DOCUMA_SKILL_STORE` 指向其 store。Studio 用 `studio_load_skills` 或 `interview load_skills`，執行圖用 `base.skill.load`。三者使用同一個 Documa loader。遇到 `needs_narrowing` 時依 Documa 的候選與原因處理。藍圖內附的 `skills/` 保存確認過的來源版本與檔案。重新建置帶技能的 v1 藍圖時，底座以暫存的 Documa catalog 依其技能依賴載入。技能文字本身無法授權外部動作。
 
 Studio CLI 支援 `interview next_batch|reply_batch` 及既有單題操作，參數透過 `--payload` 傳入。底座 CLI 使用相同操作名。另有 `interview stream` 可逐行接收含 text 的 JSON 文字增量，立即輸出 delta，正常收束時才輸出 completed。此入口不會保存回答。
+
+本機 MCP stdio 連線首次執行可重用的 Studio 操作時，啟動其隔離環境的 Python。後續操作可共用該子程序，連線結束時回收。每次操作仍從 Studio 資料庫載入目前狀態。若請求逾時或連線中斷，先重新查詢已保存的版本，再決定是否以同一請求識別碼重送。獨立 CLI、舊版 Studio，以及需單獨傳遞 Runtime 證據的 Pattern 改善操作，沿用逐次啟動。
 
 完整發行包以 Studio 啟動器的 `--prepare-only` 建立隔離環境。若缺少 `workflow_studio/runtime/`，先核對完整發行包再開始訪談。開發工作樹可執行 `uv sync --locked --project workflow_studio --group dev`。另裝的 Studio 可用本機設定 `ROUTINEKEEL_STUDIO_PYTHON` 指向已信任的絕對 Python 路徑。工作區路徑僅用於資料。
