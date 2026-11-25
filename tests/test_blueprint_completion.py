@@ -1,6 +1,7 @@
 import json
 import time
 import zipfile
+from hashlib import sha256
 
 import pytest
 from flow_base.core.service import WorkflowService
@@ -155,6 +156,148 @@ def test_completion_cli_retains_verified_source_for_later_use(tmp_path):
         ]
         == []
     )
+
+
+def test_completion_ranks_locally_detected_binding_and_records_selection(tmp_path, monkeypatch):
+    from flow_base.blueprints import binding_options
+
+    monkeypatch.delenv("ROUTINEKEEL_HOST_CATALOG", raising=False)
+    monkeypatch.setattr(binding_options.shutil, "which", lambda name: str(tmp_path / name) if name == "ready" else None)
+    service = WorkflowService(tmp_path)
+    path = gap_archive(tmp_path / "design.zip")
+    beginning = service.blueprint_completion(
+        "start", payload={"archive": path.name, "request_id": "make-plan"}
+    )
+    (unknown,) = beginning["binding_plan"]["research_required"]
+    rows = [
+        {"title": title, "approach": "local_tool", "plan": "檢查具名輸入及輸出。",
+         "executables": [name], "sources": ["https://example.org/manual"]}
+        for name, title in [("missing", "補安裝"), ("ready", "本機已有")]
+    ]
+    offered = service.blueprint_completion("submit", beginning["work_id"], {
+        "action": "propose_bindings", "request_id": "research",
+        "expected_revision": beginning["revision"],
+        "proposals": [{
+            "gap_id": unknown["gap_id"], "scope_hash": unknown["scope_hash"], "options": rows,
+        }],
+    })
+    (plan,) = offered["binding_plan"]["tool_selection"]
+    assert [row["status"] for row in plan["options"]] == ["local_detected", "needs_local_probe"]
+    selection = {
+        "gap_id": plan["gap_id"], "scope_hash": plan["scope_hash"],
+        "option_id": plan["recommended_option_id"],
+    }
+    reply = {
+        "action": "select_bindings", "request_id": "choose-local", "expected_revision": offered["revision"],
+        "user_text": "採用本機方案", "selections": [selection],
+    }
+    with pytest.raises(FlowError, match="候選已改變"):
+        service.blueprint_completion("submit", beginning["work_id"], {
+            **reply, "selections": [selection, {**selection, "scope_hash": "old"}],
+        })
+    assert service.blueprint_completion("status", beginning["work_id"]) == offered
+    chosen = service.blueprint_completion("submit", beginning["work_id"], reply)
+    (task,) = chosen["binding_plan"]["automatic_work"]
+    assert task["selection"]["next_action"] == "prepare_local_adapter"
+    assert chosen["work_id"] == beginning["work_id"]
+    assert not chosen.get("adapter_choices")
+    assert WorkflowService(tmp_path).blueprint_completion("status", beginning["work_id"]) == chosen
+
+
+def test_completion_can_prepare_case_and_confirm_same_proposal(tmp_path):
+    path = gap_archive(tmp_path / "design.zip")
+    service = WorkflowService(tmp_path)
+    beginning = service.blueprint_completion(
+        "start", payload={"archive": path.name, "request_id": "make-cases"}
+    )
+    (missing,) = [row for row in beginning["gaps"] if row["kind"] == "case"]
+    assert "將第二份文字轉為大寫" in beginning["case_review"]["display_text"]
+    graph = service.install_workflow(draft_id=beginning["draft_id"])["source"]["graph"]
+    case = {
+        "inputs": {name: "test" for name in graph["inputs"]},
+        "expected": {name: "TEST" for name in graph["outputs"]},
+    }
+    proposed = service.blueprint_completion("submit", beginning["work_id"], {
+        "action": "propose_cases", "request_id": "draft-case",
+        "expected_revision": beginning["revision"],
+        "proposals": [{"gap_id": missing["id"], "scope_hash": missing["scope_hash"], "case": case}],
+    })
+    (item,) = [row for row in proposed["gaps"] if row["kind"] == "case"]
+    assert item["draft"] == case and proposed["case_coverage"][0]["case"] is None
+    assert "待校閱案例提案" in proposed["case_review"]["display_text"]
+    confirmed = service.blueprint_completion("submit", beginning["work_id"], {
+        "action": "confirm_cases", "request_id": "confirm-case",
+        "expected_revision": proposed["revision"], "user_text": "採用展示的案例",
+        "cases": [{"gap_id": item["id"], "scope_hash": item["scope_hash"]}],
+    })
+    assert confirmed["case_coverage"][0]["evidence"] == "user_confirmation"
+    assert confirmed["case_coverage"][0]["case"] == case
+    assert all(row["kind"] != "case" for row in confirmed["gaps"])
+
+
+def test_manual_skill_supplement_keeps_reviewed_entry_and_exposes_script(tmp_path):
+    graph = data_graph()
+    entry = b"[Review](scripts/review.py)"
+    graph["provenance"] = {"skill_files": {"skills/review/SKILL.md": sha256(entry).hexdigest()}}
+    service = WorkflowService(tmp_path)
+    path = tmp_path / "manual-supplement.zip"
+    script = b"print('test')\n"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("design/blueprint.json", json.dumps(graph))
+        archive.writestr("design/skills/review/SKILL.md", entry)
+        archive.writestr("design/skills/review/scripts/review.py", script)
+        archive.writestr("design/skills/review/assets/font.ttf", b"fixture")
+    imported = service.install_workflow(archive=path)
+    (skill,) = [item for item in imported["findings"] if item["kind"] == "skill"]
+    assert skill["code"] == "SKILL_SOURCE_SUPPLEMENTED"
+    assert skill["members"]["scripts/review.py"] == sha256(script).hexdigest()
+    read = service.install_workflow(draft_id=imported["draft_id"], member="skills/review/scripts/review.py")
+    assert read["text"] == script.decode()
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("design/blueprint.json", json.dumps(graph))
+        archive.writestr("design/skills/review/SKILL.md", b"changed reviewed content")
+        archive.writestr("design/skills/review/scripts/review.py", script)
+    with pytest.raises(FlowError, match="指紋"):
+        service.install_workflow(archive=path)
+
+
+def test_install_after_text_case_review_records_pending_cases_on_actual_run(tmp_path):
+    from test_graph_builder import import_graph
+
+    graph = data_graph()
+    graph["quality_contract"]["golden_cases"] = [
+        {"name": "保留原文", "expected": "第一份輸出維持原文。"},
+        {"name": "轉為大寫", "expected": "第二份輸出的大寫轉換正確。"},
+    ]
+    service, key, _ = import_graph(tmp_path, graph)
+    started = service.blueprint_completion(
+        "start", payload={"draft_id": key, "request_id": "text-case-review", "intent": "install"}
+    )
+    review = started["case_review"]
+    assert [case["name"] for case in review["cases"]] == ["保留原文", "轉為大寫"]
+    assert review["default_strategy"] == "observe_runtime" and review["selected_strategy"] is None
+    assert "先安裝，於實際執行時驗收（預設）" in review["display_text"]
+    assert started["status"] == "needs_input" and not service.workspace.discover(read_only=True)
+    approved = {
+        "action": "choose_case_strategy", "mode": "observe_runtime",
+        "request_id": "choose-observation", "expected_revision": started["revision"],
+        "scope_hash": review["scope_hash"], "user_text": "我看過這兩個案例，選擇先安裝後觀察",
+    }
+    with pytest.raises(FlowError, match="目前的文字案例"):
+        service.blueprint_completion("submit", started["work_id"], {**approved, "scope_hash": "old"})
+    queued = service.blueprint_completion("submit", started["work_id"], approved)
+    final = wait_completion(service, queued, ("installed", "needs_input"))
+    assert final["status"] == "installed", final
+    assert final["candidate"]["builder_receipt"]["case_count"] == 0
+    assert final["candidate"]["evidence"]["runtime_load"] == "PASS"
+    assert final["installation"]["case_acceptance"]["status"] == "pending_real_runs"
+    source = tmp_path / "actual-input.json"
+    source.write_text(json.dumps({"inputs": {"text": "Actual run"}}), encoding="utf-8")
+    run = service.run_workflow_sync({"task": "graph_copy", "source": source})
+    assert run["blueprint"]["outputs"] == {"original": "Actual run", "upper": "ACTUAL RUN"}
+    acceptance = run["blueprint"]["case_acceptance"]
+    assert acceptance["status"] == "pending_real_runs" and acceptance["run_id"] == run["run_id"]
+    assert len(acceptance["cases"]) == 2
 
 
 def test_completion_qualifies_a_pure_adapter_while_cases_wait(tmp_path, monkeypatch):

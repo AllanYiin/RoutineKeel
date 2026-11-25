@@ -39,7 +39,7 @@ def collect_path(path: Path, limits: ImportLimits) -> dict[str, bytes]:
                     candidate.relative_to(root).as_posix(),
                     read_file(candidate, root, limits.max_file_bytes),
                 )
-    elif path.suffix.lower() == ".zip":
+    elif path.suffix.lower() in {".zip", ".skill"}:
         data = read_file(path, path.parent, limits.max_total_bytes)
         try:
             with zipfile.ZipFile(io.BytesIO(data)) as archive:

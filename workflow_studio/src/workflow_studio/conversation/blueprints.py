@@ -15,7 +15,13 @@ from filelock import FileLock
 from routinekeel_contracts.graph_trials import trial_case_gaps
 from routinekeel_contracts.graph_validator import validate_blueprint
 from routinekeel_contracts.paths import safe_relative
-from routinekeel_contracts.skill_files import check_skill_files
+from routinekeel_contracts.skill_files import (
+    SKILL_BUNDLE,
+    check_skill_bundle,
+    check_skill_files,
+    is_skill_text,
+    missing_skill_files,
+)
 
 from ..contracts import StudioError
 from ..ingestion.security import reject_links
@@ -32,7 +38,7 @@ def visible_design(decisions):
     return {key: value for key, value in decisions.items() if key not in graph_fields}
 
 
-def check_portable(value):
+def check_portable(value, *, source_snapshot=False):
     if isinstance(value, dict):
         for key, child in value.items():
             if (
@@ -48,19 +54,22 @@ def check_portable(value):
                 and child
             ) and (not isinstance(child, str) or not child.startswith("secret://")):
                 fail("設計含有私人認證欄位，請改為具名需求。")
-            check_portable(child)
+            check_portable(child, source_snapshot=source_snapshot)
     elif isinstance(value, list):
         for child in value:
-            check_portable(child)
+            check_portable(child, source_snapshot=source_snapshot)
     elif isinstance(value, str) and re.search(
-        r"-----BEGIN [A-Z ]*PRIVATE KEY-----|\bBearer [A-Za-z0-9._~+/=-]{12,}|\bsk-[A-Za-z0-9_-]{20,}|(?:(?<![A-Za-z0-9_-])[A-Za-z]:[\\/]|/(?:Users|home)/)[^\s]+",
+        r"-----BEGIN [A-Z ]*PRIVATE KEY-----|\bBearer [A-Za-z0-9._~+/=-]{12,}|"
+        r"\b(?:sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|AIza[A-Za-z0-9_-]{20,})|"
+        r"""https?://[^/\s@:"'\\]+:[^/\s@"'\\]+@|[?&](?:token|key|signature)=[^\s&]{12,}"""
+        + ("" if source_snapshot else r"|(?:(?<![A-Za-z0-9_-])[A-Za-z]:[\\/]|/(?:Users|home)/)[^\s]+"),
         value,
         re.IGNORECASE,
     ):
         fail("設計含有認證資料或本機絕對路徑，請先修訂。")
 
 
-def skill_contents(studio, pid, selections, *, current=False):
+def skill_contents(studio, pid, selections, *, current=False, require_complete=False):
     attachments, versions = {}, {}
     for selection in selections:
         if set(selection) != {"name", "source_id", "version"}:
@@ -79,12 +88,28 @@ def skill_contents(studio, pid, selections, *, current=False):
             "version": source.version,
             "sha256": source.content_hash,
         }
+        contents = {}
         for item in source.manifest["files"]:
-            rel = "skills/" + name + "/" + safe_relative(item["path"])
-            attachments[rel] = studio.sources.content(
+            relative = safe_relative(item["path"])
+            contents[relative] = studio.sources.content(
                 pid, source.source_id, item["path"], version=source.version
             )
-            check_portable(attachments[rel].decode("utf-8-sig"))
+        bundled = SKILL_BUNDLE in contents
+        inventory = check_skill_bundle(contents[SKILL_BUNDLE]) if bundled else contents
+        for path, data in inventory.items():
+            if is_skill_text(path):
+                check_portable(data.decode("utf-8-sig"), source_snapshot=bundled)
+        missing = missing_skill_files(inventory) if require_complete or bundled else []
+        if require_complete and missing and not bundled:
+            fail("技能 " + name + " 缺少引用檔案：" + "、".join(missing[:12])
+                 + "。請讓宿主匯入完整技能資料夾或壓縮檔。")
+        if bundled:
+            versions[name]["members"] = {
+                path: hashlib.sha256(data).hexdigest() for path, data in sorted(inventory.items())
+            }
+            if missing:
+                versions[name]["missing_references"] = missing
+        attachments.update({"skills/" + name + "/" + path: data for path, data in contents.items()})
     return attachments, versions
 
 
@@ -148,7 +173,9 @@ def prepare(
     def edit(db, state):
         if state["phase"] == "paused":
             fail("請先恢復訪談。")
-        files, versions = skill_contents(studio, project_id, skills, current=True)
+        files, versions = skill_contents(
+            studio, project_id, skills, current=True, require_complete=True
+        )
         controls = [n for n in canonical["nodes"] if n["kind"] not in {"task", "human_review"}]
         summary = {
             "goal": model.workflow.goal,

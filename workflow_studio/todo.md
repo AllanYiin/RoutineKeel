@@ -14,6 +14,7 @@
 
 ## 現行宿主互動工作
 
+- [x] MCP stdio 連線內重用 Studio 子程序，驗證斷線回收、逾時復原與舊版 CLI 相容。見 [Windows 實測](docs/test-report.md#studio-程序重用2026-11-25)。
 - 已移除舊網頁流程、MCP 引導入口與專屬測試，保留通用服務、既有 Tk 及資料庫相容性。
 - 新方向以 [宿主對話逐層確認規格](specs/redesign-host-reasoning.md) 為準。
 - [ ] 設計並實作逐層狀態、問題／答案契約及確認紀錄。

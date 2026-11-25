@@ -1,0 +1,52 @@
+{
+  "course.audio.silero": {
+    "id": "course.audio.silero",
+    "version": "1.0.0",
+    "capability": "course.audio.vad",
+    "capability_version": "1.0.0",
+    "provider_version": "1.0.0",
+    "model_version": "faster-whisper-1.2.0/silero-vad",
+    "locus": "local_runtime",
+    "tool": "course.audio.silero",
+    "distribution": "routinekeel-course-subtitle-adapter",
+    "inputs": {
+      "audio": {"type": "file", "format": "wav", "required": true, "schema_id": "course.audio.enhanced"},
+      "media": {"type": "object", "required": true, "schema_id": "course.media.metadata"}
+    },
+    "outputs": {
+      "clip_map": {"type": "array", "required": true, "schema_id": "course.audio.clip_map", "items": {"type": "object", "required": true}},
+      "speech_clips": {"type": "file", "format": "zip", "required": true, "schema_id": "course.audio.speech_clips"},
+      "vad_report": {"type": "object", "required": true, "schema_id": "course.audio.vad_report"}
+    },
+    "permissions": [],
+    "side_effect": "local_write",
+    "network": false,
+    "platforms": ["win32", "linux", "darwin"],
+    "max_cost_micro_usd": 0
+  },
+  "course.speech.whisper": {
+    "id": "course.speech.whisper",
+    "version": "1.0.0",
+    "capability": "course.speech.transcribe",
+    "capability_version": "1.0.0",
+    "provider_version": "1.0.0",
+    "model_version": "openai-whisper-20231117/base",
+    "locus": "local_runtime",
+    "tool": "course.speech.whisper",
+    "distribution": "routinekeel-course-subtitle-adapter",
+    "inputs": {
+      "clip_map": {"type": "array", "required": true, "schema_id": "course.audio.clip_map", "items": {"type": "object", "required": true}},
+      "glossary": {"type": "object", "required": true, "schema_id": "course.context.glossary"},
+      "speech_clips": {"type": "file", "format": "zip", "required": true, "schema_id": "course.audio.speech_clips"}
+    },
+    "outputs": {
+      "editing_input": {"type": "array", "required": true, "schema_id": "course.subtitle.editing_input", "items": {"type": "object", "required": true}},
+      "segments": {"type": "array", "required": true, "schema_id": "course.speech.segments", "items": {"type": "object", "required": true}}
+    },
+    "permissions": [],
+    "side_effect": "none",
+    "network": false,
+    "platforms": ["win32", "linux", "darwin"],
+    "max_cost_micro_usd": 0
+  }
+}

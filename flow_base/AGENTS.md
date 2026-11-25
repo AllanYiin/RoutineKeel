@@ -8,7 +8,12 @@
 
 ## 共用工具情境
 
-- 要求將藍圖轉成可試做或可安裝的工作流時，使用 `blueprint-completion` 或 MCP `blueprint_completion`。依實際缺口與修訂接續補強，正式安裝須持有同一候選的必要驗證與試做收據。
+- 要求將藍圖轉成可試做或可安裝的工作流時，使用 `blueprint-completion` 或 MCP `blueprint_completion`（安裝用 `intent=install`）。初檢是補強入口。保存原 `work_id`，持續準備相符的工具及候選驗證。安裝核對同一套件的必要驗證與驗收策略收據。
+- 先處理 `binding_plan.automatic_work`，盤點本機環境及已配置模型，讀該步驟引用的技能及腳本。宿主負責接線、編寫具名輸出映射和案例。需要外部資料或元件時先核對原廠來源。清冊斷線或尚未有 Adapter 時，仍先產生可比較的本機／技能／研究方案，走 `propose_bindings` 保存研究。
+- 用 `binding_plan.tool_selection` 一次展示所有真正待選的工具及建議預設，說明可用性、資料去向與實際取捨。支援勾選或同一則文字答覆，以 `select_bindings` 交回。底座與宿主依已選方案重用或編寫 Adapter、準備具名資料映射與案例、執行資格驗證，並沿原 `work_id` 續作。Adapter、清冊、接線及測試素材由底座與宿主處理。
+- 宿主有已配置的工具來源時，由程式取得實際工具清單與既有授權。本機元件、宿主連線與 Adapter 資格分別查核。已通過的實測用於接線及案例，資格由底座呼叫實作取得。清冊缺漏或未綁定時，先完成能獨立驗證的本機步驟。
+- 必要元件缺少時，先檢查已配置的位置及本機等效方案，再上網查一手取得或安裝方式。展示版本、來源、範圍及回復方式，取得同意後由宿主準備、驗證並沿原工作續作。其他可做項目繼續進行。只有相容方案、必要授權或實測條件確實無法取得時才停在該缺口。
+- 以 `case_review` 先在對話逐項展示文字案例、預期和目前狀態。預選 `observe_runtime`，先安裝新流程並於實際 Run 觀察。接受使用者改選合成試做。以 `choose_case_strategy` 保存實際回覆與案例範圍。合成方案由宿主準備素材和獨立預期；先安裝方案仍須通過工具資格、套件驗證及隔離載入，並在收據和實際 Run 標示待驗收。
 - Graph 2.3 的工具鏈規劃、隔離準備與資格驗證走底座通用契約。驗收使用已確認的案例；清冊及其實際授權由宿主管理。
 - Runtime 回 `REBIND_REQUIRED` 時保存原工作 ID、Run 及 `rebind_work_id`。以原 `session_id` 查詢、預覽和續做。續做允許沿用已驗證的成果。已領取且結果不明的外部操作先查回執。操作入口見 `docs/blueprint-install.md`。
 
@@ -18,7 +23,7 @@
 
 ## 技術補充
 
-- Python CLI 為共用入口；不新增瀏覽器或任務專屬 UI。
+- Python CLI 和 MCP stdio 共用 WorkflowService。宿主呈現選項，可用勾選或純文字回覆。兩種入口的工作狀態、版次及操作契約一致。
 - scripts/project_launcher.py 生成 run_app.bat、run_app.command、run_app.sh。
 - 安裝機制集中於 tools/start.ps1.in、tools/start.sh.in（相對儲存庫根目錄）。
 - 禁止將多個 Get-Command 結果當成一個執行檔；先實際驗證選定 uv。

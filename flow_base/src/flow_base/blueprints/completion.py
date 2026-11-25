@@ -9,6 +9,7 @@ from . import COMPLETION_OPERATIONS
 from .completion_cases import (
     attach_fixture,
     case_draft,
+    case_review,
     case_rows,
     check_case,
     fixture_references,
@@ -32,14 +33,24 @@ def _gap(kind, code, location, reason, actions, **details):
     }
 
 
-def _capability_gap(item, decision, outcome):
+def _capability_gap(item, decision, outcome, choice, refused):
     actions = ["refresh_environment", "review_compatible_adapter"]
     if decision.get("status") == "needs_qualification":
         actions = ["qualify_adapter", *actions]
     if item["code"] == "OPTIONAL_DECISION_REQUIRED":
         actions.append("review_alternative_delivery")
     report = outcome.get("report") or {}
-    if report.get("verdict") == "PASS":
+    reported_adapter = report.get("adapter")
+    if report:
+        accepted = any(
+            candidate["allowed"] and candidate["adapter"] == reported_adapter
+            and candidate["environment_fingerprint"] == report.get("environment_fingerprint")
+            for candidate in decision.get("candidates", [])
+        )
+        if not accepted or reported_adapter in refused or choice.get("adapter", reported_adapter) != reported_adapter:
+            report = {}
+    qualified = report.get("verdict") == "PASS"
+    if qualified:
         actions = ["wait_for_other_bindings"]
     elif report.get("conformance", {}).get("code") == "TRIAL_CASES_REQUIRED":
         actions = ["complete_adapter_cases", *actions]
@@ -50,17 +61,17 @@ def _capability_gap(item, decision, outcome):
         actions = ["provide_host_qualification", *actions]
     return _gap(
         "capability",
-        item["code"],
+        "WAITING_FOR_OTHER_BINDINGS" if qualified else item["code"],
         item["node"],
-        item["reason"],
+        "本步驟已通過資格驗證。等其餘必要步驟完成後即可鎖定整份工作流。" if qualified else item["reason"],
         actions,
         capability=item["tool"],
         requirement_id=decision.get("requirement_id"),
         candidates=decision.get("candidates", []),
         candidate_rejections=decision.get("rejections", []),
         observation=decision.get("observation"),
-        qualification_scope=outcome.get("scope"),
-        qualification_report=outcome.get("report"),
+        qualification_scope=outcome.get("scope") if report else None,
+        qualification_report=report or None,
     )
 
 
@@ -83,10 +94,11 @@ def _preflight(service, state, *, advance_search=False):
         else None
     )
     attempts = state.get("qualification", {})
+    choices = state.get("adapter_choices", {})
+    refused = state.get("declined_adapters", {})
     gaps = [
-        _capability_gap(
-            item, decisions.get(item["node"], {}), attempts.get(item["node"], {})
-        )
+        _capability_gap(item, decisions.get(item["node"], {}), attempts.get(item["node"], {}),
+                        choices.get(item["node"], {}), refused.get(item["node"], {}))
         for item in report["gaps"]
     ]
     gaps.extend(
@@ -109,6 +121,8 @@ def _preflight(service, state, *, advance_search=False):
         _suggest_replacements(service, state, graph, gaps, decisions)
         offers(service, state, graph, gaps)
         for gap in gaps:
+            if gap["code"] == "WAITING_FOR_OTHER_BINDINGS":
+                continue
             planning = report.get("toolchain_planning", {}).get(gap["location"])
             if gap["kind"] == "capability" and planning is not None:
                 gap["toolchain_planning"] = planning
@@ -130,7 +144,8 @@ def _preflight(service, state, *, advance_search=False):
                     ["revise_blueprint"],
                 )
             )
-        for row in rows:
+        deferred = state.get("case_strategy", {}).get("mode") == "observe_runtime"
+        for row in [] if deferred else rows:
             try:
                 check_case(service.workspace.root, graph, row["case"])
             except (FlowError, OSError) as exc:
@@ -143,13 +158,18 @@ def _preflight(service, state, *, advance_search=False):
                     intent=row["intent"],
                     draft=case_draft(graph) if row["case"] is None else row["case"],
                 )
+                if row["evidence"] == "pending":
+                    gap["actions"].insert(0, "propose_cases")
+                    if "proposal" in row:
+                        gap["draft"] = row["proposal"]
+                        gap["actions"].append("confirm_cases")
                 if row["evidence"] == "blueprint":
                     gap["actions"] = ["attach_fixture", "revise_blueprint"]
                 gaps.append(gap)
     if state["blueprint_schema_version"] == 1:
         gaps = _legacy_gaps(service, state)
     for gap in gaps:
-        if gap["kind"] != "capability" or not gap["candidates"]:
+        if gap["kind"] != "capability" or not gap["candidates"] or gap["code"] == "WAITING_FOR_OTHER_BINDINGS":
             continue
         refused = state.get("declined_adapters", {}).get(gap["location"], {})
         gap["candidates"] = [
@@ -168,6 +188,10 @@ def _preflight(service, state, *, advance_search=False):
         from .host_preparation import append_waiting
 
         append_waiting(state, gaps, _gap)
+    if graph is not None:
+        from . import binding_options
+
+        tasks, rules = binding_options.describe(service.workspace.root, graph, state, gaps)
     state = {
         **state,
         "case_coverage": rows,
@@ -195,11 +219,41 @@ def _preflight(service, state, *, advance_search=False):
                 gaps.append(_trial_gap(state, prior))
     for gap in gaps:
         gap["scope_hash"] = digest([key, report["fingerprint"], gap])
-    return {
+    updated = {
         **state,
         "status": "needs_input" if gaps else "ready_for_trial",
         "gaps": gaps,
     }
+    if graph is not None:
+        from .adapter_development import work_orders
+
+        updated["binding_plan"] = binding_options.binding_plan(
+            gaps, state.get("binding_selections", {}), decisions.values()
+        )
+        updated["adapter_development"] = work_orders(updated, tasks, rules)
+        updated["skill_source_findings"] = report.get("skill_source_findings", [])
+        review = case_review(rows, gaps, deferred=deferred)
+        review["scope_hash"] = digest([state["work_id"], key, [row["intent"] for row in rows]])
+        if state["intent"] == "install" and any(row["intent"] is not None for row in rows):
+            review["strategies"] = [
+                {"id": "synthetic_trial", "label": "先用合成案例試做再安裝"},
+            ]
+            review["selected_strategy"] = state.get("case_strategy", {}).get("mode")
+            review["display_text"] += (
+                "\n\n看完以上文字案例後選擇\n"
+                "1. 先用合成案例試做再安裝。"
+            )
+            installed = service.workspace.discover(read_only=True)
+            if state["workflow_id"] not in installed:
+                review["strategies"].append(
+                    {"id": "observe_runtime", "label": "先安裝，於實際執行時驗收"}
+                )
+                review["default_strategy"] = "observe_runtime"
+                review["display_text"] += "\n2. 先安裝，於實際執行時驗收（預設）。"
+            else:
+                review["default_strategy"] = "synthetic_trial"
+        updated["case_review"] = review
+    return updated
 
 
 def _suggest_replacements(service, state, graph, gaps, decisions):
@@ -308,6 +362,11 @@ def _qualify(service, state, checkpoint):
     declined = state.get("declined_adapters", {})
     selections = {}
     toolchain_plans = {}
+    selected_local_writes = set()
+    hosted = {
+        row["node"] for row in state.get("binding_plan", {}).get("automatic_work", [])
+        if row["handled_by"] == "host_model"
+    }
     for decision in state["portable_decisions"]:
         node = decision["node"]
         choice = decisions.get(node, {})
@@ -328,8 +387,17 @@ def _qualify(service, state, checkpoint):
             and choice
         ):
             selections[node] = choice["adapter"]
+            selected_local_writes.add(node)
         elif len(automatic) == 1:
             selections[node] = automatic[0]
+        elif node in hosted:
+            eligible_hosts = [
+                row["adapter"] for row in decision["candidates"]
+                if row["adapter"] in allowed and row["locus"] == "host_mediated"
+                and row["cost_micro_usd"] == 0 and not row["permission_scope"]
+            ]
+            if len(eligible_hosts) == 1:
+                selections[node] = eligible_hosts[0]
         for candidate in decision["candidates"]:
             if candidate["adapter"] == selections.get(node) and candidate.get("toolchain_plan"):
                 toolchain_plans[node] = candidate["toolchain_plan"]
@@ -347,6 +415,7 @@ def _qualify(service, state, checkpoint):
             offline=state["offline"],
             case_supplies=state.get("adapter_case_supplies"),
             toolchain_plans=toolchain_plans,
+            selected_local_writes=selected_local_writes,
         )
     except FlowError as exc:
         if exc.code not in {
@@ -463,6 +532,18 @@ def _submit(service, current, payload):
     )
     if action == "propose_toolchain":
         return _suggest_toolchain(service, current, payload)
+    if action == "propose_bindings":
+        from .binding_options import research
+
+        live = _preflight(service, current)
+        return _preflight(service, research(live, payload.get("proposals")))
+    if action == "propose_cases":
+        return _batch_cases(service, _preflight(service, current), payload, confirm=False)
+    if action == "complete_local_adapter":
+        from .adapter_development import finish_local
+
+        live = _preflight(service, current)
+        return _preflight(service, finish_local(service, live, payload))
     if action in {"compare_update", "activate_update"}:
         from .completion_update import submit_update
 
@@ -507,6 +588,24 @@ def _submit(service, current, payload):
         "請附上使用者實際的補強答覆。",
     )
     live = _preflight(service, current)
+    if action == "choose_case_strategy":
+        review = live.get("case_review", {})
+        mode = payload.get("mode")
+        require(
+            live["intent"] == "install" and review.get("strategies")
+            and isinstance(payload.get("scope_hash"), str)
+            and payload["scope_hash"] == review["scope_hash"]
+            and mode in tuple(item["id"] for item in review["strategies"])
+            and (mode == "synthetic_trial" or live.get("trial", {}).get("outcome") != "failed"),
+            "請先展示目前的文字案例並取得實際選擇。已失敗的試做須先處理。",
+        )
+        return _preflight(service, {**live, "case_strategy": {
+            "mode": mode, "scope_hash": review["scope_hash"], "user_text": payload["user_text"],
+        }})
+    if action == "select_bindings":
+        return _select_bindings(service, live, payload)
+    if action == "confirm_cases":
+        return _batch_cases(service, live, payload, confirm=True)
     gap = next(
         (item for item in live["gaps"] if item["id"] == payload.get("gap_id")), None
     )
@@ -564,8 +663,13 @@ def _submit(service, current, payload):
             },
         )
     require(action in ("select_adapter", "decline_adapter"), "不支援這項補強回覆。")
+    return _preflight(service, _adapter_selection(live, gap, payload, action))
+
+
+def _adapter_selection(state, gap, payload, action):
     require(
-        not gap.get("requires_design_revision"), "替換已指定的工具須先確認修訂藍圖。"
+        gap["kind"] == "capability" and not gap.get("requires_design_revision"),
+        "替換已指定的工具須先確認修訂藍圖。"
     )
     candidate = next(
         (
@@ -585,8 +689,8 @@ def _submit(service, current, payload):
         **({"toolchain_plan": candidate["toolchain_plan"]} if candidate.get("toolchain_plan") else {}),
     }
     node = gap["location"]
-    choices = dict(current.get("adapter_choices", {}))
-    declined = dict(current.get("declined_adapters", {}))
+    choices = dict(state.get("adapter_choices", {}))
+    declined = dict(state.get("declined_adapters", {}))
     refusals = dict(declined.get(node, {}))
     if action == "decline_adapter":
         refusals[candidate["adapter"]] = choice
@@ -596,9 +700,46 @@ def _submit(service, current, payload):
         refusals.pop(candidate["adapter"], None)
         choices[node] = choice
     declined[node] = refusals
-    return _preflight(
-        service, {**live, "adapter_choices": choices, "declined_adapters": declined}
-    )
+    return {**state, "adapter_choices": choices, "declined_adapters": declined}
+
+
+def _select_bindings(service, live, payload):
+    from pydantic import ValidationError
+
+    from .binding_options import BindingSelection
+
+    rows = payload.get("selections")
+    require(isinstance(rows, list) and 0 < len(rows) <= 50, "請勾選至少一項工具方案。")
+    gaps = {gap["id"]: gap for gap in live["gaps"]}
+    answers = dict(live.get("binding_selections", {}))
+    seen = set()
+    for raw in rows:
+        try:
+            selection = BindingSelection.model_validate(raw)
+        except ValidationError as error:
+            raise FlowError("INVALID_CONFIGURATION", "工具選擇格式無效。") from error
+        gap = gaps.get(selection.gap_id, {})
+        binding = gap.get("binding_options")
+        if not binding or selection.scope_hash != gap["scope_hash"]:
+            raise FlowError("REVISION_CONFLICT", "工具候選已改變，請先重讀目前提案。")
+        require(selection.gap_id not in seen, "每個能力只能勾選一項工具方案。")
+        seen.add(selection.gap_id)
+        option = next((row for row in binding["options"] if row["id"] == selection.option_id), None)
+        require(option and option.get("selectable", True), "請選擇目前可採用的工具方案。")
+        key = gap["location"]
+        answers[key] = {
+            "option_id": option["id"], "scope_hash": selection.scope_hash,
+            "user_text": payload["user_text"],
+        }
+        if option["approach"] == "observed_adapter":
+            live = _adapter_selection(
+                live, gap, {**payload, "adapter": option["adapter"]}, "select_adapter"
+            )
+        elif key in live.get("adapter_choices", {}):
+            live = {**live, "adapter_choices": {
+                node: choice for node, choice in live["adapter_choices"].items() if node != key
+            }}
+    return _preflight(service, {**live, "binding_selections": answers})
 
 
 def _suggest_toolchain(service, current, payload):
@@ -659,6 +800,34 @@ def _supply_case(service, state, gap, payload):
     return _preflight(service, {**state, "case_supplies": supplements})
 
 
+def _batch_cases(service, live, payload, *, confirm):
+    field = "cases" if confirm else "proposals"
+    entries = payload.get(field)
+    require(isinstance(entries, list) and 0 < len(entries) <= 20, "請提供本輪可執行的驗收案例。")
+    graph = service.install_workflow(draft_id=live["draft_id"])["source"]["graph"]
+    gaps = {gap["id"]: gap for gap in live["gaps"] if gap["kind"] == "case"}
+    proposals = dict(live.get("case_proposals", {}))
+    supplies = dict(live.get("case_supplies", {}))
+    seen = set()
+    for entry in entries:
+        require(isinstance(entry, dict) and isinstance(entry.get("gap_id"), str), "驗收補件識別無效。")
+        gap = gaps.get(entry["gap_id"], {})
+        action = "confirm_cases" if confirm else "propose_cases"
+        if gap.get("scope_hash") != entry.get("scope_hash") or action not in gap.get("actions", []):
+            raise FlowError("REVISION_CONFLICT", "案例或補件範圍已變更，請重新讀取。")
+        key = gap["location"]
+        require(key not in seen, "同一案例在這一批只能提交一次。")
+        seen.add(key)
+        case = proposals[key] if confirm else entry.get("case")
+        check_case(service.workspace.root, graph, case)
+        if confirm:
+            supplies[key] = {"case": case, "user_text": payload["user_text"], "scope_hash": gap["scope_hash"]}
+            proposals.pop(key)
+        else:
+            proposals[key] = case
+    return _preflight(service, {**live, "case_proposals": proposals, "case_supplies": supplies})
+
+
 def _revision_preview(service, current, draft_id):
     base = service.install_workflow(draft_id=current["draft_id"])["source"].get("graph")
     candidate = service.install_workflow(draft_id=draft_id)["source"].get("graph")
@@ -700,8 +869,12 @@ def _adopt_revision(service, current, payload):
         if key
         not in {
             "case_supplies",
+            "case_proposals",
+            "case_strategy",
             "adapter_choices",
             "declined_adapters",
+            "binding_selections",
+            "binding_research",
             "qualification",
             "environment_lock",
             "adapter_case_supplies",

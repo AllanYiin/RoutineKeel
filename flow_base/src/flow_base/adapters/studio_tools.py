@@ -1,5 +1,11 @@
 """Host tools submit proposals. Human confirmation is a separate terminal action."""
 
+from routinekeel_contracts.errors import StudioError
+from routinekeel_contracts.paths import safe_relative
+
+from ..blueprints.source import require
+from ..outputs import reject_links
+from ..runtime import FlowError
 from ..studio import studio_request
 
 
@@ -18,6 +24,23 @@ def register(server, workspace, result):
     @server.tool(description="Use Documa's trusted graph skill catalog for one task.")
     def studio_load_skills(task: str, skill_names: list[str] | None = None, max_tokens: int | None = None) -> dict:
         return call("load_skills", task=task, skill_names=skill_names or [], max_tokens=max_tokens)
+
+    @server.tool()
+    def studio_attach_skill(project_id: str, expected_revision: int, path: str) -> dict:
+        """Snapshot a full skill directory or ZIP at an explicitly selected workspace-relative path."""
+        def attach():
+            try:
+                selected = workspace / safe_relative(path)
+            except StudioError as error:
+                raise FlowError("PERMISSION_DENIED", "技能附件須位於工作區內。") from error
+            require(selected != workspace, "請指定工作區中的技能資料夾或壓縮檔。")
+            reject_links(selected)
+            return studio_request(workspace, "attach", {
+                "project_id": project_id, "expected_revision": expected_revision,
+                "path": str(selected), "kind": "skill",
+            })
+
+        return result(attach)
 
     @server.tool(description="Search indexed document evidence for a versioned Studio source.")
     def studio_search_document(

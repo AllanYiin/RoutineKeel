@@ -1,4 +1,5 @@
 import hashlib
+import io
 import json
 import zipfile
 from pathlib import Path
@@ -65,10 +66,19 @@ def finalize(studio, root, proposal, review):
 
 
 def test_real_importer_round_trip_immutable_export_and_reopen(tmp_path, workflow_design_review):
+    skill = tmp_path / "source-skill"
+    (skill / "scripts").mkdir(parents=True)
+    (skill / "assets").mkdir()
+    entry = "請只在交付時校閱。\n[工具](scripts/review.py)及[字型](assets/font.ttf)。"
+    script = b'raise AssertionError("The archive must not run this script")\n'
+    font = b"\x00\x01\x00\x00development-font-fixture"
+    (skill / "SKILL.md").write_bytes(entry.encode("utf-8"))
+    (skill / "scripts/review.py").write_bytes(script)
+    (skill / "assets/font.ttf").write_bytes(font)
     with StudioService.open_workspace(tmp_path) as studio:
         state, params = draft(studio, tmp_path)
-        attach = studio.sources.import_text(
-            state["project_id"], state["revision"], "請只在交付時校閱", name="SKILL.md"
+        attach = studio.sources.import_path(
+            state["project_id"], state["revision"], skill / "SKILL.md", kind="skill"
         )
         params.update(
             expected_revision=studio.projects.get(state["project_id"]).version,
@@ -83,8 +93,14 @@ def test_real_importer_round_trip_immutable_export_and_reopen(tmp_path, workflow
         path = Path(result["path"])
         assert hashlib.sha256(path.read_bytes()).hexdigest() == result["sha256"]
         with zipfile.ZipFile(path) as z:
-            assert set(z.namelist()) == {"design/blueprint.json", "design/skills/review/SKILL.md"}
-            assert z.read("design/skills/review/SKILL.md").decode() == "請只在交付時校閱"
+            assert set(z.namelist()) == {
+                "design/blueprint.json", "design/skills/review/SKILL.md",
+                "design/skills/review/bundle.zip",
+            }
+            assert z.read("design/skills/review/SKILL.md").decode() == entry
+            with zipfile.ZipFile(io.BytesIO(z.read("design/skills/review/bundle.zip"))) as bundle:
+                assert set(bundle.namelist()) == {"SKILL.md", "scripts/review.py", "assets/font.ttf"}
+                assert bundle.read("scripts/review.py") == script and bundle.read("assets/font.ttf") == font
             graph = json.loads(z.read("design/blueprint.json"))
             assert graph["provenance"]["proposal_id"] == proposal["proposal_id"]
             assert "同意這份設計" not in z.read("design/blueprint.json").decode()
@@ -111,6 +127,8 @@ def test_real_importer_round_trip_immutable_export_and_reopen(tmp_path, workflow
         )
     runtime = WorkflowService(tmp_path)
     key = runtime.install_workflow(archive=path)["draft_id"]
+    member = runtime.install_workflow(draft_id=key, member="skills/review/scripts/review.py")
+    assert member["text"] == script.decode()
     state = runtime.resolve_blueprint_capabilities(key)
     candidate = runtime.install_workflow(
         draft_id=key,
@@ -124,7 +142,21 @@ def test_real_importer_round_trip_immutable_export_and_reopen(tmp_path, workflow
     payload = tmp_path / "message.json"
     payload.write_text(json.dumps({"inputs": {"message": "a", "needs_review": True}}))
     waiting = runtime.run_workflow_sync({"task": "routing", "source": payload})["blueprint"]
-    assert waiting["pending"]["skill_documents"] == {"review": {"SKILL.md": "請只在交付時校閱"}}
+    assert waiting["pending"]["skill_documents"] == {"review": {"SKILL.md": entry}}
+
+
+def test_new_design_detects_entry_document_imported_without_its_skill_folder(tmp_path):
+    with StudioService.open_workspace(tmp_path) as studio:
+        state, params = draft(studio, tmp_path)
+        attach = studio.sources.import_text(
+            state["project_id"], state["revision"], "[執行腳本](scripts/review.py)", name="SKILL.md"
+        )
+        params.update(
+            expected_revision=studio.projects.get(state["project_id"]).version,
+            skills=[{"name": "review", "source_id": attach.source_id, "version": attach.version}],
+        )
+        with pytest.raises(StudioError, match="缺少引用檔案.*scripts/review.py"):
+            dispatch(studio, tmp_path, "prepare_blueprint", params)
 
 
 def test_declined_stale_incomplete_or_private_design_never_delivered(
@@ -134,6 +166,7 @@ def test_declined_stale_incomplete_or_private_design_never_delivered(
         state, params = draft(studio, tmp_path)
         incomplete = dispatch(studio, tmp_path, "prepare_blueprint", {**params, "design": {}})
         assert "flowchart" in incomplete["draft_design"]["diagram"]
+        assert "補充技能" in incomplete["display_text"]
         with pytest.raises(StudioError, match="缺少"):
             finalize(studio, tmp_path, incomplete, workflow_design_review(incomplete))
         params.update(expected_revision=incomplete["revision"], request_id="revised-preview")

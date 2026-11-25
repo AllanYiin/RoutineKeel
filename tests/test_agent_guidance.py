@@ -15,8 +15,10 @@ guide=importlib.util.module_from_spec(spec);spec.loader.exec_module(guide)
 
 
 def test_guidance_keeps_domain_policy_out_of_base(tmp_path):
-    base=tmp_path/'flow_base';base.mkdir()
-    flow=tmp_path/'自訂 中文流程';flow.mkdir()
+    base = tmp_path / 'flow_base'
+    base.mkdir()
+    flow = tmp_path / 'workflows' / '自訂 中文流程'
+    flow.mkdir(parents=True)
     guide.write_workspace_guide(tmp_path)
     guide.write_package_guide(base,ROOT/'flow_base')
     guide.write_package_guide(flow,ROOT/'workflows/FLOW_課程影片產生字幕')
@@ -26,6 +28,9 @@ def test_guidance_keeps_domain_policy_out_of_base(tmp_path):
     assert 'large-v3' not in common and 'review-approve' not in common
     assert 'large-v3' in domain and 'REVIEW_REQUIRED' in domain
     assert '../../flow_base/AGENTS.md' in domain
+    assert (flow/'../../flow_base/AGENTS.md').resolve() == base/'AGENTS.md'
+    assert '../../../flow_base' not in domain
+    assert 'propose_bindings' in common and 'select_bindings' in common
     assert 'flow_base/AGENTS.md' in (tmp_path/'AGENTS.md').read_text()
 
 

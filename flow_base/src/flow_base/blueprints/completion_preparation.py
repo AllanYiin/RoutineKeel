@@ -1,8 +1,5 @@
 """Use trusted preparation recipes for otherwise compatible missing adapters."""
 
-import os
-from pathlib import Path
-
 from pydantic import ValidationError
 from routinekeel_contracts.bindings import ImplementationAdapter
 from routinekeel_contracts.graph_validator import validate_blueprint
@@ -11,7 +8,7 @@ from routinekeel_contracts.pattern_composition import (
     graph_task_paths,
 )
 
-from ..graph.capabilities import capability_observation
+from ..graph.capabilities import capability_observation, host_inventory_path
 from ..graph.portable import _contract_rejections
 from ..graph.preparation import (
     adapter_recipe,
@@ -30,9 +27,9 @@ def prepare_missing_adapters(service, state, checkpoint):
     )
     tasks, rules = graph_task_paths(graph), graph_requirements(graph)
     catalog, observation = capability_observation(workspace.root)
-    configuration = os.environ.get("ROUTINEKEEL_HOST_CATALOG")
-    if not configuration or observation["status"] != "current":
+    if observation["status"] != "current":
         return state
+    configuration = host_inventory_path(workspace.root)
     results = dict(state.get("preparations", {}))
     for gap in state["gaps"]:
         node = gap["location"]
@@ -85,7 +82,7 @@ def prepare_missing_adapters(service, state, checkpoint):
             checkpoint({**state, "status": "preparing", "preparations": dict(results)})
             try:
                 receipt = prepare_recipe(
-                    workspace.runtime, recipe, Path(configuration).resolve().parent
+                    workspace.runtime, recipe, configuration.resolve().parent
                 )
             except (FlowError, OSError, ValueError) as exc:
                 results[node] = {

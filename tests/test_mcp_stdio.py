@@ -26,6 +26,61 @@ def client_for(root, *, mode='auto'):
         args=['-m', 'flow_base', '--workspace', str(root), 'mcp-stdio'],env=host_env), mode=mode)
 
 
+def test_stdio_reuses_and_reaps_one_studio_child_per_connection(tmp_path):
+    from flow_base.execution.supervisor import process_started_at
+
+    trace = tmp_path / "studio-pids.txt"
+    script = """
+import sys
+from pathlib import Path
+from flow_base.cli import main
+from flow_base.studio import StudioBridge
+
+trace = Path(sys.argv.pop(1))
+start = StudioBridge._start
+def record_start(self):
+    start(self)
+    with trace.open("a", encoding="utf-8") as output:
+        print(self._process.pid, file=output)
+StudioBridge._start = record_start
+raise SystemExit(main())
+"""
+    environment = {
+        name: os.environ[name] for name in ("ROUTINEKEEL_STUDIO_PYTHON",) if name in os.environ
+    }
+    server = StdioServerParameters(
+        command=sys.executable,
+        args=["-c", script, str(trace), "--workspace", str(tmp_path), "mcp-stdio"],
+        env=environment,
+    )
+
+    def pids():
+        return [int(pid) for pid in trace.read_text(encoding="utf-8").splitlines()]
+
+    async def exercise():
+        async with Client(server) as client:
+            assert (await call(client, "list_workflows"))["ok"]
+            assert not trace.exists()
+            first, second = await asyncio.gather(
+                call(client, "studio_create_project", name="甲", task="第一份報表"),
+                call(client, "studio_create_project", name="乙", task="第二份報表"),
+            )
+            assert first["result"]["project_id"] != second["result"]["project_id"]
+            project = first["result"]["project_id"]
+            assert (await call(client, "studio_get_project", project_id=project))["ok"]
+            pid, = pids()
+            assert process_started_at(pid) is not None
+        assert process_started_at(pid) is None
+        async with Client(server) as client:
+            assert (await call(client, "studio_get_project", project_id=project))["ok"]
+            previous, current = pids()
+            assert previous == pid
+            assert process_started_at(current) is not None
+        assert process_started_at(current) is None
+
+    asyncio.run(exercise())
+
+
 def test_real_stdio_interview_resumes_and_keeps_host_answers_unconfirmed(tmp_path):
     async def exercise():
         async with client_for(tmp_path) as client:
@@ -67,6 +122,19 @@ def test_real_stdio_interview_resumes_and_keeps_host_answers_unconfirmed(tmp_pat
             assert submitted["coverage"]["inputs"]["value"] == "銷售 CSV"
             assert submitted["coverage"]["outputs"]["value"] == "週報 PDF"
             assert submitted["coverage"]["review"]["status"] == "unknown"
+            skill = tmp_path / "weekly-skill"
+            (skill / "scripts").mkdir(parents=True)
+            (skill / "SKILL.md").write_text("[整理](scripts/report.py)", encoding="utf-8")
+            (skill / "scripts/report.py").write_text("print('sample')", encoding="utf-8")
+            parameters = {
+                "project_id": state["project_id"], "expected_revision": submitted["revision"],
+            }
+            denied = await call(client, "studio_attach_skill", **parameters, path="../weekly-skill")
+            assert denied["error"]["code"] == "PERMISSION_DENIED"
+            attached = await call(client, "studio_attach_skill", **parameters, path="weekly-skill/SKILL.md")
+            assert set(attached["result"]["preview"]["skill_members"]) == {
+                "SKILL.md", "scripts/report.py",
+            }
     asyncio.run(exercise())
 
 
@@ -168,7 +236,7 @@ def test_stdio_negotiation_queue_tool_set_and_path_boundary(workspace):
                              'update_workflow', 'rollback_workflow_update', 'recover_workflow_update',
                              'install_workflow', 'blueprint_task', 'blueprint_completion',
                              'studio_create_project', 'studio_list_projects', 'studio_get_project',
-                             'studio_load_skills', 'studio_search_document',
+                             'studio_load_skills', 'studio_attach_skill', 'studio_search_document',
                              'studio_update_project', 'studio_archive_project', 'studio_restore_project',
                              'studio_next_question', 'studio_submit_answer', 'studio_pause_interview',
                              'studio_resume_interview', 'studio_preview_source', 'studio_start_interview',

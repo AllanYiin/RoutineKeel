@@ -239,7 +239,19 @@ if __name__ == "__main__":
     progress = {}
     progress_path = Path(sys.argv[3]) if len(sys.argv) > 3 else None
     try:
-        atomic_json(trial / "result.json", exercise(trial, task, measurements, progress, progress_path))
+        if sys.argv[4:] == ["--verify-load"]:
+            from ..core.service import WorkflowService
+
+            service = WorkflowService(trial)
+            require(
+                service.prepare_workflow(task, offline=True)["ok"]
+                and service.verify_workflow(task)["ok"],
+                "候選套件的隔離載入或綁定驗證失敗。",
+            )
+            result = {"passed": True, "runtime_load": "PASS", "cases": [], "provider_calls": 0}
+        else:
+            result = exercise(trial, task, measurements, progress, progress_path)
+        atomic_json(trial / "result.json", result)
     except Exception as exc:  # noqa: BLE001 -- the verifier subprocess must report any candidate failure as a failed trial
         atomic_json(trial / "result.json", {
             "passed": False, "error": str(exc)[:1000], "code": getattr(exc, "code", type(exc).__name__),

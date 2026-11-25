@@ -14,7 +14,7 @@ from routinekeel_contracts.models import Contract, Identifier
 
 from ..blueprints.source import require
 from ..runtime import digest
-from .portable import _catalog_adapters
+from .portable import _catalog_adapters, installed_local_tools
 
 
 @dataclass(frozen=True)
@@ -60,7 +60,7 @@ def _edge_matches(actual, expected):
 
 def observed_tools(workspace, inventory, *, include_pending=False):
     """Use the usual tool admission checks on each tool's actual transport ports."""
-    for name, record in sorted(inventory.items()):
+    for name, record in sorted((installed_local_tools() | inventory).items()):
         if not isinstance(record, dict) or "portable" not in record:
             continue
         try:

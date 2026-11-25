@@ -1,6 +1,5 @@
 """Scoped external requests. Only the host records a separately observed execution receipt."""
 
-import os
 import re
 from pathlib import Path
 
@@ -34,10 +33,12 @@ def scope_for(session_id, node_id, attempt, binding, values, configuration, *, p
 
 
 def receipt_path(workspace, key):
+    from .capabilities import host_inventory_path
+
     require(isinstance(key, str) and re.fullmatch(r"[0-9a-f]{64}", key), "對外操作識別碼無效")
-    configured = os.environ.get("ROUTINEKEEL_HOST_CATALOG")
-    require(configured and Path(configured).is_absolute(), "缺少宿主回執來源")
-    root = Path(configured).resolve().parent / "receipts"
+    configured = host_inventory_path(workspace)
+    require(configured, "缺少宿主回執來源")
+    root = configured.resolve().parent / "receipts"
     require(
         not root.resolve().is_relative_to(Path(workspace).resolve()), "宿主回執不能來自資料工作區"
     )

@@ -68,15 +68,47 @@ def case_rows(graph, state):
         else:
             case = _recipe_case(graph, recipes.get(str(number)))
             evidence = "blueprint_assertions" if case is not None else "pending"
-        result.append(
-            {
-                "location": location,
-                "intent": original,
-                "case": case,
-                "evidence": evidence,
-            }
-        )
+        row = {
+            "location": location,
+            "intent": original,
+            "case": case,
+            "evidence": evidence,
+        }
+        if evidence == "pending" and location in state.get("case_proposals", {}):
+            row["proposal"] = state["case_proposals"][location]
+        result.append(row)
     return result
+
+
+def case_review(rows, gaps, *, deferred=False):
+    pending = {gap["location"]: gap for gap in gaps if gap["kind"] == "case"}
+    items, lines = [], []
+    for number, row in enumerate(rows, 1):
+        location = row["location"]
+        intent = row["intent"]
+        description = intent if isinstance(intent, dict) else {}
+        name = description.get("name") or f"驗收案例 {number}"
+        expected = description.get("expected", intent if isinstance(intent, str) else None)
+        gap = pending.get(location)
+        if deferred:
+            status = "待實際執行時觀察"
+        elif gap and row.get("proposal"):
+            status = "待校閱案例提案"
+        elif gap:
+            status = "待宿主準備素材與可執行檢查"
+        else:
+            status = "案例資料齊備，執行結果另見試做收據"
+        items.append({
+            "location": location, "name": name, "expected": expected, "status": status,
+            "evidence": row["evidence"],
+            **({"gap_id": gap["id"], "scope_hash": gap["scope_hash"]} if gap else {}),
+        })
+        expectation = f"。預期 {expected}" if isinstance(expected, str) else ""
+        lines.append(f"{number}. {name}｜{status}{expectation}")
+    return {
+        "cases": items,
+        "display_text": "\n".join(["請逐項展示藍圖的驗收案例與目前狀態。", *lines]),
+    }
 
 
 def _case_ports(graph):

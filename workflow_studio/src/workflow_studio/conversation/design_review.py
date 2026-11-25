@@ -380,6 +380,13 @@ def review_sections(proposal):
             {
                 "技能來源": proposal["skill_sources"],
                 "內嵌檔案": list(proposal["skill_files"]),
+                **(
+                    {
+                        "補充技能": "目前沒有已選的技能。宿主先盤點可用技能，再於本輪詢問是否有完整技能資料夾或 ZIP 要補充。"
+                        "使用者可確認沿用目前規則繼續。"
+                    }
+                    if not proposal["skill_sources"] else {}
+                ),
                 "採用的 Pattern 與能力需求": graph["provenance"].get("pattern_compositions", []),
                 "工具配置及權限": (final or draft)["tools"],
                 "變數清冊": (final or draft)["variables"],

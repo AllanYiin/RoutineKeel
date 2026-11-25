@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "routinekeel-course-subtitle-adapter"
+version = "1.0.0"
+requires-python = ">=3.11,<3.14"
+description = "Local speech adapters for the course subtitle blueprint"
+license = "MIT"
+
+[project.entry-points."routinekeel.portable_adapters"]
+"course.audio.silero" = "routinekeel_course_subtitle.speech:detect_speech"
+"course.speech.whisper" = "routinekeel_course_subtitle.speech:transcribe"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/routinekeel_course_subtitle"]

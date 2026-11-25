@@ -173,7 +173,10 @@ def build_project(path, staging):
                          'workflow-evolution.md', 'workflow-updates.md', 'known-issues.md'):
             shutil.copyfile(path / 'docs' / document, dest / document)
         sources = [(BASE, 'flow_base/'), (ROOT / 'tools', 'tools/'),
+                   (ROOT / 'blueprints/binding-guides', 'blueprints/binding-guides/'),
                    (ROOT / 'examples/blueprint-install', 'examples/blueprint-install/')]
+        guides = staging / 'workspace/blueprints/binding-guides'
+        shutil.copytree(ROOT / 'blueprints/binding-guides', guides)
     else:
         manifest = json.loads((path / 'flow.template.json').read_text(encoding='utf-8'))
         if manifest['version'] != version or (manifest.get('module') or manifest.get('id')) != name:
@@ -194,6 +197,8 @@ def build_project(path, staging):
         if path == BASE:
             for directory in ('workflows/', 'blueprints/', 'flow_base/share_logs/', 'flow_base/share_states/'):
                 archive.writestr(directory, b'')
+            for guide in sorted(guides.glob('*.json')):
+                archive.write(guide, guide.relative_to(staging / 'workspace').as_posix())
         for file in sorted(dest.rglob('*')):
             if file.is_file():
                 member = file.relative_to(staging / 'workspace').as_posix()

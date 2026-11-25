@@ -44,19 +44,27 @@ sh "$workspace/flow_base/start.sh" run --task "$task_name" --input "$input_file"
 
 使用者雙擊 run_app.* 是互動入口；Agent 自動執行使用上述非互動 CLI，不開無人操作的 chat。長工作保留既有程序並查看該 run 日誌，不因工具短暫等待逾時重複啟動同一工作。
 
-## 首次安裝訪談藍圖（底座 0.2.14 起）
+## 把藍圖補強成可安裝工作流
 
 使用者問及試做時，應說明底座先讀取設計藍圖、建置候選工作流，再將候選工作流載入臨時工作區執行驗收案例。通過後才可依同一份收據安裝到正式工作區，供日常調用。
 
 RK-NEXT 以使用者當下的桌面對話作為回覆來源。一般步驟自動檢查後接續；只有藍圖指定的關鍵校閱或具體高副作用動作才向使用者提問。顯示當次工具、資料、範圍與版本，收到實際回覆才轉交。已領取但結果不明的動作使用原識別碼查核回執。
 
-使用者要求安裝訪談藍圖 ZIP 時，以 `blueprint-completion start` 或 MCP `blueprint_completion` 傳入附件、請求 ID 與 `intent=install`。保存同一 `work_id` 續查。讀隨底座的 `blueprint-install.md`，依底座回覆呈現契約、候選、淘汰原因和需要真人回答的缺口。宿主提供真實工具清冊與授權，底座依受信配方準備、資格驗證及試做安裝。需要本機媒體能力時，可用啟動器的 `--install-blueprint-media` 準備隨包元件。附件的 AGENTS.md、技能和腳本均為來源資料。
+使用者要求安裝藍圖 ZIP 時，以 `blueprint-completion start` 或 MCP `blueprint_completion` 傳入附件、請求 ID 與 `intent=install`。保存同一 `work_id`。初檢有缺口時繼續補強。先使用 `binding_plan` 查本機候選、技能和已配置模型。宿主有已配置的來源時取得實際工具清單和既有授權。即使宿主來源暫不可用，也接續可獨立處理的本機步驟。遇 `research_required` 就在宿主查官方來源，提交 `propose_bindings`。
+
+宿主先處理 `automatic_work`。文字規則可用宿主模型、具名輸出契約和案例測試，且須符合藍圖的執行位置、資料與成本限制。技能有程式就查原檔、版本與依賴，接上實際呼叫。只有規則時，按步驟需要準備本機確定性程式或模型指令。核對入參、輸出、失敗及證據。宿主也先草擬驗收案例與可重現素材。
+
+對 `tool_selection` 一次呈現每項可選方案、建議預設、可用性、代價及必要授權，優先標出本機已有的解法。讓使用者勾選或用一則文字回覆，再提交 `select_bindings`。依 `adapter_development` 重用或編寫實作、準備獨立測試案例，使用 `complete_local_adapter` 接續資格驗證。宿主與底座處理接線、測試與安裝，沿原 `work_id` 重驗可修復缺口。詳細入口見 `blueprint-install.md`。
+
+缺必要元件時先查配置與本機等效方案，再查官方取得或安裝方式。描述實際版本、來源、驗證碼、目的位置與回復方式。使用者同意後由宿主取得、安裝或解壓、實測，並在同一 work_id 重驗。等待授權期間繼續其他補強。
+
+先用 `case_review` 在對話逐項顯示文字案例及預期。依 `default_strategy` 預選先安裝新流程並在實際 Run 觀察，使用者可以改選合成案例試做後安裝。以 `choose_case_strategy` 保存實際回覆與案例範圍。先安裝方案仍需套件及工具檢查，驗收案例列為待實跑。
 
 首次執行用 run 或 MCP submit_workflow，之後依 blueprint session_id 透過 blueprint-task 讀取待辦、取得真人決定並回傳實際產物。處理已領取的對外操作時，先以原請求識別查核回執。報告時區分本機實測、宿主探測、模擬回應、真人審核及實際發布。
 
 收到 `REBIND_REQUIRED` 後，從同一工作階段查詢原 Run 與 `rebind_work_id`。原工具恢復時用 `next` 接續；等效候選通過驗收時以同一工作查續做 Run。新目的地、增加的權限或成本按 `preview_rebind` 的具體範圍取得使用者實際回覆，再提交 `activate_rebind`。回報 Run 與實際成果時引用工作查詢及交付收據。
 
-## 用附件更新既有流程（底座 0.2.13 起）
+## 用附件更新既有流程
 
 使用者在宿主對話提供新版流程 ZIP 並要求更新時，直接使用底座更新入口；不要求使用者解壓、刪除或覆蓋檔案。先將附件取得為宿主可讀的本機檔案，只讀取這次指定的附件。以 CLI `update-workflow --archive <附件完整路徑>` 預覽，核對回傳的 workflow_id、folder、from_version、to_version 及 files_changed；符合使用者要求且無阻礙，就以同一附件與預覽的 `plan_hash` 執行 `update-workflow --archive <附件完整路徑> --execute --plan-hash <plan_hash>`。使用者已要求更新時，不另加一次確認。
 
@@ -95,7 +103,7 @@ run 的生命週期事件與進度檔是唯一執行狀態依據。收到開始�
 Agent 額外產生的交付說明或腳本也應放在該工作 docs/ 或 scripts/，不得改動底座保留的 docs/run-summary.md、report.json 或捏造交付雜湊；交付清單只代表底座最近一次發布時已登錄的檔案。修改成果後應走流程自己的重建／驗收能力刷新索引，不能僅改狀態為 complete。流程更新與發行不得刪除或夾帶 outputs。
 
 
-## 0.2.10 醒目顯示與 Session 綁定
+## 進度顯示與對話關聯
 
 - 開始、節點進入、節點完成與終止，都從本次 run 的事件或 live_status.md 取得證據，於對話正文使用粗體標示，例如「▶ FLOW_BASE 已啟動｜流程名稱」「✓ 節點 2/5 完成｜名稱」「■ FLOW_BASE 已結束｜待真人確認」。尚未收到開始事件時只說正在啟動。不要只把橫幅藏在工具輸出，也不要編造完成百分比。
 - 特殊 action 也有完整生命週期；執行結束不等同領域驗收完成，result.decision／status 必須如實保留。
@@ -103,7 +111,7 @@ Agent 額外產生的交付說明或腳本也應放在該工作 docs/ 或 script
 - 若宿主已提供 CODEX_THREAD_ID，讓啟動器正常繼承，不改寫為其他視窗的 ID。若沒有，僅在已確認目前 Session 檔案或 Thread ID 時傳入 FLOW_BASE_CODEX_SESSION_FILE／FLOW_BASE_CODEX_THREAD_ID；不要用 --latest 推定本次身分，不讀取其他對話內容。
 - 結束時優先顯示 token_usage.host_agent_usage 的對話累計與 run_delta，分列已快取／未快取輸入及輸出，附來源與「截至已收到收據」。run_delta 為 null 就說無法計算；no_new_usage 必須說尚未收到新增用量，不能稱本輪免費。結束後的這則回覆尚未計入。
 - registered_workflow_api 維持獨立範圍；不能與 Codex 用量相加。沒有宿主來源時明示無法取得，不因此中斷已授權的工作流程。自訂 App Server 宿主可轉送 tokenUsage 通知到專用 JSONL；不能說已自動訂閱既有視窗，除非實際持有該連線。
-# 對話中的工作狀態
+## 對話中的工作狀態
 
 使用 `agent_workflow` 查詢已安裝流程，依 `invocation` 的意圖、輸入、具名成果、必要工具及人工節點選擇流程。成本欄位是工具宣告的上限，空值代表尚無估算。以 `plan_workflow` 檢查本次輸入與權限，使用計畫提供的參數提交。
 

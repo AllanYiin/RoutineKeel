@@ -3,6 +3,7 @@
 from routinekeel_contracts.execution_review import child_execution_review
 from routinekeel_contracts.graph_trials import trial_case_gaps
 from routinekeel_contracts.graph_validator import validate_blueprint
+from routinekeel_contracts.skill_files import SKILL_BUNDLE
 
 from ..blueprints.source import require
 from ..runtime import FlowError, digest
@@ -49,7 +50,8 @@ def preflight_graph(graph, workspace, *, offline=False, planning_search=None):
     }
 
 
-def build_graph(source, requested, cases, workspace, *, attachments=None, coverage=None, offline=False):
+def build_graph(source, requested, cases, workspace, *, attachments=None, coverage=None, offline=False,
+                deferred_acceptance=None):
     graph = source["graph"]
     verify_pattern_admission(graph, workspace)
     resolved = resolve_graph(graph, workspace, offline=offline)
@@ -62,7 +64,7 @@ def build_graph(source, requested, cases, workspace, *, attachments=None, covera
         "請先取得目前能力清單並綁定相同指紋",
     )
     required = graph["quality_contract"].get("golden_cases")
-    if coverage is not None:
+    if coverage is not None and deferred_acceptance is None:
         from ..blueprints.completion_cases import trial_cases
 
         required = trial_cases(workspace, graph, coverage)
@@ -80,23 +82,30 @@ def build_graph(source, requested, cases, workspace, *, attachments=None, covera
             authority and authority[0].blueprint_hash == source["source_hash"],
             "環境鎖定屬於另一份藍圖版本，請重新驗證。",
         )
-    require(isinstance(required, list) and required, "藍圖須附成功條件與驗收案例")
-    if cases is None:
-        cases = required
-    require(
-        isinstance(cases, list) and all(c in cases for c in required), "不可省略已確認的驗收案例"
-    )
+    if deferred_acceptance is None:
+        require(isinstance(required, list) and required, "藍圖須附成功條件與驗收案例")
+        if cases is None:
+            cases = required
+        require(
+            isinstance(cases, list) and all(c in cases for c in required), "不可省略已確認的驗收案例"
+        )
+    else:
+        cases = []
     assignments = graph["provenance"].get("design_review", {}).get("details", {}).get("skills", {})
+    reviewed_files = graph["provenance"].get("skill_files", {})
     attachments = attachments or {}
     documents = {}
     for skill, paths in assignments.items():
         prefix = f"skills/{skill}/"
         group = {name[len(prefix):]: data.decode("utf-8-sig")
-                 for name, data in attachments.items() if name.startswith(prefix)}
+                 for name, data in attachments.items()
+                 if name.startswith(prefix) and name in reviewed_files and name != prefix + SKILL_BUNDLE}
         require("SKILL.md" in group, "定稿指定的技能缺少已驗證來源。")
         for path in paths:
             documents.setdefault(path, {})[skill] = group
     plan = compile_plan_tree(graph, source["source_hash"], workspace, resolved, documents=documents)
+    if deferred_acceptance is not None:
+        plan["deferred_acceptance"] = deferred_acceptance
     return plan, graph, {"bindings": resolved["bindings"]}, cases
 
 

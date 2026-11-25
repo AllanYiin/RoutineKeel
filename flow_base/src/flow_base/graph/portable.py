@@ -1,18 +1,21 @@
 """Resolve portable requirements from observed local and desktop tool inventories."""
 
+import json
 import sys
 from hashlib import sha256
 from importlib.metadata import entry_points
 
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 from routinekeel_contracts.bindings import ImplementationAdapter
 from routinekeel_contracts.domain_assets import CapabilityRequirement, content_hash
+from routinekeel_contracts.graph import GraphPort
 from routinekeel_contracts.graph_validator import compatible
 from routinekeel_contracts.pattern_composition import graph_requirements  # noqa: F401
 
 from ..runtime import FlowError
 
 ADAPTER_GROUP = "routinekeel.portable_adapters"
+GRAPH_PORT = TypeAdapter(GraphPort)
 
 
 def local_entry(adapter):
@@ -40,6 +43,57 @@ def local_entry(adapter):
     except OSError:
         return None
     return entry, content_hash([entry.name, entry.value, record, code_hash])
+
+
+def installed_local_tools():
+    """Read descriptors shipped by installed, offline portable adapter packages."""
+    records = {}
+    duplicate_names = set()
+    for entry in entry_points(group=ADAPTER_GROUP):
+        if entry.dist is None:
+            continue
+        manifest = entry.module.replace(".", "/") + ".adapters.json"
+        if not any(item.as_posix() == manifest for item in entry.dist.files or ()):
+            continue
+        path = entry.dist.locate_file(manifest)
+        try:
+            if path.is_symlink() or path.stat().st_size > 128 * 1024:
+                continue
+            spec = json.loads(path.read_bytes())[entry.name]
+            adapter = ImplementationAdapter.model_validate(spec)
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        if (
+            adapter.tool != entry.name
+            or adapter.distribution != entry.dist.name
+            or adapter.provider_version != entry.dist.version
+            or adapter.locus != "local_runtime"
+            or adapter.network
+            or adapter.permissions
+            or adapter.max_cost_micro_usd
+            or adapter.side_effect not in {"none", "local_write"}
+        ):
+            continue
+        if entry.name in records:
+            duplicate_names.add(entry.name)
+        records[entry.name] = {
+            "tool": entry.name,
+            "version": entry.dist.version,
+            "receipt_id": content_hash(spec),
+            "observed": "installed_package",
+            "allowed": True,
+            "available": True,
+            "platforms": adapter.platforms,
+            "permissions": [],
+            "network": False,
+            "side_effect": adapter.side_effect,
+            "inputs": {key: GRAPH_PORT.dump_python(port, mode="json", exclude_none=True)
+                       for key, port in adapter.inputs.items()},
+            "outputs": {key: GRAPH_PORT.dump_python(port, mode="json", exclude_none=True)
+                        for key, port in adapter.outputs.items()},
+            "portable": spec,
+        }
+    return {name: record for name, record in records.items() if name not in duplicate_names}
 
 
 def _builtin(node, rule, workspace):
@@ -270,7 +324,7 @@ def _contract_rejections(adapter, node, rule, offline, destination):
     return sorted(set(rejected))
 
 
-def automatic_probe(candidate, binding):
+def automatic_probe(candidate, binding, *, allow_local_write=False):
     if binding is None:
         return False
     resources = binding.get("resources") or {}
@@ -279,7 +333,10 @@ def automatic_probe(candidate, binding):
         and candidate["locus"] == "local_runtime"
         and candidate["cost_micro_usd"] == 0
         and not candidate["permission_scope"]
-        and binding["side_effect"] == "none"
+        and (
+            binding["side_effect"] == "none"
+            or allow_local_write and binding["side_effect"] == "local_write"
+        )
         and binding["network"] is False
         and not resources.get("network")
         and not resources.get("model_calls")
@@ -328,7 +385,7 @@ def resolve_requirement(
     matches = {}
     built = _builtin(node, rule, workspace)
     inventory, snapshot = capability_observation(workspace) if observation is None else observation
-    observed, rejected = _catalog_adapters(node, workspace, inventory)
+    observed, rejected = _catalog_adapters(node, workspace, installed_local_tools() | inventory)
     if built:
         adapter = built[0]
         observed.insert(0, (*built, None, {"tool": adapter.tool, "adapter": adapter.ref}))

@@ -697,16 +697,19 @@ def test_host_toolchain_replays_candidate_and_dispatches_children(observed_inven
     )
     (gap,) = started["gaps"]
     (candidate,) = gap["candidates"]
+    (binding,) = started["binding_plan"]["tool_selection"]
     selected = service.blueprint_completion(
         "submit",
         started["work_id"],
         {
             "request_id": "select-host-chain",
             "expected_revision": started["revision"],
-            "gap_id": gap["id"],
-            "scope_hash": gap["scope_hash"],
-            "action": "select_adapter",
-            "adapter": candidate["adapter"],
+            "action": "select_bindings",
+            "selections": [{
+                "gap_id": binding["gap_id"],
+                "scope_hash": binding["scope_hash"],
+                "option_id": binding["recommended_option_id"],
+            }],
             "user_text": "使用這個已展示的宿主工具鏈測具",
         },
     )

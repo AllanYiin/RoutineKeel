@@ -1,17 +1,20 @@
 """Source contents, previews and project pointers commit in one SQLite transaction."""
 
 import hashlib
+import io
+import zipfile
 from dataclasses import asdict
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from uuid import uuid4
 
 from routinekeel_contracts.documa import DOCUMENT_EXTENSIONS
+from routinekeel_contracts.skill_files import SKILL_BUNDLE, check_skill_bundle
 
 from ..contracts import StudioError
 from ..project.models import canonical_json, validate_name
 from ..project.service import ProjectService, now
 from .folder import collect_path
-from .models import ImportLimits, Source
+from .models import ImportLimits, Preview, Source
 from .preview import preview_file
 from .security import safe_relative
 
@@ -32,10 +35,26 @@ class SourceService:
         )
 
     def import_path(
-        self, project_id: str, expected_version: int, path: str | Path, *, source_id=None
+        self, project_id: str, expected_version: int, path: str | Path, *,
+        source_id=None, kind=None,
     ):
-        path = Path(path)
+        path = Path(path).expanduser().absolute()
+        if kind not in (None, "skill"):
+            raise StudioError("INPUT_INVALID", "未知的來源種類。")
+        if kind == "skill" and path.name == "SKILL.md":
+            path = path.parent
+        if kind == "skill" and not (
+            path.is_dir() and (path / "SKILL.md").is_file()
+            or path.is_file() and path.suffix.lower() in {".zip", ".skill"}
+        ):
+            raise StudioError("INPUT_INVALID", "請選擇含 SKILL.md 的技能資料夾或壓縮檔。")
         files = collect_path(path, self.limits)
+        if (
+            path.is_dir() and "SKILL.md" in files
+            or path.suffix.lower() == ".skill"
+            or kind == "skill"
+        ):
+            return self._save_skill(project_id, expected_version, path.name, files, source_id)
         metadata = {}
         if path.is_dir():
             metadata = {name: (path / name).lstat().st_mtime_ns for name in files}
@@ -43,6 +62,34 @@ class SourceService:
             metadata = {path.name: path.lstat().st_mtime_ns}
         return self._save(
             project_id, expected_version, files, path.name, source_id, metadata, allow_empty=True
+        )
+
+    def _save_skill(self, project_id, expected_version, name, files, source_id):
+        if "SKILL.md" not in files:
+            roots = {PurePosixPath(member).parts[0] for member in files}
+            if len(roots) == 1:
+                prefix = next(iter(roots)) + "/"
+                if all(member.startswith(prefix) for member in files):
+                    files = {member[len(prefix):]: data for member, data in files.items()}
+        if "SKILL.md" not in files:
+            raise StudioError("INPUT_INVALID", "請指定有 SKILL.md 的完整技能資料夾或壓縮檔。")
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            for member, data in sorted(files.items()):
+                info = zipfile.ZipInfo(member)
+                info.create_system = 3
+                info.external_attr = 0o100644 << 16
+                archive.writestr(info, data, compress_type=zipfile.ZIP_DEFLATED)
+        bundle = buffer.getvalue()
+        check_skill_bundle(bundle)
+        members = {
+            member: hashlib.sha256(data).hexdigest() for member, data in sorted(files.items())
+        }
+        return self._save(
+            project_id, expected_version, {"SKILL.md": files["SKILL.md"], SKILL_BUNDLE: bundle},
+            name, source_id, source_kind="skill_bundle",
+            previews={SKILL_BUNDLE: Preview("skill_bundle", f"{len(members)} 個檔案", "application/zip")},
+            extra_metadata={"skill_members": members},
         )
 
     def _save(

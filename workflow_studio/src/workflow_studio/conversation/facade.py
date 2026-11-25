@@ -426,7 +426,7 @@ def dispatch(studio, workspace, action, params, *, runtime_python=None):
                 return blueprints.deliver(studio, workspace, revision, pid)
         raise StudioError("REVISION_NOT_FOUND", "找不到此專案的藍圖版本。")
     if action == "attach":
-        src = studio.sources.import_path(pid, p["expected_revision"], p["path"])
+        src = studio.sources.import_path(pid, p["expected_revision"], p["path"], kind=p.get("kind"))
         return {"source_id": src.source_id, "version": src.version, "preview": src.manifest}
     if action in {"get", "status"}:
         try:

@@ -1,9 +1,58 @@
 import argparse
 import json
 import sys
+from contextlib import redirect_stdout
 from pathlib import Path
 
 from .service import StudioService
+
+
+def request_response(args, operation, raw=None):
+    from .contracts import StudioError
+
+    try:
+        if args.command == "interview" and operation == "stream":
+            from .conversation.facade import stream_text
+
+            deltas = (json.loads(line)["text"] for line in sys.stdin)
+            for event in stream_text(deltas):
+                print(json.dumps(event, ensure_ascii=False), flush=True)
+            return None
+        if raw is None:
+            raw = sys.stdin.read(1048577) if args.payload == "-" else args.payload or "{}"
+        if len(raw) > 1048576:
+            raise ValueError("too large")
+        params = json.loads(raw)
+        if not isinstance(params, dict):
+            raise ValueError("object required")
+        with StudioService.open_workspace(args.workspace) as studio:
+            if args.command == "pack":
+                from .registry.pack_cli import dispatch
+
+                result = dispatch(studio, operation, params, runtime_python=args.runtime_python)
+            else:
+                from .conversation.facade import dispatch
+
+                result = dispatch(
+                    studio, args.workspace, operation, params, runtime_python=args.runtime_python
+                )
+        return {"ok": True, "result": result}
+    except StudioError as exc:
+        return exc.as_response()
+    except (ValueError, TypeError, KeyError, OSError, EOFError):
+        return {
+            "ok": False,
+            "error": {"code": "INPUT_INVALID", "message": "請核對操作參數及附件路徑。"},
+        }
+
+
+def bridge(args):
+    print('{"protocol": 1}', flush=True)
+    for line in sys.stdin:
+        operation, raw = json.loads(line)
+        with redirect_stdout(sys.stderr):
+            response = request_response(args, operation, raw)
+        print(json.dumps(response, ensure_ascii=False), flush=True)
 
 
 def main(argv=None):
@@ -12,7 +61,7 @@ def main(argv=None):
     parser.add_argument("--runtime-python", type=Path)
     parser.add_argument(
         "command",
-        choices=("guide", "projects", "status", "interview", "pack"),
+        choices=("guide", "projects", "status", "interview", "pack", "bridge"),
         nargs="?",
         default="guide",
     )
@@ -23,45 +72,12 @@ def main(argv=None):
         from .conversation.guide import guide
 
         print(json.dumps({"ok": True, "result": guide()}, ensure_ascii=False))
+    elif args.command == "bridge":
+        bridge(args)
     elif args.command in {"interview", "pack"}:
-        from .contracts import StudioError
-        from .conversation.facade import dispatch, stream_text
-
-        try:
-            if args.command == "interview" and args.operation == "stream":
-                deltas = (json.loads(line)["text"] for line in sys.stdin)
-                for event in stream_text(deltas):
-                    print(json.dumps(event, ensure_ascii=False), flush=True)
-                return 0
-            raw = sys.stdin.read(1048577) if args.payload == "-" else args.payload or "{}"
-            if len(raw) > 1048576:
-                raise ValueError("too large")
-            params = json.loads(raw)
-            if not isinstance(params, dict):
-                raise ValueError("object required")
-            with StudioService.open_workspace(args.workspace) as studio:
-                if args.command == "pack":
-                    from .registry.pack_cli import dispatch as pack_dispatch
-
-                    result = pack_dispatch(
-                        studio, args.operation, params, runtime_python=args.runtime_python
-                    )
-                else:
-                    result = dispatch(
-                        studio,
-                        args.workspace,
-                        args.operation,
-                        params,
-                        runtime_python=args.runtime_python,
-                    )
-            response = {"ok": True, "result": result}
-        except StudioError as exc:
-            response = exc.as_response()
-        except (ValueError, TypeError, KeyError, OSError, EOFError):
-            response = {
-                "ok": False,
-                "error": {"code": "INPUT_INVALID", "message": "請核對操作參數及附件路徑。"},
-            }
+        response = request_response(args, args.operation)
+        if response is None:
+            return 0
         print(json.dumps(response, ensure_ascii=False))
         return 0 if response["ok"] else 2
     else:

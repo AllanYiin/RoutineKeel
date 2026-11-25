@@ -1,6 +1,8 @@
 # 課程影片產生字幕：宿主 Agent 指引
 
-本資料夾是已封裝的流程包，不是讓 Agent 重新挑選字幕工具的空白專案。使用者要求產生字幕時，讀取 `../../flow_base/AGENTS.md` 的共用執行契約，並閱讀此處 flow.json、README.md、settings.json（若存在），透過根層底座的 catalog → plan → run 執行。若共用契約缺少，先回報缺件；不得默默改用別的流程。
+使用者指定執行本字幕流程時，讀取 `../../flow_base/AGENTS.md` 和這裡的 README.md、flow.json、settings.json（若存在）。開發樹的宣告來源是 flow.template.json。已安裝流程經底座 catalog → plan → run 執行；MCP 可走 agent_workflow → plan_workflow → submit_workflow 及本機 Worker。
+
+若請求是把字幕藍圖轉成工作流，走底座 `blueprint_completion`。盤點現成 FFmpeg／ffprobe、ASR 環境、模型及字幕技能附帶的腳本，向有取捨的工具提出選項。術語、文字校稿、文本比對、波形對齊各按該藍圖的具名資料、執行位置及證據需求補強。藍圖候選使用自己的確定規則；本已安裝流程的五步、模型與聽審政策按下文執行。
 
 本流程的 Codex 專案／repo 預設就是本資料夾，對話與其他流程分開。共用執行工作區是上兩層的 RoutineKeel 根目錄；執行時需允許必要的 ../../flow_base、../../.venv、../../flow_base/share_states、../../flow_base/share_logs。若權限受阻，回報具體路徑，不要把所有流程對話搬到同一個父目錄專案，也不要把底座複製進每個流程。不把 wheel 解開後自行執行 worker.py，不另找系統 Whisper、其他磁碟的舊專案或同類字幕技能來取代已封裝流程。只有使用者明確要求修改流程實作時，才進入 source.zip 的開發流程。
 
@@ -43,7 +45,7 @@
 }
 ```
 
-0.3.4 的程式與範例設定預設 initial_prompt="繁體中文"；啟用提示時，既有空白設定也會補上此值。錄音主題仍須由 Agent 依據使用者資訊取得，不能宣稱程式已自動理解課程內容。歷史 checkpoint 恢復保留原提示。
+以本版 manifest、實際設定與計畫核對 initial_prompt。錄音主題來源依使用者資訊記錄，恢復既有 checkpoint 時沿用原提示。
 
 ## 完成判定
 
@@ -67,7 +69,7 @@
 
 已完成全部辨識區段但 ValidationError 時，先使用宣告的 recover-run 能力，勿直接重跑辨識、刪快取或改 worker。該能力核對全部來源後只重建後段產物；若驗證不足則停止。回報 recovery.asr_calls、verified_regions、timing_issue_ids 及 source_run_id，不能把恢復當作重新辨識。異常字級對齊會退回有效段落時間並列疑義聽審，不代表已精確對齊。
 
-## 人類可讀的主要交付（0.3.4）
+## 人類可讀的主要交付
 
 - 結束時第一個連結必須是本次 artifacts/review.html，接著提供「字幕與確認表.zip」、中文確認表 CSV、校對稿 TXT 與 SRT；不要把 QA.json 當作主要交付介面。先核對 summary 的 review_table／transcript／delivery_zip 實際存在。
 - 用白話摘要顯示狀態、字幕數、需聽審片段數、格式硬性問題數；FAIL 不得稱為完成驗收。確認頁提供時間碼、ASR 原文、目前校訂、中文疑義、原音與填答，頁面暫存不代表正式保存或核准。

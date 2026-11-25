@@ -4,12 +4,18 @@ import json
 import os
 import subprocess
 import sys
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
+from queue import Empty, Queue
+from threading import Lock, Thread
 
 from routinekeel_contracts.domain_assets import content_hash
 
 from .execution.process import worker_environment
 from .runtime import FlowError
+
+_studio_bridge = ContextVar("studio_bridge", default=None)
 
 
 def studio_python():
@@ -32,6 +38,114 @@ def studio_python():
         "DEPENDENCY_UNAVAILABLE",
         "請先由發行包的 Studio 啟動器準備環境，或指定 ROUTINEKEEL_STUDIO_PYTHON。",
     )
+
+
+def _studio_command(workspace):
+    return [
+        str(studio_python()), "-I", "-X", "utf8", "-m", "workflow_studio",
+        "--workspace", str(workspace), "--runtime-python", sys.executable,
+    ]
+
+
+def _exchange_requests(process, requests):
+    ready = False
+    with process.stdin, process.stdout:
+        while (request := requests.get()) is not None:
+            payload, reply = request
+            try:
+                if not ready:
+                    greeting = process.stdout.readline()
+                    # Older Studio CLIs reject the bridge command before reading a request.
+                    if not greeting and process.wait() == 2:
+                        reply.put(None)
+                        return
+                    if json.loads(greeting) != {"protocol": 1}:
+                        raise ValueError("Unsupported Studio bridge protocol")
+                    ready = True
+                process.stdin.write(payload)
+                process.stdin.flush()
+                response = json.loads(process.stdout.readline())
+                if not isinstance(response, dict) or type(response.get("ok")) is not bool:
+                    raise ValueError("Invalid Studio bridge response")
+                reply.put(response)
+            except (OSError, ValueError) as exc:
+                reply.put(exc)
+                return
+
+
+class StudioBridge:
+    """Own one lazily started Studio subprocess for an MCP connection."""
+
+    def __init__(self, workspace):
+        self.workspace = Path(workspace)
+        self._lock = Lock()
+        self._process = None
+        self._legacy = False
+
+    @contextmanager
+    def activate(self):
+        token = _studio_bridge.set(self)
+        try:
+            yield
+        finally:
+            _studio_bridge.reset(token)
+
+    def _start(self):
+        self._requests = Queue()
+        self._process = subprocess.Popen(
+            [*_studio_command(self.workspace), "bridge"],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            encoding="utf-8", env=worker_environment(),
+        )
+        self._thread = Thread(
+            target=_exchange_requests, args=(self._process, self._requests), daemon=True
+        )
+        self._thread.start()
+
+    def _stop(self, *, force=False):
+        process = self._process
+        if process is None:
+            return
+        self._process = None
+        self._requests.put(None)
+        if force and process.poll() is None:
+            process.kill()
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+        self._thread.join(timeout=2)
+
+    def close(self):
+        with self._lock:
+            self._stop()
+
+    def response(self, operation, payload, timeout):
+        with self._lock:
+            if self._legacy:
+                return None
+            if self._process is not None and self._process.poll() is not None:
+                self._stop()
+            if self._process is None:
+                try:
+                    self._start()
+                except OSError as exc:
+                    raise FlowError("STUDIO_UNAVAILABLE", "無法啟動本機 Studio。") from exc
+            reply = Queue(maxsize=1)
+            self._requests.put((json.dumps([operation, payload]) + "\n", reply))
+            try:
+                response = reply.get(timeout=timeout)
+            except Empty as exc:
+                self._stop(force=True)
+                raise subprocess.TimeoutExpired(operation, timeout) from exc
+            if isinstance(response, Exception):
+                self._stop(force=True)
+                raise FlowError("STUDIO_UNAVAILABLE", "Studio 未能回報結果，請檢查本機安裝。") from response
+            if response is None:
+                self._stop()
+                self._legacy = True
+            return response
 
 
 def design_preflight(proposal, workspace):
@@ -101,7 +215,7 @@ def studio_request(workspace, operation, params):
             )
         else:
             state = studio_request(
-                workspace, "get_pattern_improvement", {"proposal_id": params["proposal_id"]}
+                workspace, "get_pattern_improvement", {"proposal_id": params["proposal_id"]},
             )
             if params["expected_revision"] != state["revision"]:
                 raise FlowError("REVISION_CONFLICT", "改善提案版本已改變。")
@@ -110,40 +224,26 @@ def studio_request(workspace, operation, params):
                 params.pop("limits", {}),
             )
         evidence_environment["ROUTINEKEEL_STUDIO_EVIDENCE_SHA256"] = content_hash(params)
-    args = [
-        str(studio_python()),
-        "-I",
-        "-X",
-        "utf8",
-        "-m",
-        "workflow_studio",
-        "--workspace",
-        str(workspace),
-        "--runtime-python",
-        sys.executable,
-        "interview",
-        operation,
-        "--payload",
-        "-",
-    ]
+    payload = json.dumps(params)
+    timeout = 350 if operation == "qualify_pattern" else 45
+    bridge = _studio_bridge.get()
     try:
-        proc = subprocess.run(
-            args,
-            input=json.dumps(params),
-            encoding="utf-8",
-            capture_output=True,
-            timeout=350 if operation == "qualify_pattern" else 45,
-            env=worker_environment() | evidence_environment, check=False,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise FlowError(
-            "STUDIO_TIMEOUT", "Studio 回覆逾時；請先查詢目前版本，再重送相同請求。"
-        ) from exc
-    try:
-        response = json.loads(proc.stdout)
+        # Runtime evidence is passed in a per-request environment for these operations.
+        response = None
+        if bridge is not None and bridge.workspace == Path(workspace) and not evidence_environment:
+            response = bridge.response(operation, payload, timeout)
+        returncode = 0
+        if response is None:
+            proc = subprocess.run(
+                [*_studio_command(workspace), "interview", operation, "--payload", "-"],
+                input=payload, encoding="utf-8", capture_output=True, timeout=timeout,
+                env=worker_environment() | evidence_environment, check=False,
+            )
+            returncode = proc.returncode
+            response = json.loads(proc.stdout)
         if not response["ok"]:
             raise FlowError(response["error"]["code"], response["error"]["message"])
-        if proc.returncode == 0:
+        if returncode == 0:
             result = response["result"]
             if operation in {"prepare_blueprint", "finalize_workflow_design"}:
                 design_preflight(result, workspace)
@@ -152,6 +252,10 @@ def studio_request(workspace, operation, params):
             ) in {"draft_review_required", "decisions_required", "final_review_required"}:
                 design_preflight(result["blueprint_proposal"], workspace)
             return result
+    except subprocess.TimeoutExpired as exc:
+        raise FlowError(
+            "STUDIO_TIMEOUT", "Studio 回覆逾時；請先查詢目前版本，再重送相同請求。"
+        ) from exc
     except (ValueError, KeyError, TypeError):
         pass
     raise FlowError("STUDIO_UNAVAILABLE", "Studio 未能回報結果，請檢查本機安裝。")

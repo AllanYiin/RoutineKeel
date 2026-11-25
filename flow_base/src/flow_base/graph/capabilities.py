@@ -25,18 +25,40 @@ def unavailable(message, **details):
     raise FlowError("CAPABILITY_UNAVAILABLE", message, **details)
 
 
-def read_host_inventory(workspace):
-    # This path is launcher configuration. It is never accepted from a blueprint or tool argument.
-    configured = os.environ.get("ROUTINEKEEL_HOST_CATALOG")
+def _host_path(workspace, configured):
     if not configured:
         return None
     path = Path(configured)
     if not path.is_absolute() or path.resolve().is_relative_to(Path(workspace).resolve()):
         unavailable("宿主能力目錄須來自資料工作區外的宿主設定。")
+    return path
+
+
+def host_inventory_path(workspace):
+    # Only launcher configuration may name host-owned paths.
+    path = _host_path(workspace, os.environ.get("ROUTINEKEEL_HOST_CATALOG"))
+    if path is not None:
+        return path
+    source = _host_path(workspace, os.environ.get("ROUTINEKEEL_HOST_SOURCES"))
+    return _host_path(workspace, source.with_name(source.name + ".catalog.json")) if source else None
+
+
+def read_host_inventory(workspace):
+    path = host_inventory_path(workspace)
+    if path is None:
+        return None
     try:
-        if path.stat().st_size > 2 * 1024**2:
-            unavailable("宿主能力目錄超過大小限制。")
-        data = json.loads(path.read_bytes())
+        if not os.environ.get("ROUTINEKEEL_HOST_CATALOG"):
+            from ..adapters.host_inventory import refresh_configured_inventory
+
+            configuration = _host_path(workspace, os.environ.get("ROUTINEKEEL_HOST_SOURCES"))
+            data = refresh_configured_inventory(configuration, path)
+            if data.get("status") == "unavailable":
+                unavailable("宿主已設定的 MCP 來源目前無法使用。", observation_status="unavailable")
+        else:
+            if path.stat().st_size > 2 * 1024**2:
+                unavailable("宿主能力目錄超過大小限制。")
+            data = json.loads(path.read_bytes())
         if data["version"] != 1 or not isinstance(data["tools"], dict):
             unavailable("宿主能力目錄格式無效。")
         expires = datetime.fromisoformat(data["expires_at"])
@@ -55,7 +77,9 @@ def host_catalog(workspace):
 def capability_observation(workspace):
     try:
         data = read_host_inventory(workspace)
-        snapshot_id = digest([sys.platform, data])
+        snapshot_id = digest([sys.platform, data["source_config_hash"], data["tools"]]) if (
+            data and data.get("source_config_hash")
+        ) else digest([sys.platform, data])
     except FlowError as error:
         status = error.details.get("observation_status", "invalid")
         return {}, {"id": digest([sys.platform, status]), "status": status}

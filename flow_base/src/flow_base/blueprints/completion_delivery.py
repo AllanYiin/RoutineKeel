@@ -30,6 +30,7 @@ def trial_key(service, state):
                 service.workspace.root,
                 [state["case_coverage"], state.get("legacy_recipe")],
             ),
+            *([state["case_strategy"]] if state.get("case_strategy") else []),
         ]
     )
 
@@ -104,7 +105,7 @@ def queue_trial(service, state, record):
     log = logs / (pending["build_id"] + ".log")
     reject_links(log)
     env = worker_environment()
-    for name in ("ROUTINEKEEL_HOST_CATALOG", "ROUTINEKEEL_STUDIO_PYTHON"):
+    for name in ("ROUTINEKEEL_HOST_CATALOG", "ROUTINEKEEL_HOST_SOURCES", "ROUTINEKEEL_STUDIO_PYTHON"):
         if value := os.environ.get(name):
             env[name] = value
     kwargs = (
@@ -209,6 +210,14 @@ def _candidate(service, state):
         build_id=build_id,
         coverage=None if legacy else state["case_coverage"],
         offline=state["offline"],
+        deferred_acceptance=(
+            {
+                "approval_sha256": digest(state["case_strategy"]),
+                "case_scope": state["case_review"]["scope_hash"],
+                "cases": state["case_review"]["cases"],
+            }
+            if state.get("case_strategy", {}).get("mode") == "observe_runtime" else None
+        ),
     )
 
 

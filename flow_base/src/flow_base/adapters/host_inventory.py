@@ -1,9 +1,16 @@
-"""Embedding-host adapter. Observe an already connected MCP client without invoking a tool."""
+"""Observe host-authorized MCP tools without invoking them."""
 
+import asyncio
+import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+from filelock import FileLock, Timeout
 
 from ..graph.capabilities import unavailable
-from ..runtime import digest
+from ..outputs import reject_links
+from ..runtime import FlowError, atomic_json, digest
 
 
 async def observe_tools(client, grants, *, validity_seconds=300, source_id=None, routes=None):
@@ -95,3 +102,86 @@ def merge_tool_observations(*catalogs):
         "expires_at": expiry.isoformat(),
         "tools": tools,
     }
+
+
+async def _observe_sources(sources, directory):
+    from mcp import Client, StdioServerParameters
+
+    async def observe(identifier, source):
+        try:
+            parameters = StdioServerParameters(command=source["command"], args=source.get("args", []),
+                                               cwd=directory)
+            async with asyncio.timeout(15), Client(parameters, read_timeout_seconds=8) as client:
+                return await observe_tools(client, source["grants"], source_id=identifier,
+                                           routes=source.get("routes"))
+        except Exception:
+            # A provider can be down independently. User-facing results do not expose its launch data.
+            return None
+
+    peers = await asyncio.gather(*(observe(key, value) for key, value in sources.items()))
+    good = [peer for peer in peers if peer is not None]
+    if not good:
+        return {"version": 1, "tools": {}, "status": "unavailable",
+                "expires_at": (datetime.now(UTC) + timedelta(seconds=15)).isoformat()}
+    observation = merge_tool_observations(*good)
+    if len(good) != len(peers):
+        observation["expires_at"] = (datetime.now(UTC) + timedelta(seconds=15)).isoformat()
+    return observation
+
+
+def refresh_configured_inventory(configuration, cache):
+    """Resolve a trusted launcher's stdio sources and share the resulting short-lived snapshot."""
+    def read(path):
+        with path.open("rb") as file:
+            body = file.read(2 * 1024**2 + 1)
+        if len(body) > 2 * 1024**2:
+            raise ValueError("inventory exceeds limit")
+        return json.loads(body)
+
+    def cached(config_hash):
+        try:
+            prior = read(cache)
+            expires_at = datetime.fromisoformat(prior["expires_at"])
+            if prior["source_config_hash"] == config_hash and expires_at > datetime.now(UTC):
+                return prior
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+        return None
+
+    try:
+        config = read(configuration)
+        sources = config["sources"]
+        if config["version"] != 1 or not isinstance(sources, dict) or not 1 <= len(sources) <= 12:
+            raise ValueError("invalid sources")
+        for key, source in sources.items():
+            if (not 1 <= len(key) <= 200 or not Path(source["command"]).is_absolute()
+                    or not isinstance(source["grants"], dict)):
+                raise ValueError("invalid source")
+        config_hash = digest(config)
+        lock_path = cache.with_suffix(cache.suffix + ".lock")
+        reject_links(cache)
+        reject_links(lock_path)
+        if prior := cached(config_hash):
+            return prior
+        with FileLock(lock_path, timeout=18):
+            if digest(read(configuration)) != config_hash:
+                raise ValueError("sources changed while waiting for inventory")
+            if prior := cached(config_hash):
+                return prior
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                observed = asyncio.run(_observe_sources(sources, configuration.parent))
+            else:
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    observed = pool.submit(lambda: asyncio.run(
+                        _observe_sources(sources, configuration.parent))).result()
+            observed["source_config_hash"] = config_hash
+            if digest(read(configuration)) != config_hash:
+                raise ValueError("sources changed during observation")
+            if len(json.dumps(observed, ensure_ascii=False).encode()) > 2 * 1024**2:
+                raise ValueError("inventory exceeds limit")
+            atomic_json(cache, observed)
+            return observed
+    except (OSError, ImportError, ValueError, KeyError, TypeError, Timeout, FlowError):
+        unavailable("無法從宿主已設定的 MCP 來源取得工具。", observation_status="unavailable")

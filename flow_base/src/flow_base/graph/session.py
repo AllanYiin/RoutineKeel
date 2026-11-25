@@ -643,6 +643,11 @@ class GraphSession(Session):
         }
         if state.get(DOCUMENT_INDEXES):
             result[DOCUMENT_INDEXES] = state[DOCUMENT_INDEXES]
+        if acceptance := state["plan"].get("deferred_acceptance"):
+            result["case_acceptance"] = {
+                "status": "pending_real_runs", "run_id": state.get("run_id"),
+                "cases": acceptance["cases"],
+            }
         if state.get("lineage"):
             lineage = state["lineage"]
             result.update(root_run_id=lineage["root_run_id"], active_run_id=state["run_id"],

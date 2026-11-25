@@ -4,6 +4,7 @@ import json
 import subprocess
 import sys
 from dataclasses import dataclass
+from inspect import Parameter, signature
 
 from pydantic import Field, JsonValue, ValidationError
 from routinekeel_contracts.bindings import (
@@ -143,7 +144,19 @@ def execute_local(binding, node, inputs, parameters, *, workspace=None):
         if live is None or live[1] != binding["implementation_hash"]:
             raise FlowError("BINDING_STALE", "本機 Adapter 指紋已更改。")
         handler = live[0].load()
-        outputs = handler(inputs, parameters)
+        try:
+            asset_parameter = signature(handler).parameters.get("assets")
+        except (TypeError, ValueError):
+            asset_parameter = None
+        if asset_parameter is not None and asset_parameter.kind == Parameter.KEYWORD_ONLY:
+            from ..blueprints.sessions import Assets
+            from ..workspace import Workspace
+
+            if workspace is None:
+                raise FlowError("CAPABILITY_UNAVAILABLE", "素材 Adapter 需要本機工作區。")
+            outputs = handler(inputs, parameters, assets=Assets(Workspace(workspace).runtime))
+        else:
+            outputs = handler(inputs, parameters)
     if not isinstance(outputs, dict) or outputs.keys() != node["outputs"].keys():
         raise FlowError("CONTRACT_MISMATCH", "Adapter 交付埠與合約不同。")
     for key, value in outputs.items():
@@ -385,8 +398,8 @@ def _individual_scope(proposal, node):
 
 
 def complete_bindings(ws, draft_id, selections, attempted, *, offline=False, case_supplies=None,
-                      toolchain_plans=None):
-    """Probe pure local candidates or consume trusted, previously authorized host observations."""
+                      toolchain_plans=None, selected_local_writes=()):
+    """Probe safe local candidates or consume previously authorized host observations."""
     graph = _source(ws, draft_id)
     proposal, tasks, rules, choices, cases = _plan(
         ws, graph, draft_id, selections, offline=offline, case_supplies=case_supplies,
@@ -397,12 +410,16 @@ def complete_bindings(ws, draft_id, selections, attempted, *, offline=False, cas
         scope = _individual_scope(proposal, key)
         previous = attempted.get(key, {})
         report = find_receipt(ws.root, proposal, key, candidate)
-        if report is None and automatic_probe(candidate, transport):
+        if report is None and automatic_probe(
+            candidate, transport, allow_local_write=key in selected_local_writes,
+        ):
             if previous.get("request_hash") == scope["request_hash"] and previous.get("report"):
                 report = previous["report"]
             else:
                 report = _report(ws, scope, key, candidate, transport, tasks[key], rules[key], cases[key],
-                                 "local read-only qualification policy")
+                                 "local qualification with selected write scope"
+                                 if transport["side_effect"] == "local_write"
+                                 else "local read-only qualification policy")
         if report is None and candidate["locus"] == "host_mediated":
             report = _report(ws, scope, key, candidate, transport, tasks[key], rules[key], cases[key],
                              "host-controlled authorization evidence")

@@ -104,9 +104,10 @@ def inspect_blueprint(raw):
                 payload = load_json(files["blueprint.json"].decode("utf-8-sig"))
                 source = graph_source(payload, raw)
                 from routinekeel_contracts.errors import StudioError
-                from routinekeel_contracts.skill_files import check_skill_files
+                from routinekeel_contracts.skill_files import inspect_skill_attachments
                 try:
-                    check_skill_files(source["graph"], {n:b for n,b in files.items() if n != "blueprint.json"})
+                    attached = {n: b for n, b in files.items() if n != "blueprint.json"}
+                    source["findings"].extend(inspect_skill_attachments(source["graph"], attached))
                 except StudioError as exc:
                     raise FlowError(exc.code, str(exc)) from exc
                 return source, files

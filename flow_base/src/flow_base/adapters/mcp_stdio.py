@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -11,6 +12,7 @@ from ..core.service import WorkflowService
 from ..core.types import PlanRequest, SubmitRequest
 from ..observability.errors import explain_exception
 from ..runtime import FlowError
+from ..studio import StudioBridge
 
 LOG = logging.getLogger(__name__)
 
@@ -22,12 +24,23 @@ def create_server(workspace: Path | str):
         raise FlowError('DEPENDENCY_UNAVAILABLE', 'MCP 選配套件未安裝；請安裝 flow_base[mcp]') from exc
 
     service = WorkflowService(workspace)
+    studio = StudioBridge(service.workspace.root)
+
+    @asynccontextmanager
+    async def lifespan(_server):
+        try:
+            yield
+        finally:
+            studio.close()
+
     server = MCPServer('RoutineKeel', version=__version__,
-                       instructions='Only installed workflows and paths inside this local workspace are available.')
+                       instructions='Only installed workflows and paths inside this local workspace are available.',
+                       lifespan=lifespan)
 
     def result(call):
         try:
-            return {'ok': True, 'result': call()}
+            with studio.activate():
+                return {'ok': True, 'result': call()}
         except FlowError as exc:
             explanation = explain_exception(exc)
             return {'ok': False, 'error': {'code': exc.code,
@@ -64,7 +77,7 @@ def create_server(workspace: Path | str):
 
     @server.tool()
     def blueprint_completion(operation: str, work_id: str | None = None, payload: dict | None = None) -> dict:
-        """Start, inspect, or resume a blueprint's completion in this workspace."""
+        """Continue blueprint completion, including tool choices and local adapter qualification."""
         return result(lambda: service.blueprint_completion(operation, work_id, payload))
 
     @server.tool()

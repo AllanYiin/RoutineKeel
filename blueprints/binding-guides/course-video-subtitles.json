@@ -1,0 +1,119 @@
+{
+  "version": 1,
+  "workflow": "course-video-subtitles",
+  "capabilities": {
+    "course.description.terms": {
+      "handled_by": "local_implementation",
+      "options": [
+        {
+          "title": "沿用字幕技能的術語規則，產生本機文字處理",
+          "approach": "local_implementation",
+          "skills": ["video-subtitle-creator"],
+          "plan": "宿主先依術語與辨識提示規則產生本機實作及獨立案例，驗證每筆術語附原文片段、無術語回空清單、說明內的指令只當資料。此藍圖要求離線，執行時不把課程說明傳給宿主模型。"
+        }
+      ]
+    },
+    "course.media.prepare": {
+      "options": [
+        {
+          "title": "FFmpeg 與 ffprobe",
+          "approach": "local_tool",
+          "executables": ["ffmpeg", "ffprobe"],
+          "sources": ["https://ffmpeg.org/ffprobe.html", "https://ffmpeg.org/download.html", "https://www.gyan.dev/ffmpeg/builds/"],
+          "plan": "先查 PATH 及已配置的 FFmpeg 目錄。缺少 ffprobe 時，從 FFmpeg 官方下載頁找適用平台的同版套件；Windows 可選 Gyan 的發行 ZIP，內含兩個執行檔。先展示來源、版本、校驗碼及工作區內解壓位置，取得同意後由宿主下載、驗證並指定本機執行路徑。用預設音軌、有起點偏移及無音軌案例驗證具名輸出，按原 work_id 接續。"
+        }
+      ]
+    },
+    "course.audio.preprocess": {
+      "options": [
+        {
+          "title": "既有字幕流程的 Demucs 與本機音訊前處理",
+          "approach": "local_tool",
+          "executables": ["ffmpeg"],
+          "distributions": ["demucs", "torch"],
+          "sources": ["https://github.com/facebookresearch/demucs", "https://ffmpeg.org/ffmpeg-filters.html"],
+          "plan": "優先查隨字幕流程維護的鎖定環境、權重與 audio_preparation.py。串接人聲分離、去噪、增強和音量標準化；比對起點、時長、峰值及低音量尾音。原 Demucs 儲存庫已封存，採可重播的鎖定版本。"
+        }
+      ]
+    },
+    "course.audio.vad": {
+      "options": [
+        {
+          "title": "faster-whisper 內建 Silero VAD",
+          "approach": "local_tool",
+          "distributions": ["faster-whisper"],
+          "sources": ["https://github.com/SYSTRAN/faster-whisper/blob/master/faster_whisper/vad.py"],
+          "plan": "沿用同一 ASR 環境的 VAD 與分段邏輯，只輸出入選片段和原片座標；用長靜音與無語音素材核對無後續模型呼叫。"
+        },
+        {
+          "title": "獨立 Silero VAD",
+          "approach": "local_tool",
+          "distributions": ["silero-vad"],
+          "sources": ["https://github.com/snakers4/silero-vad"],
+          "plan": "在本機產生樣本區間，再依媒體起點映回原片，寫出片段 ZIP、映射及 VAD 報告。試做核對短詞及純配樂。"
+        }
+      ]
+    },
+    "course.speech.transcribe": {
+      "options": [
+        {
+          "title": "既有 faster-whisper 與已驗證的本機模型",
+          "approach": "local_tool",
+          "distributions": ["faster-whisper"],
+          "sources": ["https://github.com/SYSTRAN/faster-whisper/blob/master/faster_whisper/transcribe.py"],
+          "plan": "沿用字幕流程 worker.py 的 load_model 與 transcribe。從已配置的 CPU／CUDA 環境載入本機權重（WhisperModel，local_files_only=True），每個 VAD 片段個別呼叫 transcribe，開啟 word_timestamps 並以片段映射還原原片時間。回傳原始詞時間及最小校稿文字，用混語、切段接縫與無語音案例驗證。"
+        },
+        {
+          "title": "字幕技能的 whisper.cpp 本機路徑",
+          "approach": "skill_code",
+          "executables": ["whisper-cli"],
+          "skills": ["video-subtitle-creator"],
+          "sources": ["https://github.com/ggml-org/whisper.cpp"],
+          "plan": "檢查可重用的執行檔和權重，逐 VAD 片段執行並驗證可取得契約要求的詞級位置與跨段映射；比較通過後再採用。"
+        }
+      ]
+    },
+    "course.subtitle.edit": {
+      "handled_by": "host_model",
+      "options": [
+        {
+          "title": "使用目前宿主模型做具名文字校稿",
+          "approach": "host_model",
+          "skills": ["video-subtitle-creator"],
+          "plan": "宿主使用技能的校正規則及藍圖參數，接上 segments → edits。以最少文字驗證片段 ID、原因、原意與保留項。用既有宿主模型的可驗證範圍，候選資格與執行資料授權沿用底座。"
+        }
+      ]
+    },
+    "course.subtitle.align": {
+      "options": [
+        {
+          "title": "技能內的單語 whisperX 對齊",
+          "approach": "skill_code",
+          "skills": ["video-subtitle-creator"],
+          "distributions": ["whisperx"],
+          "sources": ["https://github.com/m-bain/whisperX"],
+          "plan": "重用 align.py 與 validate_timing.py。先核對校稿文字與原片段 ID，再以原音對齊，恢復原片起點並輸出 cues 與 audit。適用已有可信單語對齊模型的素材。"
+        },
+        {
+          "title": "技能內的 MMS_FA 多語波形對齊",
+          "approach": "skill_code",
+          "skills": ["video-subtitle-creator"],
+          "distributions": ["torchaudio"],
+          "sources": ["https://docs.pytorch.org/audio/stable/pipelines"],
+          "plan": "重用 mms_align.py 與 validate_timing.py；對中英混語測試詞級覆蓋率及低信心處理。核對 TorchAudio 與權重版本，將原音的時間證據和文字校正稽核一起交付。"
+        }
+      ]
+    },
+    "course.subtitle.export": {
+      "handled_by": "skill_code",
+      "options": [
+        {
+          "title": "重用字幕技能的 SRT 轉換及驗證器",
+          "approach": "skill_code",
+          "skills": ["video-subtitle-creator"],
+          "plan": "核對 convert_subtitles.py 與 validate_subtitles.py，接上具名 cues 及本版人工校閱；原子寫出 UTF-8 SRT，重讀核對正文與毫秒，從實際處理及校閱證據產出 QA JSON。"
+        }
+      ]
+    }
+  }
+}

@@ -1,5 +1,13 @@
 # Studio 驗證紀錄
 
+## Studio 程序重用（2026-11-25）
+
+- Windows 上透過官方 MCP SDK 驗證同一連線的並行 Studio 請求共用同一 PID。斷線後該 PID 已退出，重新連線可取得先前保存的專案。另以真實子程序驗證崩潰、逾時及舊版 CLI 相容。失去回覆時橋接層回報錯誤，由宿主先查詢版本再決定是否重送。
+- 開發工作樹的 Studio 全量回歸 572 項通過。橋接調整完成後，底座橋接、MCP、定稿與 Graph Builder 共 28 項通過。另有 15 項 Studio 發行配置、訪談及 Pattern 改版通過，跨宿主 Data Adapter 案例因缺選配 wheel 跳過。
+- 同一個兩節點藍圖在 E 槽以新工作區量測建立專案、初稿、定稿及匯出。逐次啟動與重用模式各跑 5 次，總時間中位數由 3.629 秒降至 1.906 秒。量測使用本機測具及已準備的 Python 環境，未包含模型、網路研究與真人等待。
+- 以固定原始碼快照建置本次底座、Studio 與契約 wheel，分裝至 `.venv` 及 `.studio-venv`。第三方依賴沿用本機開發環境。由包內 MCP 建立及讀回 Studio 專案，確認兩套環境分別載入本次 wheel。Linux 與 macOS 原生啟動待驗。
+- 本次程式更新無資料庫遷移。回退時使用上一組底座及 Studio wheel，保存原工作區後重開 MCP 連線。
+
 ## 主動預填與逐章確認（2026-11-23）
 
 - 底座、Studio 設計合約、MCP stdio 及改版端到端回歸，26 passed。Studio 訪談、封裝匯出與 Pattern 專項，19 passed。含本機 Data Adapter 的跨宿主 Pattern 端到端回歸，1 passed。結果在 `dist/studio-prefill-review-base.xml`、`dist/studio-prefill-review-studio.xml` 及 `dist/studio-prefill-review-portability.xml`。

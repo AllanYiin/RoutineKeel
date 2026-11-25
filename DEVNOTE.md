@@ -2,46 +2,46 @@
 
 ## SNAPSHOT — 當前狀態
 
-最後更新：2026-11-25T06:12+08:00
+最後更新：2026-11-25T08:26+08:00
 交接狀態：verified
 
 ### 目標與授權範圍
 
-依 /prompts:devloop 實作與驗收通用工具鏈補全規格 Stage 0–7，交付本機候選。
+藍圖補強遇到工具缺口時，由底座與宿主提出解法、依已選方案開發 Adapter、核對資格並接續安裝。更新專案與底座的 AGENTS.md。
 
 ### 目前進度
 
-Stage 0–7 已完成。底座能解析一般 Graph 2.3 和 Pattern 的能力需求，從受信清冊規劃、準備依賴、建置 Adapter、取得行為及候選驗收。執行失效時保留原工作與 Run，狀態可透過 CLI 或 MCP 接續。底座、Studio 操作指南及入口均已隨兩平台最終候選驗證。
+新增 Adapter 開發工作單與 complete_local_adapter，沿同一補強工作驗證已安裝的實作。課程字幕 0.2.0 的 Silero VAD 與 Whisper base 在 Windows 隔離工作區取得資格 PASS。E:/RoutineKeel 原工作 completion_c1dc7658b23f6fe5bd8de942f3a43706 的 rev 5 複查紀錄仍為 needs_input，正式工作區尚未安裝。
 
 ### 下一步
 
-本次本機交付已完成。正式部署、外部付費／外傳及私人工作區操作適用各自授權與驗收。
+以原補強工作接續術語擷取、音軌擷取、人聲前處理、Ollama 校稿、MMS 波形對齊與 SRT 交付。在取得正式工作區變更授權後套用已驗證候選。
 
 ### DECISIONS
 
-- 等效換綁建立同一工作下的續做 Run，連回原 Run 並沿用可驗證的成果。
-- 外部配置、補償及重綁授權以實際操作與證據範圍為準。
-- 任一已領取外部操作的結果不明時保留原請求待查。
-- 程式 Adapter 採無宿主匯入的 WebAssembly；依賴準備使用受信鎖定配方。
+- 缺口是底座與宿主的續作入口。使用者選實質方案；宿主接線、編寫實作與案例，底座重驗並保存可續用結果。
+- 可信的已安裝離線本機 Adapter 由 entry point 與套件描述檔盤點。已配置的宿主 MCP 來源由底座查 tools/list，既有清冊仍可供嵌入宿主提供觀測。
+- 保留案例如 observe_runtime 與合成試做之選擇及資格門檻，部分 PASS 只等待其餘必要工具。同一工作有缺口時保留已確認選擇。
+- 技能來源保存完整 ZIP 和成員指紋，保留手動補件與來源驗證。
 
 ### LANDMINES
 
-- 實際 Documa 文件案例於 Windows 驗證。macOS、真實付費或外傳服務及使用者私人已安裝工作區未納入本次驗收。
-- 受影響的巢狀步驟若無法證明既有外部效果可安全沿用，保留待處理狀態。
+- 這次的 ASR 使用已驗證的 OpenAI Whisper base.pt 與既有本機執行環境，其他模型、平台、長片及完整流程未驗證。
+- 自動宿主觀測支援已配置 stdio 來源，Codex 私有連接器與課程 Ollama 的正式校稿綁定尚未接通。
+- 課程藍圖的另外六項 Adapter 與正式安裝仍待完成。兩個工作區的 large-v3 權重先前均未找到。
 
 ### 證據索引
 
-- docs/specs/toolchain-completion/verification.md
-- flow_base/docs/blueprint-install.md
-- workflow_studio/docs/host-conversation.md
-- dist/candidate-toolchain-final-windows/release/SHA256SUMS
-- dist/candidate-toolchain-final-linux/release/SHA256SUMS
+- AGENTS.md、flow_base/AGENTS.md、flow_base/docs/blueprint-install.md
+- flow_base/src/flow_base/blueprints/adapter_development.py
+- dist/course-subtitle-adapter/speech-evidence.json
+- E:/RoutineKeel/flow_base/share_states/course-subtitles-workspace-recheck.txt
 
 ### VALIDATION
 
-- Windows 最終候選 — PASS：dist/toolchain-final-windows.xml 28 項，0 跳過；Windows Studio 572 項通過，Documa 兩項。
-- Linux 最終候選 — PASS：dist/toolchain-final-linux.xml 119 項，0 跳過；Linux 隔離封包、CLI、MCP、回復矩陣 167 項通過。
-- 貼用維護與部署指引 — PASS：兩平台各 5 份發行 ZIP 與 5 個領域包項目校驗通過，4 份指南比對相同；兩平台獨立底座和 Studio 環境均通過 uv pip check。
+- 課程字幕 Adapter 開發入口與資格 — PASS：dist/course-subtitle-adapter/speech-evidence.json 保存同一工作內 Silero VAD、Whisper 分段、時間偏移與純靜音驗證，宿主清冊為 disconnected。
+- 底座與 MCP 回歸 — PASS：最新相關回歸 41 項通過，包含實際 MCP tools/list、工具鏈、資格驗證及 Agent 指引，見 dist/course-subtitle-adapter/regression.xml。另一次補強與 MCP 組合 60 項通過。
+- 正式工作區安裝及九項完整案例 — NOT_RUN：E:/RoutineKeel 的工作尚待其餘六項工具驗證與正式工作區授權。
 
 # HISTORY
 
@@ -722,3 +722,31 @@ Stage 6 整合查出 Windows 讀取試做進度檔的共用衝突，修正後原
 <!-- devnote-review:f734e04b4af3109b83766ad7 -->
 
 對照工具鏈 checkpoint、Stage 0–7 驗證紀錄與兩平台最終候選。提交範圍為工具鏈、規格、指南及相應測試；共用工作樹內另有 Studio 子程序重用改動。
+
+
+## [2026-11-25T07:28+08:00] 補強流程、完整技能 ZIP 與案例呈現
+
+<!-- devnote-review:375bf0274cce9b19f59b52e0 -->
+
+核對前輪工具鏈本機基線與 12c1307，完成本輪藍圖準備、技能補件及案例呈現。實際課程藍圖在隔離區可讀取完整技能；正式 ASR 與安裝待獨立試做。
+
+
+## [2026-11-25T07:34+08:00] 先展示文字案例再選驗收策略
+
+<!-- devnote-review:6a028129d8bba36782e78248 -->
+
+新增明確的合成試做或先安裝待實跑選擇。兩種路徑及安裝後待驗收標示實測通過，保留課程流程待選工具與 ASR 資源缺口。
+
+
+## [2026-11-25T07:41+08:00] 首次安裝預選實跑驗收與綁定稽核
+
+<!-- devnote-review:a53af2e84ed4c5b4adadfea8 -->
+
+依使用者選擇，首次安裝先展示文字案例、預選實跑驗收，再記錄實際回覆。在 E:/RoutineKeel 的新版字幕藍圖記錄選擇與補強提案，8 個能力未綁定。
+
+
+## [2026-11-25T08:26+08:00] 缺口續作規則與 Adapter 開發入口
+
+<!-- devnote-review:be2b9439e14f83114e1a2f78 -->
+
+將可修復缺口續做至安裝寫入 AGENTS.md。底座主動觀測已配置宿主工具及已安裝本機 Adapter。字幕 VAD 與 Whisper 以同一補強工作取得隔離資格收據，列出剩餘能力。

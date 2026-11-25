@@ -38,6 +38,23 @@ def encoded(value):
 def admission(ir, package_hash, validation, evidence):
     from routinekeel_contracts.builder import issue_admission
 
+    if pending := evidence.get("deferred_acceptance"):
+        require(
+            validation["status"] == "PASS"
+            and evidence.get("runtime_load") == "PASS" and evidence.get("cases") == []
+            and re.fullmatch(r"[0-9a-f]{64}", pending.get("approval_sha256", ""))
+            and re.fullmatch(r"[0-9a-f]{64}", pending.get("case_scope", "")),
+            "先安裝須具備文字案例的實際選擇及隔離載入驗證。",
+        )
+        receipt = {
+            "policy": "routinekeel-builder/pending-real-runs-1",
+            "package_hash": package_hash,
+            "ir_hash": digest(ir),
+            "deferred_acceptance_hash": digest(pending),
+            "case_count": 0,
+            "pending_case_count": len(pending["cases"]),
+        }
+        return {**receipt, "receipt_hash": digest(receipt)}
     return issue_admission(
         ir,
         package_hash,
@@ -139,15 +156,20 @@ def recover_embedded_draft(ws, raw, source_hash):
 
 
 def read_member(ws, key, name, offset):
+    from routinekeel_contracts.skill_files import SKILL_BUNDLE, check_skill_bundle, is_skill_text
+
     folder = draft_dir(ws, key)
     raw = read_archive(folder / "source.zip")
     require(hashlib.sha256(raw).hexdigest() == key, "草稿來源已變更")
     _src, files = inspect_blueprint(raw)
-    require(
-        name in files and not name.lower().endswith((".ttf", ".otf")),
-        "請選擇藍圖內的文字檔",
-    )
-    content = files[name].decode("utf-8-sig")
+    data = files.get(name)
+    if data is None and name.startswith("skills/") and name.count("/") >= 2:
+        _category, skill, member = name.split("/", 2)
+        bundle = files.get(f"skills/{skill}/{SKILL_BUNDLE}")
+        if bundle is not None:
+            data = check_skill_bundle(bundle).get(member)
+    require(data is not None and is_skill_text(name), "請選擇藍圖內的文字檔")
+    content = data.decode("utf-8-sig")
     require(type(offset) is int and 0 <= offset <= len(content), "文字位移無效")
     return {
         "draft_id": key,
@@ -226,7 +248,8 @@ def pack(directory, src, plan, raw, resolution, ir, registry):
     return path
 
 
-def verify(ws, key, resolution, cases, *, build_id=None, coverage=None, offline=False):
+def verify(ws, key, resolution, cases, *, build_id=None, coverage=None, offline=False,
+           deferred_acceptance=None):
     folder = draft_dir(ws, key)
     raw = read_archive(folder / "source.zip")
     src, files = inspect_blueprint(raw)
@@ -248,9 +271,11 @@ def verify(ws, key, resolution, cases, *, build_id=None, coverage=None, offline=
             check_degradation(ws, key, src["graph"]["provenance"].get("degraded_delivery"))
             plan, ir, registry, cases = build_graph(
                 src, resolution, cases, ws.root, attachments=files, coverage=coverage, offline=offline,
+                deferred_acceptance=deferred_acceptance,
             )
-            gaps = trial_case_gaps(cases, ir["outputs"])
-            require(not gaps, "；".join(dict.fromkeys(gap["reason"] for gap in gaps)))
+            if deferred_acceptance is None:
+                gaps = trial_case_gaps(cases, ir["outputs"])
+                require(not gaps, "；".join(dict.fromkeys(gap["reason"] for gap in gaps)))
             capability_evidence = registry["bindings"]
             resolution = {**resolution, "bindings": capability_evidence}
             atomic_json(dest / "resolution.json", resolution)
@@ -265,13 +290,14 @@ def verify(ws, key, resolution, cases, *, build_id=None, coverage=None, offline=
         atomic_json(dest / "workflow.ir.json", ir)
         atomic_json(dest / "tool-signatures.json", registry)
         atomic_json(dest / "cases.json", cases)
-        if coverage is not None:
+        if coverage is not None and deferred_acceptance is None:
             from ..evolution.comparison import case_content
 
             atomic_json(dest / "completion-cases.json", coverage)
             case_input_hash = digest(case_content(ws.root, cases))
         path = pack(dest, src, plan, raw, resolution, ir, registry)
-        require(isinstance(cases, list) and 1 <= len(cases) <= 20, "需要 1–20 組驗收案例")
+        if deferred_acceptance is None:
+            require(isinstance(cases, list) and 1 <= len(cases) <= 20, "需要 1–20 組驗收案例")
         require(len(encoded(cases)) <= 2 * 1024**2, "案例描述太大")
         from .trial import stage_fixtures
 
@@ -279,17 +305,18 @@ def verify(ws, key, resolution, cases, *, build_id=None, coverage=None, offline=
             trial = Path(temp) / "workspace"
             trial.mkdir()
             trial_catalog = Path(temp) / "host" / "catalog.json"
+            source_catalog = None
             if any(item["provider"] in {"desktop_host", "portable_local", "toolchain"}
                    for item in capability_evidence.values()):
+                from ..graph.capabilities import read_host_inventory
+
                 # The trial can inspect already observed tool metadata; its receipts are disposable.
-                atomic_json(trial_catalog, read_json(Path(os.environ["ROUTINEKEEL_HOST_CATALOG"])))
-            else:
-                atomic_json(
-                    trial_catalog,
-                    {"version": 1, "expires_at": "2099-01-01T00:00:00+00:00", "tools": {}},
-                )
+                source_catalog = read_host_inventory(ws.root)
+            atomic_json(trial_catalog, source_catalog or {
+                "version": 1, "expires_at": "2099-01-01T00:00:00+00:00", "tools": {},
+            })
             stage_fixtures(ws.root, trial, cases)
-            if coverage is not None:
+            if coverage is not None and deferred_acceptance is None:
                 require(digest(case_content(trial, cases)) == case_input_hash, "試做素材在匯入期間已變更。")
             _, members, _modes, _ = _read_archive(path)
             task = trial / src["manifest"]["id"]
@@ -317,34 +344,10 @@ def verify(ws, key, resolution, cases, *, build_id=None, coverage=None, offline=
                     shape, _ = validate_blueprint(ir)
                     require(len(locks) == 1, "候選試做須使用同一份環境鎖定。")
                     copy_lock_for_trial(ws.root, trial, graph_fingerprint(shape), next(iter(locks)))
-            atomic_json(trial / "cases.json", cases)
-            proc = subprocess.run(
-                [
-                    sys.executable,
-                    "-I",
-                    "-X",
-                    "utf8",
-                    "-m",
-                    "flow_base.blueprints.trial",
-                    str(trial),
-                    task.name,
-                    str(dest / "trial-progress.json"),
-                ],
-                cwd=trial,
-                env=worker_environment() | {"ROUTINEKEEL_HOST_CATALOG": str(trial_catalog)},
-                capture_output=True,
-                timeout=300, check=False,
+            evidence = _exercise_candidate(
+                trial, task.name, dest, trial_catalog, cases, deferred_acceptance,
+                repeat=build_id is not None,
             )
-            require((trial / "result.json").is_file(), "隔離試做未回報結果")
-            evidence = read_json(trial / "result.json")
-            evidence["studio_ir_and_record"] = "passed"
-            if not evidence.get("passed"):
-                atomic_json(dest/"trial-failure.json",evidence)
-            require(
-                proc.returncode == 0 and evidence.get("passed"),
-                "候選包驗證失敗：" + evidence.get("error", ""),
-            )
-            shutil.copytree(trial / "evidence", dest / "trials", dirs_exist_ok=build_id is not None)
         record = {
             "status": "verified",
             "validation": validation,
@@ -359,7 +362,7 @@ def verify(ws, key, resolution, cases, *, build_id=None, coverage=None, offline=
             "evidence": evidence,
         }
         record["builder_receipt"] = admission(ir, record["archive_sha256"], validation, evidence)
-        if coverage is not None:
+        if coverage is not None and deferred_acceptance is None:
             record["completion_cases"] = {
                 "coverage_hash": digest(coverage), "cases_hash": digest(cases), "input_hash": case_input_hash,
             }
@@ -385,6 +388,33 @@ def verify(ws, key, resolution, cases, *, build_id=None, coverage=None, offline=
             build_id=build,
             reason=str(exc)[:1500],
         ) from exc
+
+
+def _exercise_candidate(trial, workflow, dest, catalog, cases, deferred, *, repeat):
+    if deferred is None:
+        atomic_json(trial / "cases.json", cases)
+    args = [
+        sys.executable, "-I", "-X", "utf8", "-m", "flow_base.blueprints.trial",
+        str(trial), workflow, str(dest / "trial-progress.json"),
+    ]
+    if deferred is not None:
+        args.append("--verify-load")
+    proc = subprocess.run(
+        args, cwd=trial, env=worker_environment() | {"ROUTINEKEEL_HOST_CATALOG": str(catalog)},
+        capture_output=True, timeout=300, check=False,
+    )
+    require((trial / "result.json").is_file(), "隔離驗證未回報結果")
+    evidence = read_json(trial / "result.json")
+    evidence["studio_ir_and_record"] = "passed"
+    if not evidence.get("passed"):
+        atomic_json(dest / "trial-failure.json", evidence)
+    require(proc.returncode == 0 and evidence.get("passed"),
+            "候選包驗證失敗：" + evidence.get("error", ""))
+    if deferred is not None:
+        evidence["deferred_acceptance"] = deferred
+    else:
+        shutil.copytree(trial / "evidence", dest / "trials", dirs_exist_ok=repeat)
+    return evidence
 
 
 def checked_candidate(ws, dest, expected):
@@ -485,6 +515,10 @@ def install(ws, key, build, expected):
         binding_path = ws.runtime.home / "blueprint_bindings" / (record["plan_hash"] + ".json")
         reject_links(binding_path)
         if current and current.manifest != manifest:
+            require(
+                not record["evidence"].get("deferred_acceptance"),
+                "先安裝待驗收適用於新流程；已安裝流程的換版仍須完成候選回歸。",
+            )
             if not binding_path.exists():
                 atomic_json(binding_path, bindings)
             return {
@@ -539,5 +573,7 @@ def install(ws, key, build, expected):
             "build_id": build,
             "archive_sha256": h,
         }
+        if pending := record["evidence"].get("deferred_acceptance"):
+            receipt["case_acceptance"] = {"status": "pending_real_runs", "cases": pending["cases"]}
         atomic_json(dest / "installation.json", receipt)
         return receipt

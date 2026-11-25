@@ -101,7 +101,11 @@ class WorkflowService:
         if src.get("blueprint_schema_version") == 2:
             from ..graph.builder import preflight_graph
 
-            return preflight_graph(src["graph"], self.workspace.root, offline=offline, planning_search=planning_search)
+            report = preflight_graph(
+                src["graph"], self.workspace.root, offline=offline, planning_search=planning_search
+            )
+            findings = [finding for finding in src["findings"] if finding["kind"] == "skill"]
+            return {**report, **({"skill_source_findings": findings} if findings else {})}
         return resolve_graph(src["graph"],self.workspace.root,offline=offline)
 
     def preview_binding_qualification(self, draft_id, selections):
@@ -391,7 +395,7 @@ class WorkflowService:
             atomic_json(input_path, payload)
             env = worker_environment()
             env['FLOW_BASE_PLAN_READ_ONLY'] = '1'
-            if os.environ.get("ROUTINEKEEL_HOST_CATALOG"):
+            if os.environ.get("ROUTINEKEEL_HOST_CATALOG") or os.environ.get("ROUTINEKEEL_HOST_SOURCES"):
                 from ..graph.capabilities import plan_probe_catalog
                 env.update(plan_probe_catalog(self.workspace,request.task,folder/"public-tool-descriptors.json"))
             process = subprocess.run([sys.executable, '-m', 'flow_base.core.plan_probe',

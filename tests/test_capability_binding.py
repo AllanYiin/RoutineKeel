@@ -72,6 +72,42 @@ def test_actual_imported_graph_resolves_offline_builtin_without_human_review_per
     assert report["bindings"]["copy"]["provider"] == "builtin"
 
 
+def test_configured_host_source_discovers_tools_and_rechecks_changed_grants(tmp_path, monkeypatch):
+    import asyncio
+    from datetime import UTC, datetime, timedelta
+
+    pytest.importorskip("mcp")
+    from flow_base.graph.capabilities import capability_observation, host_inventory_path
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    config = tmp_path / "mcp-sources.json"
+    source = {"command": sys.executable, "args": ["-m", "flow_base", "--workspace", str(workspace), "mcp-stdio"],
+              "grants": {"list_workflows": {"allowed": True}}, "routes": {"list_workflows": "peer.list"}}
+    monkeypatch.delenv("ROUTINEKEEL_HOST_CATALOG", raising=False)
+    monkeypatch.setenv("ROUTINEKEEL_HOST_SOURCES", str(config))
+    config.write_text(json.dumps({"version": 1, "sources": {"peer": source}}), encoding="utf-8")
+
+    async def resolve():
+        return capability_observation(workspace)
+
+    tools, first = asyncio.run(resolve())
+    assert first["status"] == "current" and list(tools) == ["peer.list"]
+    assert tools["peer.list"]["observed"] == "tools/list"
+    assert tools["peer.list"]["allowed"] is True
+    cache = host_inventory_path(workspace)
+    stored = json.loads(cache.read_bytes())
+    stored["expires_at"] = (datetime.now(UTC) - timedelta(seconds=1)).isoformat()
+    cache.write_text(json.dumps(stored), encoding="utf-8")
+    assert capability_observation(workspace)[1]["id"] == first["id"]
+
+    source["grants"]["list_workflows"]["allowed"] = False
+    config.write_text(json.dumps({"version": 1, "sources": {"peer": source}}), encoding="utf-8")
+    tools, second = capability_observation(workspace)
+    assert second["id"] != first["id"] and tools["peer.list"]["allowed"] is False
+    assert not list(workspace.iterdir())
+
+
 @pytest.mark.parametrize(
     "fault",
     ["missing", "observed", "version", "offline", "denied", "platform", "expired", "workspace"],
