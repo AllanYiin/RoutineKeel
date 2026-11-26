@@ -122,6 +122,7 @@ def parser():
     c.add_argument('operation', choices=COMPLETION_OPERATIONS)
     c.add_argument('--work-id')
     c.add_argument('--archive', type=Path)
+    c.add_argument('--draft-id')
     c.add_argument('--payload', type=Path)
     c = commands.add_parser('blueprint-task', help='取得待辦、回傳結果或退回重做')
     c.add_argument('session_id')
@@ -130,6 +131,10 @@ def parser():
         'reconcile', 'revise', 'retry', 'cancel', 'preview_rebind', 'activate_rebind',
     ], nargs='?', default='next')
     c.add_argument('--payload', type=Path)
+    c = commands.add_parser('host-dispatch', help='由宿主執行指定的工具或模型待辦，或查詢原回執')
+    c.add_argument('session_id')
+    c.add_argument('task_id')
+    c.add_argument('--stream', action='store_true', help='逐段輸出模型事件到 stderr，stdout 保留最終 JSON')
     c = commands.add_parser('update-workflow', help='預覽或套用新版流程 ZIP，保留設定、成果及歷史')
     c.add_argument('--archive', type=Path, required=True)
     c.add_argument('--task', help='通常從附件識別；指定時須與附件的流程識別碼相符')
@@ -476,10 +481,22 @@ def main(argv=None):
             payload = read_json(args.payload) if args.payload else {}
             if args.archive:
                 payload = {**payload, 'archive': str(args.archive.resolve())}
+            if args.draft_id:
+                payload = {**payload, 'draft_id': args.draft_id}
             result = service.blueprint_completion(args.operation, args.work_id, payload)
         elif command == 'blueprint-task':
             result = service.blueprint_task(args.session_id, args.operation,
                                            read_json(args.payload) if args.payload else None)
+        elif command == 'host-dispatch':
+            import asyncio
+
+            from .adapters.host_dispatch import dispatch_host
+
+            def model_delta(event):
+                print(json.dumps(event, ensure_ascii=False), file=sys.stderr, flush=True)
+
+            result = asyncio.run(dispatch_host(service, args.session_id, args.task_id,
+                                               on_delta=model_delta if args.stream else None))
         elif command == 'update-workflow':
             if args.execute:
                 if not args.plan_hash:

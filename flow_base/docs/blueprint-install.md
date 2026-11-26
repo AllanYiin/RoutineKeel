@@ -21,23 +21,51 @@ flow_base --workspace . blueprint-completion status --work-id <補強工作識�
 | `needs_update` | 依 `update.action` 接續既有演進提案。提交獨立比較案例，展示比較結果並取得具體核准後再 `activate_update`。 |
 | `verified`、`installed` | 回報已驗證候選或安裝位置、版本與逐案例證據。 |
 
-提交補件時使用 `submit`，帶上當前 `expected_revision`、新的 `request_id` 及指定缺口的資料。對既有請求使用相同內容及識別碼可取回原結果。核對版本衝突時，先以 `status` 重讀最新修訂。可用 `pause`、`resume`、`cancel`、`archive` 管理同一工作，`history` 查閱實際補強與驗收紀錄。
+提交補件時使用 `submit`，帶上當前 `expected_revision`、新的 `request_id` 及指定缺口的資料。對既有請求使用相同內容及識別碼可取回原結果。核對版本衝突時，先以 `status` 重讀最新修訂。遺失工作 ID 時，可用 `blueprint-completion find --draft-id <ID>` 或 MCP `blueprint_completion` 的 `find` 查相符的工作與已保存選擇。查詢預設為安裝工作。CLI 可在 `--payload` 指定 `{"intent":"build"}` 查候選建置，MCP 在 `payload` 同時提供 `draft_id` 和 `intent`。可用 `pause`、`resume`、`cancel`、`archive` 管理同一工作，`history` 查閱實際補強與驗收紀錄。
 
 - 工具待辦會提供候選、權限與資格收據。底座可以自動驗證純本機候選。需要使用者選擇或拒絕時用 `select_adapter` 或 `decline_adapter` 提交實際答覆。宿主資格驗證仍依具體範圍另取得授權，並透過受信清冊提交實際證據。清冊更新後用 `recheck` 接續。
 - 選定仍缺實作的方案後，`adapter_development` 會列出節點、已選工具、資料埠語意、權限、版本、執行介面及補強範圍。宿主依此重用或編寫實作，準備獨立預期及案例。本機套件就緒後，用同一 `work_id` 提交 `complete_local_adapter`、`node`、`scope_hash`、`adapter`，以及尚未隨藍圖提供的 `cases`。底座重新核對已安裝入口，執行資格測試並保存結果。仍缺其他工具時，已通過的項目可沿用。
 - 可用 `complete_case` 補上缺少的輸入與獨立預期輸出。案例對應原藍圖的驗收意圖。若藍圖在 `quality_contract.case_recipes` 提供同一案例序號的明確斷言，底座可自動產生案例。斷言支援具名輸入的 `identity`、`uppercase`，以及明列的 `value`。已確認案例或業務規則要改時，先由 Studio 匯出帶來源關聯的新修訂，再用 `preview_revision` 與 `adopt_revision` 核對並採用。
-- 用 `attach_fixture` 複製工作區內的素材，回傳名稱、大小、內容指紋及可供案例引用的位置。若要補進案例指定的位置，一併提供缺口、範圍指紋與 `requested_path`。已存在的同名不同內容會保留，並提示核對原素材。
+- 用 `attach_fixture` 複製工作區內的素材，回傳名稱、大小、內容指紋及可供案例引用的位置。正式執行和驗收試做的本機素材單檔上限均為 5 GiB。若要補進案例指定的位置，一併提供缺口、範圍指紋與 `requested_path`。已存在的同名不同內容會保留，並提示核對原素材。
 - 隔離試做失敗會保留案例、檢查階段和錯誤證據。修正輸入、綁定或已確認案例後，底座重驗再接續。必要驗證、實際候選試做及安裝前重驗均須符合正式安裝條件。
 
 ### 初檢後準備方案
 
 `binding_plan.automatic_work` 是底座與宿主要接續的接線與驗證。先讀節點的資料契約、技能來源和實際環境。技能包含程式時查原檔、版本與依賴。技能只提供規則時，依需求產生本機程式或宿主模型指令，補入資料映射及獨立測例。模型步驟沿用固定的執行位置、授權、成本與行為資格契約。波形、時間碼或格式等機械證據由適合的本機元件產生。
 
+本機準備與資格驗證會保存子工作的認領和結果。獨立的依賴準備與資格案例可併行，等待工具或授權時，其他就緒分支可繼續。CLI 與 MCP 可用原 `work_id` 查 `binding_progress`，或依最新修訂推進同一工作。若本機資源有限，啟動底座前可將 `ROUTINEKEEL_BINDING_SLOTS` 設為 1 至 4，預設 4，設為 1 時以單槽處理本機子工作。
+
+### 首次安裝診斷
+
+從目標工作區的啟動器進入 Studio 或底座。Studio 的設計環境可獨立維護，預檢、匯出重驗與實際執行則使用同一工作區的底座 Runtime。比對 `binding_environment` 的工作區、Python 路徑及 `runtime_id` 後，再判斷缺件。
+
+| 診斷 | 處理方式 |
+| --- | --- |
+| `RUNTIME_MISMATCH` | 從正確工作區的啟動器重開，以原 `work_id` 重驗。 |
+| `STAGING_PATH_UNUSABLE` | 保留 uv 的原始錯誤與暫存位置。底座會嘗試較短的位置；兩處都失敗時，先修復可寫位置再續做。 |
+| `DEPENDENCY_NOT_INSTALLED`、`ENV_MISSING`、`OFFLINE_WHEEL_MISSING` | 盤點原鎖定環境與本機快取，再依缺口選用相容工具或準備缺件。核對版本、來源及 SHA-256。 |
+| `PREPARATION_DOWNLOAD_APPROVAL_REQUIRED` | 向使用者說明下載項目、來源及位置。取得同意後由宿主下載、驗證並接續原工作。 |
+
+遇到外部結果不明時，依原識別碼查回執。字幕偵測到可用 CUDA 時，先展示裝置選擇並取得確認。模型與依賴應優先重用已配置及已校驗的本機資源。
+
 Studio 將完整技能 ZIP 隨來源藍圖保存。宿主用 `install_workflow` 的 `member="skills/<id>/scripts/<name>.py"` 讀取具名程式，並核對技能版本和內容。舊藍圖可在既有技能目錄補入完整 ZIP 或展開的資料夾，底座匯入時比對已確認檔案、記錄補入成員雜湊，並以新 ZIP 指紋建立草稿。匯入回覆的 `findings` 可查尚缺的引用檔。
 
 `binding_plan.tool_selection` 提供可展示的選項，已有本機 Adapter 或可檢出的元件優先。每項列出範圍指紋、建議、所需準備及來源。已觀測的 Adapter 可以直接進入適用的資格程序。找到執行檔或 Python 套件時，宿主接好實際介面、核對相容版本和行為。若缺元件，先查現有配置及受信配方，再列出隔離安裝或可重用的等效方案。藍圖參考方案可放在 `blueprints/binding-guides/<workflow_id>.json`，並用能力 ID 索引。方案本身只描述準備步驟與來源。
 
 選項列出 `missing_dependencies` 時，宿主查官方取得或安裝方式，展示相容版本、下載來源、目的位置及驗證／回復方式。經使用者同意後，宿主依受信配方或官方安裝方式準備元件，保存實測結果並用原工作識別碼重驗。依賴未準備期間，其他可驗證步驟繼續。
+
+### 六種綁定的驗證與執行
+
+| 綁定 | 資格與執行依據 |
+| --- | --- |
+| Code-as-a-tool | 核對已安裝的 Python Adapter、具名輸入輸出和實作指紋，由底座執行資格案例。 |
+| Skill | 版本化保存完整技能，鎖定具名腳本與欄位對映，或把純規則帶入已授權的宿主派送。兩條路都要驗證輸出。 |
+| MCP Tool | 宿主從實際 MCP 連線觀測工具及契約，以同一操作 ID 派送並回填具名結果。 |
+| ToolCalling Tool | 模型提出工具與參數，宿主只執行已鎖定的工具。先核對效果及額度，再依原呼叫 ID 回填與續跑。 |
+| CLI Tool | 使用已校驗的本機執行檔與參數陣列，鎖定執行及輸出解析契約，驗證特殊字元與逾時。 |
+| 宿主 LLM 執行 | 鎖定本機模型版本、裝置及此次輸出範圍。以 `host-dispatch` 執行，保存串流、用量與輸出驗證。 |
+
+三種補件路徑都沿原 `work_id`。可以重用相容方案、依核准來源取得缺件，或用具名對映與受限 WebAssembly 建置 Adapter。補強完成後重跑資格與候選驗收，再安裝或換綁。
 
 `binding_plan.research_required` 交給宿主查現有工作區、技能與一手資料，搜尋時使用公開工具名與契約需求。以 `submit` 的 `propose_bindings` 批次保存 `proposals`。每筆帶 `gap_id`、`scope_hash` 和 `options`。選項提供 `title`、`approach`、`plan` 及適用的 `sources`、`executables`、`distributions` 或 `skills`。宿主提出備選後才把實際取捨交給使用者。
 
@@ -56,6 +84,12 @@ RK-NEXT 開發版的底座及 Studio 隨附同一份 `routinekeel-contracts` 驗
 
 宿主可用 `ROUTINEKEEL_HOST_SOURCES` 指向工作區外已配置的 MCP stdio 來源檔。來源檔的 `version` 為 `1`，`sources` 以宿主來源 ID 索引，每筆包含絕對 `command`、選用 `args`、既有工具 `grants` 及選用名稱對應 `routes`。底座用 `tools/list` 自動取得工具描述，在宿主目錄快取並於有效期滿時更新。嵌入宿主也可將已連接的 client 交給 `flow_base.adapters.host_inventory.observe_tools`，用原有的 `ROUTINEKEEL_HOST_CATALOG` 提供觀測。授權由宿主提供。不能連線的來源會列為待補，同次仍會辨識本機能力。
 
+已配置的非計費 MCP stdio 工具可用 `host-dispatch <session_id> <task_id>` 從宿主終端派送。先使用工作回傳的核准入口處理需真人核准的待辦。派送器會重新核對伺服器、工具名稱與契約，領取一次並執行 `tools/call`。宿主可在 `grants` 提供 `output_mapping`，把具名流程輸出對應到 MCP `structuredContent` 的欄位。服務未公布輸出 schema 時，宿主須提供 `result_schema`。同一待辦再次執行時查回執，連線中斷且沒有回執時會保留 `RECONCILE_REQUIRED`。
+
+本機 Ollama 模型也可使用 `host-dispatch <session_id> <task_id> --stream`。宿主清冊的工具紀錄須提供 `model_profile`（`provider: ollama`、loopback `endpoint`、具名 `model`、已安裝 `digest`、`device`、`max_output_tokens` 及選用的 `instructions`），以及對應具名輸出的 `result_schema`。成本宣告為零，模型呼叫額度至少一次。派送鎖定模型、裝置、輸出契約及資料；GPU 在已核准的待辦領取後才會啟動。`--stream` 將逐次 delta 寫到 stderr，stdout 回傳最終 JSON。完整串流、輸出驗證及實測 token 用量會一起寫入宿主回執。
+
+`model_profile.tool_mode` 可以提供 `tools`（模型工具別名到同一工作流內已綁定節點的對應）、`max_rounds` 和 `max_tool_calls`。例如 `{"tools":{"uppercase":"local_upper"},"max_rounds":2,"max_tool_calls":1}` 表示最多兩次模型請求及一次工具請求。模型額度須涵蓋工具結果回填後的請求。節點可引用無副作用的本機內建工具、已有資格收據的本機 Adapter，或由宿主設定、無網路及額外權限的 MCP stdio 工具。模型的工具提議在串流結束後才整批核對，通過後先保存扣抵紀錄，再依核定清單執行並按原 ID 回填。宿主目錄的 `*.tool-rounds.json` 與模型回執使用相同的外層操作 ID。MCP 子呼叫另有獨立操作 ID，缺少回執時保留在原工作中待查。
+
 Graph v2 可在 Studio 預覽階段先查能力及案例。匯入後，`resolve-blueprint` 的 `gaps` 列出能力缺口，`build_gaps` 列出案例格式及建置支援缺口。兩者都空時 `build_status` 為 `ready`，候選包仍需實際試做。
 
 Graph 2.3 的一般或巢狀節點可用 `capability_requirement` 宣告相容版本、資料語意、可替換條件與限制。Pattern 及此類一般節點使用共用解析、資格與環境鎖。`blueprint_completion` 會保存觀測識別、淘汰候選和判定欄位。宿主更新受信清冊後，以同一工作識別碼 `recheck`。未宣告需求的既有節點沿用原指定工具及版本。
@@ -68,7 +102,15 @@ Graph 2.3 的一般或巢狀節點可用 `capability_requirement` 宣告相容�
 
 合格的工具鏈會在環境鎖與候選中保存同一份編譯圖。純本機工具鏈以獨立程序比對已確認案例。宿主工具鏈須從受信清冊提供與目前資格範圍相符的 `portable_qualification`，含 `toolchain_graph_hash` 及每案各步驟的綁定指紋、成本與實際回執。候選試做中的宿主替身仍標為模擬，正式執行各子步驟依原權限逐次派送。
 
+本機與宿主 Adapter 缺少資格案例時，由宿主準備至少兩組不同的輸入與獨立預期值，用 `submit` 的 `complete_adapter_cases` 帶上原工作、目前修訂、`gap_id`、`scope_hash` 與 `cases`。案例保存在同一工作，可直接進入資格驗證。宿主 Adapter 接著依新的 `qualification_scope` 執行測試，把實際回執寫入受信清冊並 `recheck`。若執行本身需授權，沿用該工具的授權流程。藍圖已確認的 Adapter 案例要透過設計修訂更新。
+
+每組案例提供 `expected`、`expected_schema` 或 `expected_error` 其中一項。`expected_schema` 限本機 Adapter，按宣告的具名輸出逐一提供 JSON Schema，可檢查轉錄文字、語言與時間範圍。資格驗證仍會檢查 Adapter 本身的輸出契約。僅有輸出雜湊的宿主回執使用逐值預期 `expected`。
+
+本機資格環境修復後，以 `recheck` 重跑未通過的資格檢查。底座沿用與目前案例及指紋相符的通過回執。
+
 尚未安裝的本機工具可由受信清冊提供 `install_locked_wheels`。宿主核准個別配方後，以 `preparation_allowed` 表示準備授權。底座從清冊所在目錄開啟宣告的 wheel，核對平台、名稱、版本、依賴與 SHA-256，在工作區隔離位置離線安裝。`preparations` 保存操作 ID、各項配方與收據。更新清冊後，呼叫原補強工作的 `recheck`，讓底座重新觀測並續接。
+
+配方也可在 wheel 項目附上 `source`，包含 PyPI 官方檔案 `url`、位元組大小 `size` 與 `license`。底座先檢查受信目錄及已校驗快取。缺檔時，須由宿主取得下載同意並設定 `download_allowed`，才可在非離線工作中取得該鎖定檔案。worker 在開始準備前重核當前配方及授權，下載後依大小和 SHA-256 驗證，再進入離線安裝。成功的 `wheel_sources` 收據會保留實際來源。已完成安裝可在停用新下載與準備後沿原環境鎖離線執行。
 
 比較候選時，核對 `candidate_rejections` 的原因與欄位，再檢查 `toolchain_planning.plans` 的具名輸入、資料邊、步驟、目的地和合計成本。對照資格報告與候選試做的獨立預期值。若用了宿主替身或校閱答覆，候選收據會列出模擬步驟。安裝前會再次核對收據、候選 ZIP、環境鎖和實際工具。每條能力需求都可以留在有續作動作的缺口狀態，直到取得相符工具、案例或授權。
 
@@ -143,6 +185,12 @@ flow_base --workspace . blueprint-task $SessionId next
 草稿在 share_states/blueprint_drafts。builds 下保留 resolution、案例、Studio WorkflowIR、工具簽章、workflow.zip、驗收及安裝收據。候選 zip 包含正式 manifest、wheel、IR、文件及來源指紋。wheel 內保留原藍圖作為資料、宿主步驟與受限程式。主機綁定、工作進度、核准紀錄、內容定址素材和角色設定分別保存在 share_states。無 SQLite 遷移。首次安裝以隱藏暫存目錄完成整包後更名。若程序中斷，重送同一 build 與 hash 即可辨識已完成的安裝。已安裝版本的升級與回退仍使用既有更新收據。
 
 續做使用工作範圍內的候選套件。回復原工具及其授權時，從原工作 `next` 觸發重驗。已啟用的續做及原 Run 都保留供查核。正式套件更新中斷時用 `recover-workflow-update`，已完成的套件更新以 `rollback-workflow-update <update_id>` 使用原快照。套件和產物保留規則見隨包 `workflow-updates.md`。
+
+### 本機候選的驗收與回復
+
+1. 以 `versions.json` 核對 ZIP 的版本、大小與 SHA-256，將整合版或個別套件解壓至新目錄。由該目錄的啟動器建立環境，再用底座 `--version`、`doctor` 及 `catalog` 核對 Runtime 和已登錄流程。
+2. 在隔離工作區選用測試藍圖，依序核對補強、資格、候選試做及安裝收據。確認實際執行的具名輸出。`pending_real_runs` 保存正式素材待驗收項目，合成案例結果仍可分開追溯。
+3. 升級底座前保留上一版 ZIP、Runtime wheel、設定與可驗證的 SQLite 備份。綁定工作資料庫此次從 v7 升到 v8。需回復時，先在新目錄用前版套件與前版備份驗證資料庫完整性、原 Run 和一次實際執行，再依工作區的授權處理正式回復。
 
 需要驗證舊版資料庫備份時，先核對 `share_states/state.sqlite3.before-v007.sqlite3` 與同名 `.sha256`。以 SQLite 唯讀開啟備份，再用 SQLite 備份功能寫入獨立測試工作區。新副本執行 `PRAGMA integrity_check` 確認為 `ok`，以 `PRAGMA user_version` 確認為 6，再查驗代表性流程與 Run 記錄。其他舊版使用對應的遷移備份及其原資料版本。正式切換前保留目前資料庫、工作區與底座版本。
 

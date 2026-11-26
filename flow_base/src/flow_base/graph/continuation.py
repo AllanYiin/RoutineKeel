@@ -99,13 +99,15 @@ def _effects(binding):
         permissions.update(leaf.get("permissions", []))
     resources = binding.get("resources") or {}
     cost = resources.get("cost_micro_usd", 0)
-    calls = resources.get("model_calls", 0)
+    batch = resources.get("model_call_batch")
+    calls = resources.get("model_calls", None if batch else 0)
     return {
         "destinations": sorted(destinations),
         "permissions": sorted(permissions),
         "network": network,
         "cost_micro_usd": cost,
         "model_calls": calls,
+        **({"model_call_batch": batch} if batch else {}),
     }
 
 

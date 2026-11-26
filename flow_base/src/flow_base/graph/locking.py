@@ -51,6 +51,8 @@ def write_receipts(workspace, graph_hash, reports):
 
 
 def find_receipt(workspace, proposal, node, adapter):
+    from .model_budget import metered_candidate
+
     runtime = _runtime(workspace)
     runtime.initialize()
     with closing(runtime.connect()) as db:
@@ -70,6 +72,10 @@ def find_receipt(workspace, proposal, node, adapter):
             and report.get("verdict") == "PASS"
             and report.get("conformance", {}).get("status") == "PASS"
             and report.get("behavior", {}).get("status") == "PASS"
+            and (not metered_candidate(adapter) or (
+                report.get("model_budget_verified") is True
+                and report.get("declared_model_budget") == adapter["model_budget"]
+            ))
             and content_hash(report) == row["receipt"]
         ):
             return report

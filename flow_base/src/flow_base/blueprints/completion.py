@@ -34,6 +34,12 @@ def _gap(kind, code, location, reason, actions, **details):
 
 
 def _capability_gap(item, decision, outcome, choice, refused):
+    if item["code"] == "RUNTIME_MISMATCH":
+        return _gap(
+            "capability", item["code"], item["node"], item["reason"], ["refresh_environment"],
+            capability=item["tool"], candidates=[], candidate_rejections=[],
+            expected_python=item["expected_python"], actual_python=item["actual_python"],
+        )
     actions = ["refresh_environment", "review_compatible_adapter"]
     if decision.get("status") == "needs_qualification":
         actions = ["qualify_adapter", *actions]
@@ -50,20 +56,42 @@ def _capability_gap(item, decision, outcome, choice, refused):
         if not accepted or reported_adapter in refused or choice.get("adapter", reported_adapter) != reported_adapter:
             report = {}
     qualified = report.get("verdict") == "PASS"
+    conformance = report.get("conformance", {})
+    prerequisite = conformance.get("code")
+    gap_code = item["code"]
+    reason = item["reason"]
     if qualified:
+        gap_code = "WAITING_FOR_OTHER_BINDINGS"
         actions = ["wait_for_other_bindings"]
-    elif report.get("conformance", {}).get("code") == "TRIAL_CASES_REQUIRED":
+        reason = "本步驟已通過資格驗證。等其餘必要步驟完成後即可鎖定整份工作流。"
+    elif prerequisite in {"TRIAL_CASES_REQUIRED", "MODEL_BUDGET_CASES_REQUIRED"}:
         actions = ["complete_adapter_cases", *actions]
-    elif (
-        report.get("conformance", {}).get("code")
-        == "AUTHORIZED_HOST_QUALIFICATION_REQUIRED"
-    ):
+        reason = "由宿主在同一工作補上至少兩組不同輸入與獨立預期值，再接續 Adapter 資格驗證。"
+    elif prerequisite == "HOST_OUTPUT_SCHEMA_EXPECTATION_UNSUPPORTED":
+        actions = ["complete_adapter_cases", *actions]
+        reason = "宿主資格回執只提供輸出指紋，請提供可獨立核對的預期值，或用本機 Adapter 驗證輸出結構。"
+    elif prerequisite in {"AUTHORIZED_HOST_QUALIFICATION_REQUIRED", "MODEL_BUDGET_MEASUREMENT_REQUIRED"}:
         actions = ["provide_host_qualification", *actions]
+        reason = "依目前資格範圍取得宿主執行回執，寫入受信清冊後重驗同一工作。"
+    elif report.get("verdict") == "NOT_RUN" and prerequisite == "OFFLINE_RESOURCE_MISSING":
+        gap_code = prerequisite
+        reason = "本機 Adapter 缺少已鎖定的離線資源。準備並驗證相同資源後，重驗此工作。"
+    elif report.get("verdict") == "NOT_RUN" and prerequisite == "ENV_MISSING":
+        gap_code = prerequisite
+        reason = "本機 Adapter 所需的 Python profile 尚未準備。用同一工作區的 Runtime 建立後重驗。"
+    elif report.get("verdict") == "NOT_RUN" and prerequisite == "COMPUTE_DEVICE_CONFIRMATION_REQUIRED":
+        gap_code = prerequisite
+        actions = ["revise_blueprint"]
+        reason = "已偵測到 CUDA GPU，建議用 CUDA 加速。請取得使用者對 CUDA 或 CPU 的確認，記入這個步驟的 device 參數後重驗原工作。"
+    elif conformance.get("probes", {}).get("budget") == "FAIL":
+        gap_code = "MODEL_BUDGET_CONFLICT"
+        actions = ["complete_adapter_cases", "review_compatible_adapter", "refresh_environment"]
+        reason = "模型呼叫量測與允許範圍不符。核對案例、工具版本及宣告上限，修復後重驗。"
     return _gap(
         "capability",
-        "WAITING_FOR_OTHER_BINDINGS" if qualified else item["code"],
+        gap_code,
         item["node"],
-        "本步驟已通過資格驗證。等其餘必要步驟完成後即可鎖定整份工作流。" if qualified else item["reason"],
+        reason,
         actions,
         capability=item["tool"],
         requirement_id=decision.get("requirement_id"),
@@ -198,6 +226,7 @@ def _preflight(service, state, *, advance_search=False):
         "portable_decisions": list(decisions.values()),
         "capability_observation": report.get("capability_observation"),
         "capability_fingerprint": report["fingerprint"],
+        **({"binding_environment": report["binding_environment"]} if "binding_environment" in report else {}),
         "toolchain_searches": search.references,
     }
     if not gaps:
@@ -239,19 +268,26 @@ def _preflight(service, state, *, advance_search=False):
                 {"id": "synthetic_trial", "label": "先用合成案例試做再安裝"},
             ]
             review["selected_strategy"] = state.get("case_strategy", {}).get("mode")
-            review["display_text"] += (
-                "\n\n看完以上文字案例後選擇\n"
-                "1. 先用合成案例試做再安裝。"
-            )
+            review["requires_selection"] = review["selected_strategy"] is None
             installed = service.workspace.discover(read_only=True)
             if state["workflow_id"] not in installed:
                 review["strategies"].append(
                     {"id": "observe_runtime", "label": "先安裝，於實際執行時驗收"}
                 )
                 review["default_strategy"] = "observe_runtime"
-                review["display_text"] += "\n2. 先安裝，於實際執行時驗收（預設）。"
             else:
                 review["default_strategy"] = "synthetic_trial"
+            if review["requires_selection"]:
+                choices_text = [
+                    f"{index}. {item['label']}" + ("（預設）" if item["id"] == review["default_strategy"] else "")
+                    for index, item in enumerate(review["strategies"], 1)
+                ]
+                review["display_text"] += "\n\n看完以上文字案例後選擇\n" + "\n".join(choices_text)
+            else:
+                chosen = next((item["label"] for item in review["strategies"]
+                               if item["id"] == review["selected_strategy"]), None)
+                if chosen:
+                    review["display_text"] += "\n\n已保存驗收方式「" + chosen + "」。"
         updated["case_review"] = review
     return updated
 
@@ -340,20 +376,28 @@ def _trial_gap(state, trial):
     )
 
 
-def _prepare(service, state, checkpoint):
-    if state.get("draft_id") is None or state.get("blueprint_schema_version") != 2 or state["status"] in RUNNING:
-        return state
-    if not any(row["kind"] == "capability" and any(
-        item.get("recipe_id") for item in row.get("candidate_rejections", [])
-    ) for row in state["gaps"]):
+def _has_preparation(state):
+    return (
+        state.get("draft_id") is not None and state.get("blueprint_schema_version") == 2
+        and state["status"] not in RUNNING and any(
+            row["kind"] == "capability" and any(
+                item.get("recipe_id") for item in row.get("candidate_rejections", [])
+            ) for row in state["gaps"]
+        )
+    )
+
+
+def _prepare(service, state, checkpoint, *, retry=False):
+    if not _has_preparation(state):
         return state
     from .completion_preparation import prepare_missing_adapters
 
-    updated = prepare_missing_adapters(service, state, checkpoint)
+    updated = prepare_missing_adapters(service, state, checkpoint, retry=retry)
     return _preflight(service, updated) if updated is not state else state
 
 
-def _qualify(service, state, checkpoint):
+def _qualify(service, state, checkpoint, *, retry=False):
+    from .binding_operations import BindingOperations
     from ..graph.qualification import complete_bindings
 
     if state["status"] in RUNNING or state["draft_id"] is None:
@@ -370,6 +414,7 @@ def _qualify(service, state, checkpoint):
     for decision in state["portable_decisions"]:
         node = decision["node"]
         choice = decisions.get(node, {})
+        preparation_choice = state.get("binding_selections", {}).get(node, {})
         allowed = {
             candidate["adapter"]: candidate["environment_fingerprint"]
             for candidate in decision["candidates"]
@@ -380,7 +425,13 @@ def _qualify(service, state, checkpoint):
         automatic = [
             key for key in decision.get("automatic_candidates", []) if key in allowed
         ]
-        if decision.get("selected_adapter") in allowed:
+        if preparation_id := preparation_choice.get("preparation_id"):
+            adapter = preparation_choice["adapter"]
+            if adapter in allowed and any(candidate["adapter"] == adapter
+                    and candidate.get("preparation_id") == preparation_id for candidate in decision["candidates"]):
+                selections[node] = adapter
+                selected_local_writes.add(node)
+        elif decision.get("selected_adapter") in allowed:
             selections[node] = decision["selected_adapter"]
         elif (
             allowed.get(choice.get("adapter")) == choice.get("environment_fingerprint")
@@ -406,16 +457,24 @@ def _qualify(service, state, checkpoint):
     checkpoint(
         {**state, "status": "qualifying", "qualification_selections": selections}
     )
+    attempted = state.get("qualification", {})
+    if retry:
+        attempted = {
+            node: outcome for node, outcome in attempted.items()
+            if (outcome.get("report") or {}).get("verdict") == "PASS"
+        }
     try:
         result = complete_bindings(
             service.workspace,
             state["draft_id"],
             selections,
-            state.get("qualification", {}),
+            attempted,
             offline=state["offline"],
             case_supplies=state.get("adapter_case_supplies"),
             toolchain_plans=toolchain_plans,
             selected_local_writes=selected_local_writes,
+            operation_store=BindingOperations(service.workspace.runtime, state["work_id"]),
+            retry_failed=retry,
         )
     except FlowError as exc:
         if exc.code not in {
@@ -582,6 +641,9 @@ def _submit(service, current, payload):
             "請指定這一項缺口的新藍圖附件。",
         )
         return _receive_source(service, current, payload["archive"], None)
+    if action == "complete_adapter_cases":
+        live = _preflight(service, current)
+        return _supply_adapter_cases(service, live, _scoped_gap(live, payload), payload)
     require(
         isinstance(payload.get("user_text"), str)
         and 0 < len(payload["user_text"].strip()) <= 4000,
@@ -606,11 +668,7 @@ def _submit(service, current, payload):
         return _select_bindings(service, live, payload)
     if action == "confirm_cases":
         return _batch_cases(service, live, payload, confirm=True)
-    gap = next(
-        (item for item in live["gaps"] if item["id"] == payload.get("gap_id")), None
-    )
-    if gap is None or gap["scope_hash"] != payload.get("scope_hash"):
-        raise FlowError("REVISION_CONFLICT", "缺口或候選已改變，請先重驗。")
+    gap = _scoped_gap(live, payload)
     if action == "complete_case":
         return _supply_case(service, live, gap, payload)
     if action == "retry_trial":
@@ -640,30 +698,34 @@ def _submit(service, current, payload):
                 "recipe_confirmation": payload["user_text"],
             },
         )
-    if action == "complete_adapter_cases":
-        require(action in gap["actions"], "目前缺口沒有等待 Adapter 測試案例。")
-        service_result = {
-            **live.get("adapter_case_supplies", {}),
-            gap["location"]: payload.get("cases"),
-        }
-        from ..graph.qualification import validate_adapter_cases
-
-        validate_adapter_cases(
-            service.workspace, live["draft_id"], gap["location"], payload.get("cases")
-        )
-        return _preflight(
-            service,
-            {
-                **live,
-                "adapter_case_supplies": service_result,
-                "adapter_case_confirmation": {
-                    **live.get("adapter_case_confirmation", {}),
-                    gap["location"]: payload["user_text"],
-                },
-            },
-        )
     require(action in ("select_adapter", "decline_adapter"), "不支援這項補強回覆。")
     return _preflight(service, _adapter_selection(live, gap, payload, action))
+
+
+def _scoped_gap(state, payload):
+    gap = next((row for row in state["gaps"] if row["id"] == payload.get("gap_id")), None)
+    if gap is None or gap["scope_hash"] != payload.get("scope_hash"):
+        raise FlowError("REVISION_CONFLICT", "缺口或候選已改變，請先重驗。")
+    return gap
+
+
+def _supply_adapter_cases(service, live, gap, payload):
+    from ..graph.qualification import validate_adapter_cases
+
+    require("complete_adapter_cases" in gap["actions"], "目前缺口沒有等待 Adapter 測試案例。")
+    node, cases = gap["location"], payload.get("cases")
+    validate_adapter_cases(service.workspace, live["draft_id"], node, cases)
+    updated = {
+        **live,
+        "adapter_case_supplies": {**live.get("adapter_case_supplies", {}), node: cases},
+    }
+    if "user_text" in payload:
+        reply = payload["user_text"]
+        require(isinstance(reply, str) and 0 < len(reply.strip()) <= 4000, "補強答覆格式無效。")
+        updated["adapter_case_confirmation"] = {
+            **live.get("adapter_case_confirmation", {}), node: reply,
+        }
+    return _preflight(service, updated)
 
 
 def _adapter_selection(state, gap, payload, action):
@@ -731,6 +793,8 @@ def _select_bindings(service, live, payload):
             "option_id": option["id"], "scope_hash": selection.scope_hash,
             "user_text": payload["user_text"],
         }
+        if option["approach"] == "observed_preparation":
+            answers[key].update(preparation_id=option["preparation_id"], adapter=option["adapter"])
         if option["approach"] == "observed_adapter":
             live = _adapter_selection(
                 live, gap, {**payload, "adapter": option["adapter"]}, "select_adapter"
@@ -903,6 +967,12 @@ def completion(service, operation, work_id=None, payload=None, *, origin=None):
     payload = dict(payload or {})
     runtime = service.workspace.runtime
     store = CompletionStore(runtime)
+    if operation == "find":
+        draft_id, intent = payload.get("draft_id"), payload.get("intent", "install")
+        require(work_id is None and set(payload) <= {"draft_id", "intent"}
+                and isinstance(draft_id, str) and re.fullmatch(r"[a-f0-9]{64}", draft_id)
+                and intent in ("install", "build"), "請使用實際匯入的草稿識別碼查詢補強工作。")
+        return {"draft_id": draft_id, "intent": intent, "works": store.for_draft(draft_id, intent)}
     if operation != "start":
         require(
             isinstance(work_id, str)
@@ -918,6 +988,14 @@ def completion(service, operation, work_id=None, payload=None, *, origin=None):
             from .completion_delivery import trial_progress
 
             return {**current, "trial_progress": trial_progress(service, current)}
+        if current.get("binding_request"):
+            from .binding_operations import BindingOperations
+
+            progress = BindingOperations(runtime, work_id).results()
+            return {**current, "binding_progress": [
+                {key: row[key] for key in ("operation_id", "kind", "status", "generation")}
+                for row in progress
+            ]}
         return current
     if operation == "preview_revision":
         require(set(payload) == {"draft_id"}, "請指定已從 Studio 匯入的修訂識別碼。")
@@ -934,12 +1012,27 @@ def completion(service, operation, work_id=None, payload=None, *, origin=None):
         require(work_id is None, "建立補強工作時由底座分配識別碼。")
         work_id = "completion_" + digest(request_id)[:32]
     request_hash = digest([operation, payload] if origin is None else [operation, payload, origin])
-    with runtime.lock("blueprint-completion:" + work_id, timeout=10):
+    if operation in {"pause", "cancel"}:
+        return _drive_completion(service, operation, work_id, payload, request_id, request_hash, origin)
+    with runtime.lock("blueprint-binding-drive:" + work_id, timeout=10):
+        return _drive_completion(service, operation, work_id, payload, request_id, request_hash, origin)
+
+
+def _drive_completion(service, operation, work_id, payload, request_id, request_hash, origin):
+    runtime = service.workspace.runtime
+    store = CompletionStore(runtime)
+    lock_key = "blueprint-completion:" + work_id
+    with runtime.lock(lock_key, timeout=10):
         replay = store.replay(work_id, request_id, request_hash)
         if replay is not None:
             return replay
         current = store.find(work_id) if operation == "start" else store.read(work_id)
-        if operation == "start":
+        in_progress = (current or {}).get("binding_request") or {}
+        if in_progress.get("request_id") == request_id:
+            if in_progress.get("request_hash") != request_hash:
+                raise FlowError("REVISION_CONFLICT", "同一補強請求識別碼已用於其他內容。")
+            updated = _preflight(service, current)
+        elif operation == "start":
             if current is not None and current["start_hash"] != request_hash:
                 raise FlowError("REVISION_CONFLICT", "同一補強啟動請求已用於其他內容。")
             updated = (
@@ -960,25 +1053,63 @@ def completion(service, operation, work_id=None, payload=None, *, origin=None):
                     "REVISION_CONFLICT", "補強工作已更新，請先重新讀取狀態。"
                 )
             updated = _change(service, current, operation, payload)
-        revision = current["revision"] if current else 0
+    revision = current["revision"] if current else 0
+    pending = {"request_id": request_id, "request_hash": request_hash}
 
-        def record(state, identifier=None):
-            nonlocal revision
-            revision += 1
-            value = {
-                **state,
-                "revision": revision,
-                "updated_at": datetime.now(UTC).isoformat(),
-            }
-            return store.save(value, identifier or f"internal:{revision}", request_hash)
+    def save_locked(state, identifier=None):
+        nonlocal revision
+        latest = store.find(work_id)
+        if (latest["revision"] if latest else 0) != revision:
+            raise FlowError("REVISION_CONFLICT", "補強工作已更新，請先重新讀取狀態。")
+        state = dict(state)
+        state.pop("binding_request", None)
+        if identifier is None:
+            state["binding_request"] = pending
+        revision += 1
+        value = {
+            **state,
+            "revision": revision,
+            "updated_at": datetime.now(UTC).isoformat(),
+        }
+        return store.save(value, identifier or f"internal:{revision}", request_hash)
 
-        dispatch = updated.pop("_host_dispatch", None)
-        if dispatch is not None:
-            return {**record(updated, request_id), "host_dispatch": dispatch}
-        if operation in {"start", "advance", "submit", "recheck", "resume"} and updated["status"] not in {
-            "paused", "cancelled", "archived", "installed",
-        }:
-            updated = _prepare(service, updated, record)
-            updated = _qualify(service, updated, record)
-            updated = queue_trial(service, updated, record)
-        return record(updated, request_id)
+    def record(state, identifier=None):
+        with runtime.lock(lock_key, timeout=10):
+            return save_locked(state, identifier)
+
+    dispatch = updated.pop("_host_dispatch", None)
+    if dispatch is not None:
+        return {**record(updated, request_id), "host_dispatch": dispatch}
+    should_drive = operation in {"start", "advance", "submit", "recheck", "resume"} and updated["status"] not in {
+        "paused", "cancelled", "archived", "installed",
+    }
+    if should_drive:
+        updated = _advance_bindings(service, updated, record, retry=operation == "recheck")
+    with runtime.lock(lock_key, timeout=10):
+        if should_drive:
+            updated = queue_trial(service, updated, save_locked)
+        return save_locked(updated, request_id)
+
+
+def _advance_bindings(service, state, record, *, retry):
+    if not _has_preparation(state):
+        state = _prepare(service, state, record, retry=retry)
+        return _qualify(service, state, record, retry=retry)
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    record({**state, "status": "preparing"})
+    # Each branch persists its own operations. Commit only the joined view to the work revision.
+    def child_checkpoint(_state):
+        return None
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        prepare = pool.submit(_prepare, service, state, child_checkpoint, retry=retry)
+        qualify = pool.submit(_qualify, service, state, child_checkpoint, retry=retry)
+        prepared, qualified = prepare.result(), qualify.result()
+    merged = _preflight(service, {
+        **prepared,
+        "qualification": qualified.get("qualification", {}),
+        "environment_lock": qualified.get("environment_lock"),
+    })
+    return _qualify(service, merged, record)

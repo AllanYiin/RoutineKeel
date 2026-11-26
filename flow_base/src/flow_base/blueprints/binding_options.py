@@ -148,11 +148,15 @@ def _options(raw, node, rule, offline, skills):
 
 
 def describe(root, graph, state, gaps):
+    from ..graph.capabilities import capability_observation
+    from .completion_preparation import preparation_candidates
+
     model, _ = validate_blueprint(graph)
     tasks, rules = graph_task_paths(model), graph_requirements(model)
     skills = graph["provenance"].get("design_review", {}).get("details", {}).get("skills", {})
     guide = _guide(root, graph)
     discovered = state.get("binding_research", {})
+    catalog = None
     for gap in gaps:
         key = gap["location"]
         if gap["kind"] != "capability" or key not in tasks or gap["code"] == "WAITING_FOR_OTHER_BINDINGS":
@@ -169,6 +173,22 @@ def describe(root, graph, state, gaps):
                 "plan": "由宿主接通本節點的具名文字輸入輸出，核對資料範圍及模型用量後取得資格證據。",
             })
         options = _options(raw, node, rule, state["offline"], assigned)
+        if rule and any(item.get("recipe_id") for item in gap.get("candidate_rejections", [])):
+            if catalog is None:
+                catalog, _ = capability_observation(root)
+            eligible = preparation_candidates(node, rule, gap["candidate_rejections"], catalog, state["offline"])
+            for op_id, (adapter, recipe) in eligible.items():
+                option = {
+                    "id": digest([adapter.ref, op_id]), "title": adapter.tool,
+                    "approach": "observed_preparation", "adapter": adapter.ref, "locus": "local_runtime",
+                    "status": "preparable", "action": "prepare_adapter", "recipe_id": recipe.id,
+                    "preparation_id": op_id, "selectable": not gap.get("requires_design_revision"),
+                }
+                downloads = [wheel.model_dump(mode="json") for wheel in getattr(recipe, "wheels", []) if wheel.source]
+                if downloads:
+                    option["download_sources"] = downloads
+                    option["download_allowed"] = not state["offline"] and catalog[adapter.tool].get("download_allowed") is True
+                options.append(option)
         for candidate in gap.get("candidates", []):
             candidate_id = digest([candidate["adapter"], candidate["environment_fingerprint"]])
             options.append({
@@ -176,6 +196,7 @@ def describe(root, graph, state, gaps):
                 "title": candidate["tool"],
                 "approach": "observed_adapter",
                 "adapter": candidate["adapter"],
+                **({"preparation_id": candidate["preparation_id"]} if candidate.get("preparation_id") else {}),
                 "locus": candidate["locus"],
                 "status": "observed" if candidate["allowed"] else "needs_permission",
                 "action": "select_adapter",
@@ -236,13 +257,20 @@ def binding_plan(gaps, choices, decisions):
         options = info["options"]
         chosen = choices.get(key, {})
         current = next((item for item in options if item["id"] == chosen.get("option_id")), None)
+        if current is None and chosen.get("preparation_id"):
+            current = next((item for item in options if item["approach"] == "observed_adapter"
+                            and item["adapter"] == chosen["adapter"]
+                            and item.get("preparation_id") == chosen["preparation_id"]), None)
         automatic = info["handled_by"] != "tool_selection"
+        evidence_work = any(action in gap["actions"] for action in (
+            "complete_adapter_cases", "provide_host_qualification",
+        ))
         auto_adapters = by_node.get(key, {}).get("automatic_candidates", [])
         selectable = [item for item in options if item.get("selectable", True)]
         auto_ready = len(auto_adapters) == 1 and any(
             row.get("adapter") == auto_adapters[0] for row in selectable
         )
-        if automatic or current or auto_ready:
+        if automatic or current or auto_ready or evidence_work:
             group = "automatic_work"
         else:
             group = "tool_selection" if selectable else "research_required"

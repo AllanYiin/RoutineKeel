@@ -419,7 +419,7 @@ def dispatch(studio, workspace, action, params, *, runtime_python=None):
                 raise StudioError("INPUT_INVALID", "請透過已確認的 Pattern 合成入口建立來源證據。")
             return blueprints.prepare(studio, pid, **p)
         if action == "export_blueprint":
-            return blueprints.export(studio, workspace, pid, **p)
+            return blueprints.export(studio, workspace, pid, **p, runtime_python=runtime_python)
         for state in reversed(studio.interviews.history(pid)):
             revision = state.get("blueprint_revision")
             if revision and revision["sha256"] == p["sha256"]:

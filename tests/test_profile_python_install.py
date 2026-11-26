@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
@@ -37,6 +38,8 @@ def test_profile_uses_launcher_python_location_and_records_environment(tmp_path,
 
     def sync_project(argv, *, env, **kwargs):
         assert argv[:2] == ['uv', 'sync']
+        expected_python = sys.executable if sys.version_info[:2] == (3, 12) else '3.12'
+        assert argv[argv.index('--python') + 1] == expected_python
         install_dirs.append(Path(env['UV_PYTHON_INSTALL_DIR']))
         python.parent.mkdir(parents=True)
         python.touch()

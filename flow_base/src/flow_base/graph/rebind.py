@@ -28,17 +28,23 @@ def _affected(session, state, live, *, new_lock=False):
     return changed, sorted(impacted)
 
 
-def detect_rebind(session, state, live):
+def detect_rebind(session, state, live, *, budget_conflict=None):
     """Return affected root nodes. Only an installed Run can create repair work."""
     previous = state.get("rebind") or {}
-    if live["fingerprint"] == state["plan"]["capability_fingerprint"]:
+    budget_conflict = budget_conflict or previous.get("budget_conflict")
+    if live["fingerprint"] == state["plan"]["capability_fingerprint"] and not budget_conflict:
         if previous.get("status") == "needed":
             state["rebind"] = {**previous, "status": "restored"}
             session.checkpoint(state, None, "binding_restored", work_id=previous.get("work_id"))
         return set()
     if not state.get("run_id") or state.get("owner_session"):
         raise FlowError("INVALID_CONFIGURATION", "能力或權限已變更")
-    changed, affected = _affected(session, state, live)
+    observed_bindings = live["bindings"]
+    if budget_conflict:
+        observed_bindings = {
+            key: value for key, value in observed_bindings.items() if key != budget_conflict["node"]
+        }
+    changed, affected = _affected(session, state, {"bindings": observed_bindings})
     if not changed:
         raise FlowError("BINDING_STALE", "能力觀測與原計畫不同。")
     pending = sorted(
@@ -52,6 +58,7 @@ def detect_rebind(session, state, live):
         "affected": affected,
         "pending_operations": pending,
         "work_id": previous.get("work_id"),
+        **({"budget_conflict": budget_conflict} if budget_conflict else {}),
     }
     if impact != previous:
         state["rebind"] = impact
@@ -66,6 +73,7 @@ def detect_rebind(session, state, live):
             "source_run_id": state["run_id"],
             "plan_hash": state["plan_hash"],
             "bindings_hash": state["plan"]["bindings_hash"],
+            **({"budget_conflict": budget_conflict} if budget_conflict else {}),
         }
         try:
             plan = state["plan"]

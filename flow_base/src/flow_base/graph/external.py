@@ -8,9 +8,11 @@ from filelock import FileLock
 from ..blueprints.source import require
 from ..outputs import reject_links
 from ..runtime import atomic_json, digest, read_json
+from .model_budget import scoped_resources
 
 
-def scope_for(session_id, node_id, attempt, binding, values, configuration, *, parameters=None):
+def scope_for(session_id, node_id, attempt, binding, values, configuration, *,
+              parameters=None, skill_documents=None):
     scope = {
         "session_id": session_id,
         "node_id": node_id,
@@ -20,15 +22,21 @@ def scope_for(session_id, node_id, attempt, binding, values, configuration, *, p
         "binding_fingerprint": binding.get("fingerprint", binding.get("authority_hash")),
         "destination": binding.get("destination") or binding.get("tool"),
         "permissions": binding.get("permissions", []),
-        "resources": binding.get("resources"),
+        "resources": scoped_resources(binding, values),
         "arguments": values,
         "configuration_hash": digest(configuration),
     }
     if parameters:
         scope["parameters"] = parameters
-    for key in ("source_id", "provider_tool"):
+    if skill_documents:
+        scope["skill_documents_hash"] = digest(skill_documents)
+    for key in ("source_id", "provider_tool", "model_profile"):
         if key in binding:
             scope[key] = binding[key]
+    if "model_profile" in scope:
+        scope["result_schema_hash"] = digest(binding.get("result_schema"))
+    if "tool_registry" in binding:
+        scope["tool_registry"] = binding["tool_registry"]
     return scope, digest(scope)
 
 
@@ -48,7 +56,8 @@ def receipt_path(workspace, key):
 
 
 def record_observation(
-    workspace, key, scope_hash, provider_receipt, outcome, outputs, *, usage=None, stream=None
+    workspace, key, scope_hash, provider_receipt, outcome, outputs, *, usage=None, stream=None,
+    measurement=None,
 ):
     """Host integration API. No CLI or MCP tool exposes this writer to the workflow."""
     path = receipt_path(workspace, key)
@@ -74,6 +83,16 @@ def record_observation(
             "用量回執無效",
         )
         receipt["usage"] = usage
+    if measurement is not None:
+        from .model_budget import usage_evidence
+
+        require(
+            isinstance(measurement, dict) and usage is not None
+            and measurement.get("model_calls") == usage["model_calls"]
+            and usage_evidence({"model_call_batch": True}, measurement),
+            "分批模型量測回執無效",
+        )
+        receipt["measurement"] = measurement
     if stream is not None:
         require(
             isinstance(stream, dict)
@@ -90,7 +109,7 @@ def record_observation(
             previous = read_json(path)
             require(
                 all(receipt.get(k) == v for k, v in previous.items())
-                and set(receipt) - set(previous) <= {"usage", "stream"},
+                and set(receipt) - set(previous) <= {"usage", "stream", "measurement"},
                 "同一操作有不一致的回執",
             )
             if previous != receipt:

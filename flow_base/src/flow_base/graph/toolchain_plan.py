@@ -93,11 +93,13 @@ def observed_tools(workspace, inventory, *, include_pending=False):
 
 def _eligible(operation, task, rule, offline):
     tool = operation.adapter
-    model_calls = (operation.binding.get("resources") or {}).get("model_calls", 0)
+    resources = operation.binding.get("resources") or {}
+    model_calls = resources.get("model_calls", 0)
     return (
         set(tool.permissions) <= set(task.permissions)
         and type(model_calls) is int
         and model_calls >= 0
+        and "model_call_batch" not in resources
         and (not rule.execution_loci or tool.locus in rule.execution_loci)
         and (tool.side_effect == "none" or tool.side_effect == task.side_effect)
         and (not (offline or rule.constraints.offline_only) or not tool.network)

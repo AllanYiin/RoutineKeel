@@ -40,7 +40,7 @@ def check_resource(runtime, resource):
             "download_bytes": sum(f.size for f in resource.files if f.path in missing), "path": str(root)}
 
 
-def ensure_resource(runtime: Runtime, resource: Resource, *, offline=False, reserve_bytes=0):
+def ensure_resource(runtime: Runtime, resource: Resource, *, offline=False, reserve_bytes=0, opener=None):
     from .core.run_context import current
     run_context = current(runtime)
     sink = run_context.event_sink if run_context else None
@@ -70,7 +70,7 @@ def ensure_resource(runtime: Runtime, resource: Resource, *, offline=False, rese
             try:
                 event('download_start', resource=resource.id, file=item.path, total_bytes=item.size)
                 req = urllib.request.Request(item.url, headers={"User-Agent": "flow_base/0.2"})
-                with urllib.request.urlopen(req, timeout=60) as response, temp.open("wb") as out:
+                with (opener or urllib.request.urlopen)(req, timeout=60) as response, temp.open("wb") as out:
                     if not response.geturl().startswith("https://"):
                         raise FlowError("RESOURCE_REDIRECT", "Resource redirected to a non-HTTPS URL")
                     h, total = hashlib.sha256(), 0

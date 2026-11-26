@@ -24,7 +24,8 @@ from flow_base.observability.recovery import SecondaryOperation
 
 WINDOWS_ENV = frozenset({'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'PATHEXT', 'PATH',
                          'TEMP', 'TMP', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA',
-                         'PROGRAMDATA', 'HOMEDRIVE', 'HOMEPATH'})
+                         'PROGRAMDATA', 'HOMEDRIVE', 'HOMEPATH',
+                         'PROCESSOR_ARCHITECTURE', 'PROCESSOR_ARCHITEW6432'})
 POSIX_ENV = frozenset({'HOME', 'PATH', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TMPDIR',
                        'XDG_CACHE_HOME', 'XDG_CONFIG_HOME'})
 COMPUTE_ENV = frozenset({'CUDA_VISIBLE_DEVICES', 'NVIDIA_VISIBLE_DEVICES',

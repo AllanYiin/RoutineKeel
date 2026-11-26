@@ -1,7 +1,9 @@
 """Build versioned declarative and isolated program Adapters from trusted recipes."""
 
 import base64
+import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -19,8 +21,9 @@ from routinekeel_contracts.capability_requirements import (
 from routinekeel_contracts.errors import StudioError
 from routinekeel_contracts.models import Contract, Identifier
 from routinekeel_contracts.paths import safe_relative
+from routinekeel_contracts.skill_files import MAX_SKILL_BYTES, check_skill_bundle
 
-from ..execution.process import worker_environment
+from ..execution.process import run_process, worker_environment
 from ..outputs import reject_links
 from ..runtime import FlowError, atomic_json, canonical, digest, read_json, sha256
 from .base_steps import _select
@@ -120,9 +123,46 @@ class WasmConstruction(Construction):
         return value
 
 
+class CliInput(Contract):
+    input: Identifier
+
+
+class ProcessConstruction(Construction):
+    arguments: list[str | CliInput] = Field(min_length=1, max_length=80)
+    outputs: dict[Identifier, OutputMapping] = Field(min_length=1)
+    timeout_seconds: int = Field(default=15, ge=1, le=60)
+
+
+class CliConstruction(ProcessConstruction):
+    action: Literal["construct_cli"]
+    executable: Identifier
+    sha256: Fingerprint
+    version_args: list[str] = Field(min_length=1, max_length=6)
+    version_prefix: str = Field(min_length=1, max_length=200)
+
+
+class SkillScriptConstruction(ProcessConstruction):
+    action: Literal["construct_skill_script"]
+    bundle: str = Field(min_length=1, max_length=240)
+    bundle_sha256: Fingerprint
+    member: str = Field(min_length=1, max_length=240)
+
+    @field_validator("bundle", "member")
+    @classmethod
+    def relative_path(cls, value):
+        try:
+            return safe_relative(value)
+        except StudioError as exc:
+            raise ValueError("技能來源與腳本須在受信範圍內。") from exc
+
+
 def load_construction(raw):
     if raw.get("action") == "construct_mapping":
         return MappingConstruction.model_validate(raw)
+    if raw.get("action") == "construct_cli":
+        return CliConstruction.model_validate(raw)
+    if raw.get("action") == "construct_skill_script":
+        return SkillScriptConstruction.model_validate(raw)
     return WasmConstruction.model_validate(raw)
 
 
@@ -152,6 +192,100 @@ def check_descriptor(recipe, adapter):
         )
     ):
         _fail("映射的來源或輸出埠不符合 Adapter 契約。")
+    if isinstance(recipe, ProcessConstruction) and (
+        recipe.outputs.keys() != adapter.outputs.keys()
+        or any(not isinstance(arg, str) and (
+            arg.input not in adapter.inputs
+            or adapter.inputs[arg.input].type not in {"string", "integer", "number", "file"}
+        ) for arg in recipe.arguments)
+        or any(row.source != "stdout" or row.fields is not None for row in recipe.outputs.values())
+    ):
+        _fail("程式參數與具名輸出不符合 Adapter 契約。")
+
+
+def _cli_binary(recipe):
+    found = shutil.which(recipe.executable)
+    if not found:
+        _fail("找不到配方登錄的本機 CLI。")
+    executable = Path(found).absolute()
+    reject_links(executable)
+    if (
+        executable.stem.casefold() in {"cmd", "powershell", "pwsh", "wsl", "bash", "dash", "sh", "zsh"}
+        or not executable.is_file()
+        or os.name == "nt" and (executable.suffix.lower() != ".exe" or executable.drive.startswith("\\\\"))
+        or sha256(executable) != recipe.sha256
+    ):
+        _fail("CLI 執行檔、版本來源或校驗值與受信配方不符。")
+    return executable
+
+
+def _cli_run(executable, args, timeout, directory):
+    try:
+        output = run_process(
+            [executable, *args], cwd=directory, env=worker_environment(), timeout=timeout, grace_seconds=1,
+        )
+    except FlowError as exc:
+        if exc.code == "PROCESS_TIMEOUT":
+            raise FlowError("ADAPTER_TIMEOUT", "本機程式超過限定執行時間。") from exc
+        raise FlowError("ADAPTER_INPUT_REJECTED", "本機程式未能完成具名資料的執行。", cause=exc.code) from exc
+    if output.endswith("\n[process output truncated]\n"):
+        raise FlowError("ADAPTER_INPUT_REJECTED", "本機程式回應超過可驗證大小。")
+    return output
+
+
+def _skill_source(path, recipe):
+    reject_links(path)
+    if not path.is_file() or path.stat().st_size > MAX_SKILL_BYTES:
+        _fail("受信位置缺少完整技能 ZIP。")
+    payload = path.read_bytes()
+    if hashlib.sha256(payload).hexdigest() != recipe.bundle_sha256:
+        _fail("技能 ZIP 與登錄的校驗值不同。")
+    try:
+        files = check_skill_bundle(payload)
+    except StudioError as exc:
+        raise FlowError("TOOLCHAIN_CONSTRUCTION_BLOCKED", str(exc)) from exc
+    if not recipe.member.endswith(".py") or recipe.member not in files:
+        _fail("技能源沒有已指定的 Python 腳本。")
+    return files
+
+
+def _execute_process(recipe, binding, inputs, parameters, runtime, target):
+    if parameters or runtime is None:
+        raise FlowError("ADAPTER_INPUT_REJECTED", "CLI 需要工作區且只接受宣告的具名輸入。")
+    from ..blueprints.sessions import Assets
+
+    args = []
+    ports = binding["portable_adapter"]["inputs"]
+    try:
+        for arg in recipe.arguments:
+            if isinstance(arg, str):
+                args.append(arg)
+                continue
+            port = ports[arg.input]["type"]
+            value = inputs[arg.input]
+            if port == "file":
+                value = str(Assets(runtime).resolve(value))
+            elif port == "string":
+                if not isinstance(value, str) or value.startswith("-") or "\x00" in value:
+                    raise ValueError("CLI option supplied as data")
+            elif type(value) not in {int, float}:
+                raise ValueError("non-numeric CLI data")
+            args.append(str(value))
+        with tempfile.TemporaryDirectory(prefix="rk-tool-") as directory:
+            if isinstance(recipe, SkillScriptConstruction):
+                files = _skill_source(target / "skill.zip", recipe)
+                for name, payload in files.items():
+                    path = Path(directory) / name
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(payload)
+                entry = Path(directory) / recipe.member
+                command, args = sys.executable, ["-I", "-B", str(entry), *args]
+            else:
+                command = _cli_binary(recipe)
+            data = json.loads(_cli_run(command, args, recipe.timeout_seconds, directory))
+        return {name: _select(data, row.pointer) for name, row in recipe.outputs.items()}
+    except (KeyError, TypeError, ValueError, IndexError) as exc:
+        raise FlowError("ADAPTER_INPUT_REJECTED", "程式資料或輸出映射不符合契約。") from exc
 
 
 def _engine():
@@ -215,6 +349,15 @@ def read_construction(target, recipe):
             or receipt.get("isolation") != {"imports": 0, "memory_pages": 128, "abi": 1}
         ):
             _fail("WebAssembly 程式或隔離執行器已變更。")
+    if isinstance(recipe, CliConstruction):
+        executable = _cli_binary(recipe)
+        if receipt.get("executable_fingerprint") != digest([str(executable), recipe.sha256]):
+            _fail("已登錄的 CLI 執行位置已變更。")
+    if isinstance(recipe, SkillScriptConstruction):
+        files = _skill_source(target / "skill.zip", recipe)
+        if (receipt.get("script_sha256") != hashlib.sha256(files[recipe.member]).hexdigest()
+                or receipt.get("python_fingerprint") != digest([sys.executable, sys.version])):
+            _fail("技能腳本或 Python 與登錄收據不同。")
     return receipt
 
 
@@ -258,15 +401,36 @@ def build_construction(runtime, target, recipe, artifact_root):
                 receipt.update(
                     engine_fingerprint=engine, isolation=_wasm(command, artifact, verify=True)
                 )
+            if isinstance(recipe, CliConstruction):
+                executable = _cli_binary(recipe)
+                version = _cli_run(executable, recipe.version_args, recipe.timeout_seconds, ready)
+                if not version.startswith(recipe.version_prefix):
+                    _fail("CLI 回報的版本與工具配方不同。")
+                receipt.update(executable_fingerprint=digest([str(executable), recipe.sha256]),
+                               version_fingerprint=digest(version))
+            if isinstance(recipe, SkillScriptConstruction):
+                root = Path(artifact_root).resolve()
+                source = root / recipe.bundle
+                reject_links(source)
+                if not source.resolve().is_relative_to(root):
+                    _fail("技能 ZIP 必須位於授權來源。")
+                _skill_source(source, recipe)
+                archive = ready / "skill.zip"
+                shutil.copyfile(source, archive)
+                files = _skill_source(archive, recipe)
+                receipt.update(script_sha256=hashlib.sha256(files[recipe.member]).hexdigest(),
+                               python_fingerprint=digest([sys.executable, sys.version]))
             atomic_json(ready / "receipt.json", receipt)
             ready.rename(target)
     return receipt
 
 
-def execute_construction(target, recipe, binding, inputs, parameters):
+def execute_construction(target, recipe, binding, inputs, parameters, *, runtime=None):
     receipt = read_construction(target, recipe)
     if receipt is None or digest(receipt) != binding["implementation_hash"]:
         _fail("Adapter 執行來源與登錄收據不同。")
+    if isinstance(recipe, ProcessConstruction):
+        return _execute_process(recipe, binding, inputs, parameters, runtime, target)
     if isinstance(recipe, WasmConstruction):
         result = _wasm(_engine()[0], target / "program.wasm", inputs=inputs, parameters=parameters)
         if result.get("code") == "ADAPTER_INPUT_REJECTED":

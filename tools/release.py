@@ -176,7 +176,8 @@ def build_project(path, staging):
                    (ROOT / 'blueprints/binding-guides', 'blueprints/binding-guides/'),
                    (ROOT / 'examples/blueprint-install', 'examples/blueprint-install/')]
         guides = staging / 'workspace/blueprints/binding-guides'
-        shutil.copytree(ROOT / 'blueprints/binding-guides', guides)
+        shutil.copytree(ROOT / 'blueprints/binding-guides', guides,
+                        ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
     else:
         manifest = json.loads((path / 'flow.template.json').read_text(encoding='utf-8'))
         if manifest['version'] != version or (manifest.get('module') or manifest.get('id')) != name:

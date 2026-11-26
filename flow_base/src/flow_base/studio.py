@@ -11,6 +11,7 @@ from queue import Empty, Queue
 from threading import Lock, Thread
 
 from routinekeel_contracts.domain_assets import content_hash
+from routinekeel_contracts.runtime_environment import python_in, workspace_environment
 
 from .execution.process import worker_environment
 from .runtime import FlowError
@@ -41,9 +42,11 @@ def studio_python():
 
 
 def _studio_command(workspace):
+    environment = workspace_environment(workspace)
+    runtime = str(python_in(environment)) if environment else sys.executable
     return [
         str(studio_python()), "-I", "-X", "utf8", "-m", "workflow_studio",
-        "--workspace", str(workspace), "--runtime-python", sys.executable,
+        "--workspace", str(workspace), "--runtime-python", runtime,
     ]
 
 
@@ -171,6 +174,7 @@ def design_preflight(proposal, workspace):
         "blocks_blueprint_export": False,
         "capability_gaps": readiness["gaps"],
         "build_gaps": readiness["build_gaps"],
+        "binding_environment": readiness["binding_environment"],
     }
     lines = ["\n\n### 建置階段預檢（目前環境）"]
     if result["status"] == "ready":

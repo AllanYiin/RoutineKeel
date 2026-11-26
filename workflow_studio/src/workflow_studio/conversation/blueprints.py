@@ -15,6 +15,7 @@ from filelock import FileLock
 from routinekeel_contracts.graph_trials import trial_case_gaps
 from routinekeel_contracts.graph_validator import validate_blueprint
 from routinekeel_contracts.paths import safe_relative
+from routinekeel_contracts.runtime_environment import python_in, workspace_environment
 from routinekeel_contracts.skill_files import (
     SKILL_BUNDLE,
     check_skill_bundle,
@@ -300,14 +301,17 @@ def prepare(
     return state["blueprint_proposal"]
 
 
-def check_import(raw, expected):
+def check_import(raw, expected, workspace, *, runtime_python=None):
     exe = "Scripts/python.exe" if os.name == "nt" else "bin/python"
     adjacent = Path(sys.prefix).resolve().parent / ".venv" / exe
-    python = (
-        adjacent
-        if Path(sys.prefix).name == ".studio-venv" and adjacent.is_file()
-        else Path(sys.executable)
-    )
+    if runtime_python is None:
+        environment = workspace_environment(workspace)
+        if environment is not None:
+            runtime_python = python_in(environment)
+        elif Path(sys.prefix).name == ".studio-venv" and adjacent.is_file():
+            runtime_python = adjacent
+        else:
+            runtime_python = sys.executable
     with tempfile.TemporaryDirectory(prefix="rk-export-check-") as folder:
         path = Path(folder) / "source.zip"
         path.write_bytes(raw)
@@ -315,13 +319,18 @@ def check_import(raw, expected):
             "import json,sys;from pathlib import Path;from flow_base.blueprints.source import inspect_blueprint;"
             "source,_=inspect_blueprint(Path(sys.argv[1]).read_bytes());print(json.dumps(source['graph']))"
         )
-        result = subprocess.run(
-            [str(python), "-I", "-X", "utf8", "-c", code, str(path)],
-            capture_output=True,
-            encoding="utf-8",
-            cwd=folder,
-            timeout=40,
-        )
+        try:
+            result = subprocess.run(
+                [str(runtime_python), "-I", "-X", "utf8", "-c", code, str(path)],
+                capture_output=True,
+                encoding="utf-8",
+                cwd=folder,
+                timeout=40,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise StudioError(
+                "BLUEPRINT_BLOCKED", "無法啟動底座 Python 完成藍圖匯入驗證。"
+            ) from exc
         if result.returncode or json.loads(result.stdout) != expected:
             fail("底座匯入結果與已確認設計不一致。")
 
@@ -369,6 +378,8 @@ def export(
     decision,
     review_hash=None,
     shown_sections=None,
+    *,
+    runtime_python=None,
 ):
     if not isinstance(user_text, str) or not user_text.strip():
         fail("請先在對話確認目前顯示的藍圖摘要。")
@@ -458,7 +469,7 @@ def export(
             "details": proposal["design_review"],
         }
         raw = archive_bytes(graph, files)
-        check_import(raw, graph)
+        check_import(raw, graph, workspace, runtime_python=runtime_python)
         state["blueprint_revision"] = {
             "graph": graph,
             "sha256": hashlib.sha256(raw).hexdigest(),

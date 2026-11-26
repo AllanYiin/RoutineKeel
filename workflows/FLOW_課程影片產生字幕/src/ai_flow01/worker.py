@@ -4,12 +4,15 @@ Invoked by an explicit Python executable with one JSON request path.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
 import sys
 import time
 import wave
+import zipfile
+from io import BytesIO
 from pathlib import Path
 
 
@@ -158,7 +161,6 @@ def merge_speech_regions(regions, sample_rate=16000, max_gap_seconds=1.0, max_se
 
 
 def file_hash(path):
-    import hashlib
     h = hashlib.sha256()
     with Path(path).open('rb') as source:
         while block := source.read(1024 * 1024):
@@ -167,13 +169,12 @@ def file_hash(path):
 
 
 def value_hash(value):
-    import hashlib
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False, allow_nan=False).encode()).hexdigest()
 
 
-def read_pcm(path):
+def read_pcm(source):
     import numpy as np
-    with wave.open(str(path), 'rb') as wav:
+    with wave.open(str(source) if isinstance(source, Path) else source, 'rb') as wav:
         if wav.getframerate() != 16000 or wav.getnchannels() != 1 or wav.getsampwidth() != 2:
             raise ValueError('ASR requires 16kHz mono PCM16')
         return np.frombuffer(wav.readframes(wav.getnframes()), dtype=np.int16)
@@ -238,27 +239,55 @@ def vad(req):
     return {'regions': len(entries), 'duration': len(pcm) / 16000}
 
 
+def _region_audio(manifest_path, region, archive):
+    if archive is not None:
+        with archive.open(region['archive_member']) as source:
+            data = source.read(region['size'] + 1)
+        if len(data) != region['size']:
+            raise ValueError('VAD_AUDIO_INTEGRITY: unexpected speech clip size')
+        return BytesIO(data), {**region, 'sha256': hashlib.sha256(data).hexdigest()}
+    path = (manifest_path.parent / region['audio_file']).resolve()
+    if not path.is_relative_to(manifest_path.parent.resolve()) or file_hash(path) != region['sha256']:
+        raise ValueError('VAD_AUDIO_INTEGRITY: speech region is missing or changed')
+    return path, region
+
+
 def transcribe(req):
+    if 'speech_archive' in req:
+        with zipfile.ZipFile(req['speech_archive']) as archive:
+            return _transcribe_regions(req, archive)
+    return _transcribe_regions(req, None)
+
+
+def _transcribe_regions(req, archive):
     import numpy as np
     from opencc import OpenCC
     manifest_path = Path(req['vad_path'])
     plan = json.loads(manifest_path.read_text(encoding='utf-8'))
     target = Path(req['output'])
-    checkpoints = target.parent / 'region_checkpoints'
+    checkpoints = Path(req["checkpoints"]) if "checkpoints" in req else target.parent / 'region_checkpoints'
     checkpoints.mkdir(parents=True, exist_ok=True)
+    regions = plan['regions']
+    total = len(regions)
+    progress_record = {'completed': 0, 'total': total, 'cached': 0, 'executed': 0,
+                       'next_region_id': regions[0]['id'] if regions else None}
+    persistent_progress = checkpoints / 'progress.json'
+    if archive is not None:
+        save(persistent_progress, progress_record)
     convert = OpenCC('s2twp').convert if req.get('traditional_chinese', True) else lambda text: text
     settings = {k: req.get(k) for k in ('model', 'model_revision', 'device', 'language', 'beam_size', 'prompt', 'traditional_chinese')}
+    if archive is not None:
+        settings['allow_cpu_fallback'] = req.get('allow_cpu_fallback')
+    worker_hash = file_hash(__file__)
     model = None
     device, fallback = req.get('device', 'cpu'), None
     rows, original_text, metrics, progress = [], {}, {}, []
     detected_language = req.get('language')
-    if plan['regions']:
-        print(json.dumps({'event':'progress','completed':0,'total':len(plan['regions']),'unit':'區段','label':'語音辨識'}),flush=True)
-    for region in plan['regions']:
-        audio_path = (manifest_path.parent / region['audio_file']).resolve()
-        if not audio_path.is_relative_to(manifest_path.parent.resolve()) or file_hash(audio_path) != region['sha256']:
-            raise ValueError('VAD_AUDIO_INTEGRITY: speech region is missing or changed')
-        signature = value_hash({'schema': 1, 'region': region, 'settings': settings, 'worker': file_hash(__file__)})
+    if regions:
+        print(json.dumps({'event':'progress','completed':0,'total':total,'unit':'區段','label':'語音辨識'}),flush=True)
+    for index, region in enumerate(regions, 1):
+        source, evidence = _region_audio(manifest_path, region, archive)
+        signature = value_hash({'schema': 1, 'region': evidence, 'settings': settings, 'worker': worker_hash})
         checkpoint = checkpoints / f"region_{region['id']:05d}.json"
         result = None
         try:
@@ -271,7 +300,7 @@ def transcribe(req):
         if result is None:
             if model is None:
                 model, device, fallback = load_model(req)
-            audio = read_pcm(audio_path).astype(np.float32) / 32768.0
+            audio = read_pcm(source).astype(np.float32) / 32768.0
             segments, info = model.transcribe(audio, language=req.get('language'), beam_size=req.get('beam_size', 5),
                                              vad_filter=False, word_timestamps=True, condition_on_previous_text=False,
                                              initial_prompt=req.get('prompt') or None)
@@ -297,8 +326,13 @@ def transcribe(req):
             metrics[str(sid)] = {**segment['metrics'], 'region_id': region['id']}
             rows.append({'id': sid, **{k: segment[k] for k in ('start', 'end', 'text', 'words')}})
         progress.append({'region_id': region['id'], 'status': status})
-        save(target.with_suffix('.progress.json'), {'regions': progress, 'total': len(plan['regions'])})
-        print(json.dumps({'event':'progress','completed':len(progress),'total':len(plan['regions']),
+        if archive is not None:
+            progress_record[status] += 1
+            progress_record.update(completed=index, next_region_id=regions[index]['id'] if index < total else None)
+            save(persistent_progress, progress_record)
+        else:
+            save(target.with_suffix('.progress.json'), {'regions': progress, 'total': total})
+        print(json.dumps({'event':'progress','completed':index,'total':total,
                           'unit':'區段','label':'語音辨識','region_status':status}),flush=True)
     data = {'segments': rows, 'recognizer_text': original_text, 'recognition_metrics': metrics,
             'language': detected_language, 'duration': plan['duration'],
@@ -333,7 +367,7 @@ def qa_bundle(req):
     save(out / 'asr_details.json', data)
     save(out / 'timing_issues.json', data.get('timing_issues', []))
     save(out / 'review_config.json', config)
-    save(out / 'manifest.json', {'version': 'flow-subtitles-0.5.1', 'source': '', 'source_title': req.get('source_title', '課程影片'),
+    save(out / 'manifest.json', {'version': 'flow-subtitles-0.5.2', 'source': '', 'source_title': req.get('source_title', '課程影片'),
                                 'duration': data['duration'], 'model': data['model'], 'model_revision': data['model_revision'],
                                 'config_sha256': value_hash(config), 'source_sha256': req['source_sha256']})
     # portable-srt hashes JSON with its default ensure_ascii setting.

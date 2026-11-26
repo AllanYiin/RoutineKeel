@@ -1,0 +1,27 @@
+{
+  "course.local.transcribe_faster_whisper": {
+    "id": "course.adapter.transcribe_faster_whisper",
+    "version": "0.5.2",
+    "capability": "course.speech.transcribe",
+    "capability_version": "1.0.0",
+    "provider_version": "0.5.2",
+    "model_version": "edaa852ec7e145841d8ffdb056a99866b5f0a478",
+    "locus": "local_runtime",
+    "tool": "course.local.transcribe_faster_whisper",
+    "distribution": "ai_flow01",
+    "inputs": {
+      "clip_map": {"type": "array", "items": {"type": "object"}, "schema_id": "course.audio.clip_map"},
+      "glossary": {"type": "object", "schema_id": "course.context.glossary"},
+      "speech_clips": {"type": "file", "format": "zip", "schema_id": "course.audio.speech_clips"}
+    },
+    "outputs": {
+      "segments": {"type": "array", "items": {"type": "object"}, "schema_id": "course.speech.segments"},
+      "editing_input": {"type": "array", "items": {"type": "object"}, "schema_id": "course.subtitle.editing_input"}
+    },
+    "permissions": [],
+    "side_effect": "none",
+    "network": false,
+    "platforms": ["win32", "linux", "darwin"],
+    "max_cost_micro_usd": 0
+  }
+}

@@ -130,10 +130,89 @@ def test_failed_required_qualification_cannot_write_current_lock(tmp_path, fault
     assert not service.workspace.discover(read_only=True)
 
 
+@pytest.mark.parametrize(
+    "code,wrong_output", [
+        ("ENV_MISSING", False), ("OFFLINE_RESOURCE_MISSING", False), ("ENV_MISSING", True),
+        ("COMPUTE_DEVICE_CONFIRMATION_REQUIRED", False),
+    ]
+)
+def test_missing_local_prerequisite_is_actionable_without_qualifying(tmp_path, monkeypatch, code, wrong_output):
+    from flow_base.graph import adapter_probe, qualification
+
+    def unavailable(_binding, _node, inputs, *_args, **_kwargs):
+        if wrong_output and inputs["source"] == "Known":
+            return {"result": "different"}
+        raise FlowError(code, "Local prerequisite is not ready")
+
+    def measure(node, binding, cases, limit, *, workspace):
+        observations = adapter_probe.measure_local({
+            "binding": binding, "node": node.model_dump(mode="json"),
+            "cases": [case.model_dump(mode="json") for case in qualification._adapter_cases(node, cases)],
+            "limit_ms": limit, "workspace": str(workspace),
+        })
+        return observations["conformance"], observations["behavior"]
+
+    monkeypatch.setattr(adapter_probe, "execute_local", unavailable)
+    monkeypatch.setattr(qualification, "_measure", measure)
+    service, key = draft(tmp_path, echo_blueprint())
+    result = qualify(service, key, {"rwp_reader": "routinekeel.text_copy@1.0.0"})
+    report = result["reports"]["rwp_reader"]
+    verdict = "FAIL" if wrong_output else "NOT_RUN"
+    assert report["verdict"] == report["behavior"]["status"] == verdict
+    assert report["conformance"]["status"] == "NOT_RUN"
+    assert report["conformance"]["code"] == code
+    assert result["lock"] is None and read_lock(tmp_path, report["graph_hash"]) is None
+
+    work = service.blueprint_completion("start", payload={"draft_id": key, "request_id": "local-prerequisite"})
+    gap = next(gap for gap in work["gaps"] if gap["location"] == "rwp_reader")
+    assert work["status"] == "needs_input"
+    assert (gap["code"] == code) is not wrong_output
+    assert gap["qualification_report"]["verdict"] == verdict
+    expected_action = "revise_blueprint" if code == "COMPUTE_DEVICE_CONFIRMATION_REQUIRED" else "refresh_environment"
+    assert expected_action in gap["actions"]
+
+
+@pytest.mark.parametrize("fault,verdict", [(None, "PASS"), ("content", "FAIL"), ("remote", "NOT_RUN")])
+def test_local_qualification_validates_declared_output_schemas(tmp_path, fault, verdict):
+    graph = echo_blueprint()
+    cases = graph["quality_contract"]["adapter_cases"]["read"]
+    for case in cases:
+        case.pop("expected")
+        case["expected_schema"] = {"result": {"type": "string", "minLength": 2, "maxLength": 5}}
+    if fault == "content":
+        cases[1]["expected_schema"]["result"]["const"] = "different"
+    elif fault == "remote":
+        cases[1]["expected_schema"]["result"] = {"$ref": "https://example.invalid/expected"}
+    service, key = draft(tmp_path, graph)
+    report = qualify(service, key, {"rwp_reader": "routinekeel.text_copy@1.0.0"})
+    assert report["reports"]["rwp_reader"]["verdict"] == verdict
+    assert (report["lock"] is not None) == (verdict == "PASS")
+
+
+def test_host_qualification_cannot_replace_expected_output_hash_with_schema(observed_inventory):
+    host_tool = adapter("provider.model")
+    graph = reader_blueprint()
+    graph["quality_contract"]["adapter_cases"] = {"read": [
+        {"id": case_id, "inputs": {"source": value}, "expected_schema": {"rows": {"type": "array", "minItems": 1}}}
+        for case_id, value in (("one", "A"), ("two", "B"))
+    ]}
+    service, key = draft(observed_inventory(host_tool), graph)
+    result = qualify(service, key, {"rwp_reader": "provider.model@1.0.0"})
+    report = result["reports"]["rwp_reader"]
+    assert report["verdict"] == "NOT_RUN"
+    assert report["conformance"]["code"] == "HOST_OUTPUT_SCHEMA_EXPECTATION_UNSUPPORTED"
+    assert result["lock"] is None
+
+
 def test_host_model_probe_not_run_without_real_authorized_result(observed_inventory):  # noqa: F811
     host_tool = adapter("provider.model")
     host_tool["portable"]["model_version"] = "alternative-model-b"
-    service, key = draft(observed_inventory(host_tool), reader_blueprint())
+    graph = reader_blueprint()
+    graph["quality_contract"]["adapter_cases"] = {"read": [
+        {"id": "one", "inputs": {"source": "A"}, "expected": {"rows": [{"id": "A"}]}},
+        {"id": "two", "inputs": {"source": "B"}, "expected": {"rows": [{"id": "B"}]}},
+    ]}
+    service, key = draft(observed_inventory(host_tool), graph)
     report = qualify(service, key, {"rwp_reader": "provider.model@1.0.0"})
     assert (
         report["reports"]["rwp_reader"]["conformance"]["code"]

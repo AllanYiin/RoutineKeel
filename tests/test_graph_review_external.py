@@ -104,6 +104,19 @@ def test_decline_never_dispatches_and_stale_reply_cannot_reverse_it(tmp_path, de
         session.interact("authorize", approval(view))
 
 
+def test_receipt_from_a_different_scope_keeps_the_original_operation_waiting(tmp_path, desktop_test_catalog):
+    session, initial = external_job(tmp_path, desktop_test_catalog)
+    authorized = session.interact("authorize", approval(initial))
+    claimed = session.interact("claim", {"revision": authorized["revision"], "task_id": authorized["pending"]["id"]})
+    task = claimed["pending"]
+    record_observation(tmp_path, task["idempotency_key"], "f" * 64, "wrong-scope", "succeeded", {"result": "other"})
+    with pytest.raises(FlowError, match="與本次操作不符"):
+        session.interact("reconcile", {"revision": claimed["revision"], "task_id": task["id"]})
+    unchanged = session.interact("status", {})
+    assert unchanged["code"] == "RECONCILE_REQUIRED" and unchanged["pending"]["id"] == task["id"]
+    assert "outputs" not in unchanged and "dispatch" not in unchanged
+
+
 def test_tool_parameters_are_validated_and_bound_to_authorization_and_dispatch(
     tmp_path, desktop_test_catalog
 ):

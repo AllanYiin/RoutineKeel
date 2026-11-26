@@ -61,7 +61,7 @@
           "approach": "local_tool",
           "distributions": ["faster-whisper"],
           "sources": ["https://github.com/SYSTRAN/faster-whisper/blob/master/faster_whisper/transcribe.py"],
-          "plan": "沿用字幕流程 worker.py 的 load_model 與 transcribe。從已配置的 CPU／CUDA 環境載入本機權重（WhisperModel，local_files_only=True），每個 VAD 片段個別呼叫 transcribe，開啟 word_timestamps 並以片段映射還原原片時間。回傳原始詞時間及最小校稿文字，用混語、切段接縫與無語音案例驗證。"
+          "plan": "綁定 course.local.transcribe_faster_whisper。依 VAD 片段順序從 ZIP 逐段讀取，整次執行共用本機模型，逐段辨識並保存帶音訊與設定指紋的檢查點。中斷後在同一工作重試辨識節點，只對未完成或指紋不同的片段執行推論。用已確認的 CPU／CUDA 裝置，還原原片時間並保留詞級時間。全部完成才交付校稿資料。驗證混語、切段接縫、無語音及中途故障續跑。"
         },
         {
           "title": "字幕技能的 whisper.cpp 本機路徑",

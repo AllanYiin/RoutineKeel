@@ -238,6 +238,11 @@ def _catalog_adapters(node, workspace, inventory, *, include_pending=False):
                         {**identity, "code": "HOST_MEDIATION_REQUIRED", "field": "provider"}
                     )
                     continue
+                if profile := binding.get("model_profile"):
+                    if adapter.model_version != profile["digest"]:
+                        rejected.append({**identity, "code": "OBSERVATION_MISMATCH", "field": "model_version"})
+                        continue
+                    proof = content_hash([proof, profile, binding.get("result_schema"), resources])
         observations.append((adapter, binding, proof, granted, record.get("destination"), identity))
     return observations, rejected
 
@@ -408,6 +413,9 @@ def resolve_requirement(
             scope = [sys.platform, adapter.locus, evidence, descriptor]
             if extended:
                 scope.append(destination)
+            resources = (binding or {}).get("resources") or {}
+            if "model_call_batch" in resources:
+                scope.append(resources)
             environment = content_hash(scope)
             candidate = {
                 "adapter": adapter.ref,
@@ -427,6 +435,12 @@ def resolve_requirement(
             }
             if extended:
                 candidate["capability_version"] = adapter.capability_version
+            if (binding or {}).get("preparation") and not binding.get("preparation_pending"):
+                from .preparation import load_recipe, preparation_id
+
+                candidate["preparation_id"] = preparation_id(load_recipe(binding["preparation"]))
+            if "model_call_batch" in resources or resources.get("model_calls", 0) > 0:
+                candidate["model_budget"] = resources
             if not granted:
                 rejected.append({**identity, "code": "PERMISSION_DENIED", "field": "authorization"})
             if adapter.ref in matches:

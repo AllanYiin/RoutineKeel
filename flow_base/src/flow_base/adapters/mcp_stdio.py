@@ -77,7 +77,7 @@ def create_server(workspace: Path | str):
 
     @server.tool()
     def blueprint_completion(operation: str, work_id: str | None = None, payload: dict | None = None) -> dict:
-        """Continue blueprint completion, including tool choices and local adapter qualification."""
+        """Find work for an imported draft or continue tool choices and adapter qualification."""
         return result(lambda: service.blueprint_completion(operation, work_id, payload))
 
     @server.tool()

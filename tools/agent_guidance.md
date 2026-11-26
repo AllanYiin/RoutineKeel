@@ -52,13 +52,17 @@ RK-NEXT 以使用者當下的桌面對話作為回覆來源。一般步驟自動
 
 使用者要求安裝藍圖 ZIP 時，以 `blueprint-completion start` 或 MCP `blueprint_completion` 傳入附件、請求 ID 與 `intent=install`。保存同一 `work_id`。初檢有缺口時繼續補強。先使用 `binding_plan` 查本機候選、技能和已配置模型。宿主有已配置的來源時取得實際工具清單和既有授權。即使宿主來源暫不可用，也接續可獨立處理的本機步驟。遇 `research_required` 就在宿主查官方來源，提交 `propose_bindings`。
 
+續做時先用原 `work_id` 查 `status`。若找不到編號，先匯入實際 ZIP 取得內容指紋，再用 `blueprint-completion find --draft-id <ID>`（MCP `blueprint_completion` 的 `find`）找同一份草稿的安裝工作。有匹配結果就讀取原工作的 `status`，環境更新時用 `recheck` 接續。只有確定目前工作區沒有相符安裝工作，才依該草稿啟動新工作。
+
 宿主先處理 `automatic_work`。文字規則可用宿主模型、具名輸出契約和案例測試，且須符合藍圖的執行位置、資料與成本限制。技能有程式就查原檔、版本與依賴，接上實際呼叫。只有規則時，按步驟需要準備本機確定性程式或模型指令。核對入參、輸出、失敗及證據。宿主也先草擬驗收案例與可重現素材。
+
+遇到 `complete_adapter_cases`，由宿主依節點埠補上至少兩組不同的輸入與獨立預期值，沿同一工作提交，可省略 `user_text`。宿主 Adapter 出現 `provide_host_qualification` 後，依新的 `qualification_scope` 用已授權的工具取得實跑回執，寫入受信清冊後 `recheck`。其餘 Adapter 的資格驗證同步續做。
 
 對 `tool_selection` 一次呈現每項可選方案、建議預設、可用性、代價及必要授權，優先標出本機已有的解法。讓使用者勾選或用一則文字回覆，再提交 `select_bindings`。依 `adapter_development` 重用或編寫實作、準備獨立測試案例，使用 `complete_local_adapter` 接續資格驗證。宿主與底座處理接線、測試與安裝，沿原 `work_id` 重驗可修復缺口。詳細入口見 `blueprint-install.md`。
 
 缺必要元件時先查配置與本機等效方案，再查官方取得或安裝方式。描述實際版本、來源、驗證碼、目的位置與回復方式。使用者同意後由宿主取得、安裝或解壓、實測，並在同一 work_id 重驗。等待授權期間繼續其他補強。
 
-先用 `case_review` 在對話逐項顯示文字案例及預期。依 `default_strategy` 預選先安裝新流程並在實際 Run 觀察，使用者可以改選合成案例試做後安裝。以 `choose_case_strategy` 保存實際回覆與案例範圍。先安裝方案仍需套件及工具檢查，驗收案例列為待實跑。
+已有工具答覆或驗收策略時沿用保存內容，直接接續開發及驗證。`case_review.requires_selection=true` 時，在對話逐項顯示文字案例及預期，依 `default_strategy` 預選先安裝新流程並在實際 Run 觀察。使用者可以改選合成案例試做後安裝。以 `choose_case_strategy` 保存實際回覆與案例範圍。先安裝策略仍需套件及工具檢查，驗收案例列為待實跑。
 
 首次執行用 run 或 MCP submit_workflow，之後依 blueprint session_id 透過 blueprint-task 讀取待辦、取得真人決定並回傳實際產物。處理已領取的對外操作時，先以原請求識別查核回執。報告時區分本機實測、宿主探測、模擬回應、真人審核及實際發布。
 

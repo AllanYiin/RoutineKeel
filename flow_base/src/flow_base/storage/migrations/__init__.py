@@ -8,9 +8,9 @@ from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 
-from . import v001, v002, v003, v004, v005, v006, v007
+from . import v001, v002, v003, v004, v005, v006, v007, v008
 
-MIGRATIONS = (v001, v002, v003, v004, v005, v006, v007)
+MIGRATIONS = (v001, v002, v003, v004, v005, v006, v007, v008)
 
 
 def _tables(db):
@@ -48,6 +48,8 @@ def migrate(db: sqlite3.Connection, path: Path, *, existed: bool):
         required_tables |= v006.TABLES
     if latest >= 7:
         required_tables |= v007.TABLES
+    if latest >= 8:
+        required_tables |= v008.TABLES
     if version > latest:
         raise FlowError('SCHEMA_TOO_NEW', '資料庫由較新版底座建立；請使用相容版本', schema_version=version, supported=latest)
     tables = _tables(db)

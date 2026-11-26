@@ -82,8 +82,14 @@ if command -v sha256sum >/dev/null 2>&1; then
 else
   shasum -a 256 -c bundle.sha256 >/dev/null
 fi
-sh "$HERE/runtime/start.sh" --version
-exec "$HERE/.venv/bin/python" -X utf8 -I "$HERE/studio_bootstrap.py" "$@"
+RUNTIME_ROOT="$HERE"
+LAUNCHER="$HERE/runtime/start.sh"
+if [ -d "$HERE/../workflows" ] && [ -f "$HERE/../flow_base/start.sh" ]; then
+  RUNTIME_ROOT=$(CDPATH= cd -- "$HERE/.." && pwd)
+  LAUNCHER="$RUNTIME_ROOT/flow_base/start.sh"
+fi
+sh "$LAUNCHER" --bootstrap-only
+exec "$RUNTIME_ROOT/.venv/bin/python" -X utf8 -I "$HERE/studio_bootstrap.py" "$@"
 """
     powershell = """$ErrorActionPreference = 'Stop'
 $Arguments = @($args)
@@ -111,9 +117,18 @@ try {
         finally { $Stream.Dispose(); $Hash.Dispose() }
         if ($Actual -ne $Entry.Value) { throw ('Package integrity mismatch: ' + $Entry.Name) }
     }
-    & (Join-Path $Root 'runtime/start.ps1') --version
+    $RuntimeRoot = $Root
+    $Launcher = Join-Path $Root 'runtime/start.ps1'
+    $Parent = Split-Path -Parent $Root
+    $IntegratedLauncher = Join-Path $Parent 'flow_base/start.ps1'
+    if ((Test-Path -LiteralPath (Join-Path $Parent 'workflows') -PathType Container) -and
+        (Test-Path -LiteralPath $IntegratedLauncher -PathType Leaf)) {
+        $RuntimeRoot = $Parent
+        $Launcher = $IntegratedLauncher
+    }
+    & $Launcher --bootstrap-only
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    & (Join-Path $Root '.venv/Scripts/python.exe') -X utf8 -I (Join-Path $Root 'studio_bootstrap.py') @Arguments
+    & (Join-Path $RuntimeRoot '.venv/Scripts/python.exe') -X utf8 -I (Join-Path $Root 'studio_bootstrap.py') @Arguments
     exit $LASTEXITCODE
 } catch {
     Write-Host 'Studio setup failed. Project data has been preserved.' -ForegroundColor Red

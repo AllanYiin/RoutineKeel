@@ -70,7 +70,10 @@ def failed_work(tmp_path,monkeypatch,request):
             'words':[{'start':start if i!=20 else start-0.5,'end':end,'word':'hi'}],
             'metrics':{'avg_logprob':-0.1,'no_speech_prob':0.01,'compression_ratio':1.0}})
     result={'segments':segments,'language':'en','device':'cpu','fallback':None}
-    legacy=read_json(Path(domain.__file__).with_name('recovery_compat.json'))['workers'][0]['sha256']
+    workers = read_json(Path(domain.__file__).with_name('recovery_compat.json'))['workers']
+    legacy = workers[0]['sha256']
+    if nested:
+        legacy = 'a552e103abcc60bc35ce73905ba57071953965052839b7113e157171f09d927f'
     signature=worker.value_hash({'schema':1,'region':region,'settings':settings,'worker':legacy})
     raw_path=runtime.home/'artifacts/asr/result.json'
     atomic_json(raw_path.parent/'region_checkpoints/region_00000.json',

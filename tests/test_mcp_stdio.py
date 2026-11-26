@@ -204,9 +204,15 @@ def test_blueprint_completion_cli_to_mcp_reconnect(tmp_path):
     atomic_json(request, {"request_id": "cli-completion"})
     initial = cli(tmp_path, "blueprint-completion", "start", "--archive", archive, "--payload", request)["result"]
     work_id = initial["work_id"]
+    atomic_json(request, {"intent": "build"})
+    found = cli(tmp_path, "blueprint-completion", "find", "--draft-id", initial["draft_id"], "--payload", request)["result"]
+    assert [item["work_id"] for item in found["works"]] == [work_id]
 
     async def exercise():
         async with client_for(tmp_path) as client:
+            lookup = await call(client, "blueprint_completion", operation="find",
+                                payload={"draft_id": initial["draft_id"], "intent": "build"})
+            assert lookup["result"] == found
             state = (await call(client, "blueprint_completion", operation="status", work_id=work_id))["result"]
             assert state == initial
             args = {"expected_revision": state["revision"], "request_id": "mcp-recheck"}

@@ -296,6 +296,13 @@ class GraphSession(Session):
             record["receipt"] = evidence["receipt"]
         self.checkpoint(state, node_id, code.lower())
 
+    @staticmethod
+    def _model_skill_documents(state, node_id):
+        resources = state["bindings"].get(node_id, {}).get("resources") or {}
+        if resources.get("model_calls", 0) > 0 or "model_call_batch" in resources:
+            return state["plan"].get("skill_documents", {}).get(node_id)
+        return None
+
     def wait_for(self, state, node, kind, values):
         record = state["nodes"][node["id"]]
         identity = digest(
@@ -335,6 +342,7 @@ class GraphSession(Session):
                 values,
                 state["config"],
                 parameters=parameters,
+                skill_documents=self._model_skill_documents(state, node["id"]),
             )
             task.update(
                 scope=scope,
@@ -466,7 +474,12 @@ class GraphSession(Session):
         ):
             from .qualification import execute_local
 
-            outputs = execute_local(binding, node, values, node.get("parameters", {}), workspace=self.runtime.workspace_root)
+            parameters = node.get("parameters", {})
+            checkpoint_key = digest([key, binding.get("implementation_hash"), record["inputs_hash"], parameters])
+            outputs = execute_local(
+                binding, node, values, parameters, workspace=self.runtime.workspace_root,
+                checkpoint_dir=self.folder / "local_checkpoints" / checkpoint_key,
+            )
             if binding["provider"] == "toolchain":
                 record["chain"] = {"spent": {"work": binding["resources"]["work"]}}
             self.complete_node(state, node, outputs, {
@@ -474,10 +487,16 @@ class GraphSession(Session):
             })
             return
         if binding["provider"] == "desktop_host":
+            from .model_budget import require_verified_budget
+
+            require_verified_budget(binding, values)
             elevated = (
                 binding["side_effect"] == "external"
                 or bool(binding.get("permissions"))
                 or (binding.get("resources") or {}).get("cost_micro_usd", 0) > 0
+                or "model_call_batch" in (binding.get("resources") or {})
+                or (binding.get("model_profile") or {}).get("device") == "gpu"
+                or (binding.get("network", True) and self._model_skill_documents(state, key))
             )
             self.wait_for(state, node, "authorize_external" if elevated else "host", values)
             return
@@ -574,6 +593,12 @@ class GraphSession(Session):
                 self.execute(state, node)
             except Exception as exc:  # noqa: BLE001 -- preserve the node failure checkpoint for adapter errors
                 error = getattr(exc, "code", type(exc).__name__)
+                if error in {"MODEL_BUDGET_CONFLICT", "MODEL_BUDGET_UNVERIFIED"} and state.get("run_id") and not state.get("owner_session"):
+                    record.update(status="invalidated", error=error)
+                    conflict = {"node": key, "code": error, **exc.details}
+                    self.checkpoint(state, key, "model_budget_conflict", **conflict)
+                    affected = detect_rebind(self, state, observed, budget_conflict=conflict)
+                    continue
                 if state.get("run_id") and not state.get("owner_session") and error in {
                     "BINDING_STALE", "CAPABILITY_UNAVAILABLE", "TOOLCHAIN_PREPARATION_BLOCKED", "TOOLCHAIN_CONSTRUCTION_BLOCKED",
                 }:
@@ -587,6 +612,8 @@ class GraphSession(Session):
                         affected = detect_rebind(self, state, observed)
                         continue
                 record.update(status="failed", error=error)
+                if error == "TOOLCHAIN_PREPARATION_BLOCKED" and isinstance(exc, FlowError) and exc.details:
+                    record["diagnostic"] = exc.details
                 self.checkpoint(state, key, "failed", error=record["error"])
         result=self.view(state)
         if result["status"]=="complete" and not state.get("owner_session") and not state.get("assessment_id"):
@@ -919,6 +946,24 @@ class GraphSession(Session):
             require(not (self.folder / "cancel-request.json").exists(), "工作已要求取消")
             if task.get("claimed"):
                 return self.view(state)
+            from .model_budget import require_verified_budget
+
+            try:
+                require_verified_budget(state["bindings"][key], task["inputs"])
+            except FlowError as exc:
+                if exc.code not in {"MODEL_BUDGET_CONFLICT", "MODEL_BUDGET_UNVERIFIED"} or not state.get("run_id") or state.get("owner_session"):
+                    raise
+                from .rebind import detect_rebind
+
+                del state["pending_tasks"][task["id"]]
+                record.update(status="invalidated", error=exc.code)
+                state["requests"][request_id] = stamp
+                conflict = {"node": key, "code": exc.code, **exc.details}
+                self.checkpoint(state, key, "model_budget_conflict", **conflict)
+                detect_rebind(self, state, {
+                    "fingerprint": state["plan"]["capability_fingerprint"], "bindings": state["bindings"],
+                }, budget_conflict=conflict)
+                return self.view(state)
             require(
                 simulation
                 or not (state.get("offline") and state["bindings"][key].get("network", True)),
@@ -940,22 +985,34 @@ class GraphSession(Session):
                 or record.get("decision", {}).get("scope_hash") == task["scope_hash"],
                 "缺少本次操作核准",
             )
+            skill_hash = task["scope"].get("skill_documents_hash")
+            skill_documents = task.get("skill_documents") if skill_hash else None
+            if skill_hash:
+                require(digest(skill_documents) == skill_hash, "宿主模型的 Skill 內容與派送範圍不符")
             task["claimed"] = True
             if task["kind"] == "external":
                 record["external_claim"] = task["idempotency_key"]
             state["requests"][request_id] = stamp
             self.checkpoint(state, key, "claimed", idempotency_key=task["idempotency_key"])
+            arguments = task["inputs"]
+            resources = task["scope"].get("resources") or {}
+            if "model_call_batch" in resources:
+                arguments = {**arguments, "model_budget": {
+                    "scope_hash": task["scope_hash"], "idempotency_key": task["idempotency_key"],
+                    "max_calls": resources["model_calls"],
+                }}
             return {
                 **self.view(state),
                 "dispatch": {
                     "tool": task["scope"]["tool"],
                     **{
                         key: task["scope"][key]
-                        for key in ("source_id", "provider_tool")
+                        for key in ("source_id", "provider_tool", "model_profile")
                         if key in task["scope"]
                     },
-                    "arguments": task["inputs"],
+                    "arguments": arguments,
                     **({"instructions": task["instructions"]} if "instructions" in task else {}),
+                    **({"skill_documents": skill_documents} if skill_hash else {}),
                     **(
                         {"parameters": task["scope"]["parameters"]}
                         if "parameters" in task["scope"]
@@ -970,7 +1027,7 @@ class GraphSession(Session):
             seq = task.get("delta_count", 0)
             text = payload.get("text")
             require(
-                (state["bindings"][key].get("resources") or {}).get("model_calls", 0) > 0
+                (task["scope"].get("resources") or {}).get("model_calls", 0) > 0
                 and type(payload.get("sequence")) is int
                 and payload["sequence"] == seq
                 and isinstance(text, str)
@@ -989,10 +1046,48 @@ class GraphSession(Session):
         )
         if receipt is None:
             return self.view(state)
+        resource = task["scope"].get("resources") or {}
+        batched = "model_call_batch" in resource
+        if batched:
+            from .model_budget import usage_evidence
+
+            measurement = receipt.get("measurement") or {}
+            usage = receipt.get("usage") or {}
+            require(
+                usage_evidence(resource, measurement)
+                and usage.get("model_calls") == measurement["model_calls"]
+                and usage.get("cost_micro_usd") == 0,
+                "缺少分批工具的獨立用量觀測，暫不接受回執",
+            )
+            record["usage"] = usage
+            record["measurement"] = measurement
+            if (usage["model_calls"] > resource["model_calls"]
+                    or receipt["outcome"] == "succeeded" and (
+                        usage["model_calls"] != resource["model_calls"] or any(
+                            row["outcome"] != "succeeded" for row in measurement["batches"]
+                        )
+                    )):
+                record.update(status="failed", error="MODEL_BUDGET_CONFLICT", receipt=receipt["provider_receipt"])
+                del state["pending_tasks"][task["id"]]
+                state["requests"][request_id] = stamp
+                conflict = {
+                    "node": key, "code": "MODEL_BUDGET_CONFLICT",
+                    "tool": task["scope"]["tool"], "version": task["scope"]["version"],
+                    "input_hash": task["inputs_hash"], "declared_model_calls": resource["model_calls"],
+                    "observed_model_calls": usage["model_calls"],
+                }
+                self.checkpoint(state, key, "resource_overrun", **conflict)
+                if state.get("run_id") and not state.get("owner_session"):
+                    from .rebind import detect_rebind
+
+                    record["status"] = "invalidated"
+                    detect_rebind(self, state, {
+                        "fingerprint": state["plan"]["capability_fingerprint"], "bindings": state["bindings"],
+                    }, budget_conflict=conflict)
+                return self.view(state)
         if receipt["outcome"] == "succeeded":
             outputs = receipt["outputs"]
-            resource = state["bindings"][key].get("resources") or {}
-            if resource.get("model_calls", 0) > 0:
+            if resource.get("model_calls", 0) > 0 and (not batched or task.get("delta_count") or receipt.get("stream")):
                 require(
                     task.get("delta_count", 0) > 0
                     and receipt.get("stream")
@@ -1031,6 +1126,8 @@ class GraphSession(Session):
             )
         else:
             del state["pending_tasks"][task["id"]]
+            if "usage" in receipt:
+                record["usage"] = receipt["usage"]
             record.update(
                 status="failed",
                 error="EXTERNAL_" + receipt["outcome"].upper(),

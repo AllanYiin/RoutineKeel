@@ -20,6 +20,14 @@
     {
       "version": "0.4.1",
       "sha256": "3a5d161967e0302c9f83bdc0d318cd950bc44a37b76c5b1bff339620d4de5562"
+    },
+    {
+      "version": "0.5.1",
+      "sha256": "24bcd50ec3486e47e9e9399eefa193dd834f3f12e41e6465ab1a86502ba4b15b"
+    },
+    {
+      "version": "0.5.1",
+      "sha256": "a552e103abcc60bc35ce73905ba57071953965052839b7113e157171f09d927f"
     }
   ]
 }

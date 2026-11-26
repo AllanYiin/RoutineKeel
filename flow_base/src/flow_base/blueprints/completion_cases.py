@@ -12,6 +12,7 @@ from routinekeel_contracts.graph_trials import trial_case_gaps
 from ..graph.session import checked_value
 from ..outputs import reject_links
 from ..runtime import canonical, digest, sha256
+from .sessions import check_asset_file
 from .source import require
 from .trial import fixture_destination, fixture_path
 
@@ -251,10 +252,7 @@ def attach_fixture(service, state, source, requested_path=None):
     )
     path = service._path(source, allow_external=False)
     reject_links(path)
-    require(
-        path.is_file() and path.stat().st_size <= 512 * 1024**2,
-        "試做素材不存在或超過限制。",
-    )
+    check_asset_file(path)
     content_hash = sha256(path)
     filename = content_hash + Path(path.name).suffix.lower()
     reference = (
@@ -279,11 +277,8 @@ def attach_fixture(service, state, source, requested_path=None):
                     shutil.copyfileobj(origin, destination)
                     destination.flush()
                     os.fsync(destination.fileno())
-                require(
-                    temporary.stat().st_size <= 512 * 1024**2
-                    and sha256(temporary) == content_hash,
-                    "素材在複製期間變更，請重新選取。",
-                )
+                check_asset_file(temporary)
+                require(sha256(temporary) == content_hash, "素材在複製期間變更，請重新選取。")
                 require(not target.exists(), "補件位置已存在，請核對目前素材。")
                 os.replace(temporary, target)
             finally:

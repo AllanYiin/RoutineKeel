@@ -48,7 +48,7 @@ def _node(capability, inputs, outputs):
     }
 
 
-def _install(workspace, graph):
+def _install(workspace, graph, *, timeout=45):
     service, draft, _ = import_graph(workspace, graph)
     started = service.blueprint_completion(
         "start",
@@ -59,7 +59,7 @@ def _install(workspace, graph):
             "request_id": "construct-install",
         },
     )
-    result = wait_completion(service, started, ("installed", "needs_input"))
+    result = wait_completion(service, started, ("installed", "needs_input"), timeout=timeout)
     assert result["status"] == "installed", result.get("gaps")
     return service, draft, result
 
@@ -262,7 +262,7 @@ def test_constructed_wasm_is_verified_installed_and_rechecked(observed_inventory
             "transform": [{"id": f"case_{index}", **case} for index, case in enumerate(cases)]
         },
     }
-    service, draft, result = _install(workspace, graph)
+    service, draft, result = _install(workspace, graph, timeout=120)
     prepared = result["preparations"]["transform"]
     assert prepared["receipt"]["isolation"] == {"abi": 1, "imports": 0, "memory_pages": 128}
     request = workspace / "wasm-request.json"

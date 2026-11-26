@@ -111,6 +111,7 @@ $env:PATH = (Split-Path $UvExe) + [IO.Path]::PathSeparator + $env:PATH
 $Wheel = Join-Path $PSScriptRoot '@WHEEL@'
 $Actual = Get-FlowSha256 $Wheel
 if ($Actual -ne '@WHEEL_HASH@') { throw 'Runtime package integrity check failed.' }
+$ContractsWheel = Join-Path $PSScriptRoot '@CONTRACTS_WHEEL@'
 $Marker = Join-Path $env:FLOW_BASE_HOME 'base-environment'
 $Venv = Join-Path $env:FLOW_BASE_WORKSPACE '.venv'
 $Python = Join-Path $Venv 'Scripts\python.exe'
@@ -130,39 +131,99 @@ function Test-FlowRuntime {
         return ($LASTEXITCODE -eq 0)
     } catch { return $false }
 }
+function Select-FlowBasePython {
+    param([string] $Candidate)
+    if (-not $Candidate -or -not [IO.Path]::IsPathRooted($Candidate) -or
+        -not (Test-Path -LiteralPath $Candidate -PathType Leaf)) { return $null }
+    try {
+        & $Candidate -I -c 'import sys; sys.exit(0 if sys.implementation.name == ''cpython'' and sys.version_info[:2] == (3,12) and sys.prefix == sys.base_prefix else 1)' 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) { return $Candidate }
+    } catch {}
+    return $null
+}
+function Find-FlowBasePython {
+    try {
+        $Found = @(& $UvExe python find --system --no-project --no-config --no-python-downloads 3.12 2>$null)
+        if ($LASTEXITCODE -eq 0 -and $Found.Count -eq 1) { return (Select-FlowBasePython $Found[0]) }
+    } catch {}
+    return $null
+}
+function Invoke-FlowBootstrapUv {
+    param([string[]] $Arguments)
+    $ErrorActionPreference = 'Continue'
+    $PSNativeCommandUseErrorActionPreference = $false
+    & $UvExe @Arguments 2>&1 | ForEach-Object { Write-Host ([string]$_) }
+    return $LASTEXITCODE
+}
 $Expected = $Actual + '|@CONTRACTS_SHA256@|' + $env:FLOW_BASE_WORKSPACE + '|Windows|' + $env:PROCESSOR_ARCHITECTURE
 $Saved = if (Test-Path $Marker) { (Get-Content -Raw $Marker).Trim() } else { '' }
 if (($Saved -ne $Expected) -or (-not (Test-FlowRuntime))) {
     $Lock = Join-Path $env:FLOW_BASE_HOME 'bootstrap.lock'
     if (Test-Path $Lock) { throw 'Another bootstrap is active. If interrupted, remove share_states/bootstrap.lock and retry.' }
     New-Item -ItemType Directory -Path $Lock -ErrorAction Stop | Out-Null
+    $Backup = $null
+    $Rebuilding = $false
+    $Creating = Join-Path $env:FLOW_BASE_HOME 'base-creating'
     try {
-        $Creating = Join-Path $env:FLOW_BASE_HOME 'base-creating'
-        if ((Test-Path $Venv) -and ((Get-Item -Force $Venv).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        if ((Test-Path -LiteralPath $Venv) -and ((Get-Item -LiteralPath $Venv -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
             throw 'Refusing to replace a symbolic-link .venv.'
         }
-        if (Test-Path -LiteralPath $Venv) {
-            if (-not (Test-Path -LiteralPath (Join-Path $Venv 'pyvenv.cfg'))) {
-                throw '.venv is not a recognized virtual environment. Move that directory aside before retrying.'
+        if ((Test-Path -LiteralPath $Venv) -and -not (Test-Path -LiteralPath (Join-Path $Venv 'pyvenv.cfg') -PathType Leaf)) {
+            throw '.venv is not a recognized virtual environment. Move that directory aside before retrying.'
+        }
+        if ((Get-FlowSha256 $ContractsWheel) -ne '@CONTRACTS_SHA256@') { throw 'Contract package integrity check failed.' }
+        $BasePython = $null
+        if (Test-FlowPython) {
+            $PreviousPython = & $Python -I -c 'import sys; print(sys._base_executable)'
+            $BasePython = Select-FlowBasePython $PreviousPython
+        }
+        if (-not $BasePython) { $BasePython = Find-FlowBasePython }
+        if (-not $BasePython) {
+            $InstallDir = $env:UV_PYTHON_INSTALL_DIR
+            try {
+                Remove-Item Env:UV_PYTHON_INSTALL_DIR
+                $BasePython = Find-FlowBasePython
+            } finally { $env:UV_PYTHON_INSTALL_DIR = $InstallDir }
+        }
+        if (-not $BasePython) {
+            Write-Host '正在準備工作區的 Python 3.12。'
+            if ((Invoke-FlowBootstrapUv @('python', 'install', '--no-config', '--no-bin', '--no-registry', '3.12')) -eq 0) {
+                $BasePython = Find-FlowBasePython
             }
-            $BackupRoot = Join-Path $env:FLOW_BASE_HOME 'retired_envs'
+        }
+        if (-not $BasePython) { throw '無法準備可用的 CPython 3.12。請查看日誌中的下載、解壓或權限錯誤。' }
+        $BackupRoot = Join-Path $env:FLOW_BASE_HOME 'retired_envs'
+        if (Test-Path -LiteralPath $Venv) {
             [System.IO.Directory]::CreateDirectory($BackupRoot) | Out-Null
-            $Backup = Join-Path $BackupRoot ('venv-' + [guid]::NewGuid().ToString())
-            Move-Item -LiteralPath $Venv -Destination $Backup -ErrorAction Stop
+            $Target = Join-Path $BackupRoot ('venv-' + [guid]::NewGuid().ToString())
+            Move-Item -LiteralPath $Venv -Destination $Target -ErrorAction Stop
+            $Backup = $Target
             Write-Host ('Previous environment files preserved at: ' + $Backup)
         }
         Write-Host 'Creating local .venv from the pinned runtime package...'
-        Set-Content -Path $Creating -Value 'creating' -Encoding ASCII
-        & $UvExe venv --no-config --no-project --python 3.12 $Venv
-        if ($LASTEXITCODE -ne 0) { throw 'Virtual environment creation failed.' }
+        $Rebuilding = $true
+        Set-Content -LiteralPath $Creating -Value 'creating' -Encoding ASCII
+        if ((Invoke-FlowBootstrapUv @('venv', '--no-config', '--no-project', '--no-python-downloads', '--python', $BasePython, $Venv)) -ne 0) {
+            throw 'Virtual environment creation failed.'
+        }
         if (-not (Test-FlowPython)) { throw 'Expected local .venv with Python 3.12; refusing to install into another interpreter.' }
-        $ContractsWheel = Join-Path $PSScriptRoot '@CONTRACTS_WHEEL@'
-        if ((Get-FlowSha256 $ContractsWheel) -ne '@CONTRACTS_SHA256@') { throw 'Contract package integrity check failed.' }
-        & $UvExe pip install --no-config --python $Python --no-build $Wheel $ContractsWheel
-        if ($LASTEXITCODE -ne 0) { throw 'Runtime installation failed.' }
+        if ((Invoke-FlowBootstrapUv @('pip', 'install', '--no-config', '--python', $Python, '--no-build', $Wheel, $ContractsWheel)) -ne 0) {
+            throw 'Runtime installation failed.'
+        }
         if (-not (Test-FlowRuntime)) { throw 'Installed runtime did not pass its Python/version/import check.' }
-        Set-Content -Path $Marker -Value $Expected -Encoding UTF8
-        Remove-Item $Creating
+        Set-Content -LiteralPath $Marker -Value $Expected -Encoding UTF8
+        Remove-Item $Creating -ErrorAction SilentlyContinue
+    } catch {
+        if ($Rebuilding -and (Test-Path -LiteralPath $Venv)) {
+            [System.IO.Directory]::CreateDirectory($BackupRoot) | Out-Null
+            Move-Item -LiteralPath $Venv -Destination (Join-Path $BackupRoot ('failed-' + [guid]::NewGuid().ToString()))
+        }
+        if ($Backup) {
+            Move-Item -LiteralPath $Backup -Destination $Venv
+            Write-Host '已恢復原有 .venv。'
+        }
+        if ($Rebuilding) { Remove-Item $Creating -ErrorAction SilentlyContinue }
+        throw
     } finally { Remove-Item $Lock -ErrorAction SilentlyContinue }
 }
 Set-FlowLaunchState 'ready'

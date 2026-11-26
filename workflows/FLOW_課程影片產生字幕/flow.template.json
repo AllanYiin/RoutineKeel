@@ -2,7 +2,7 @@
   "schema_version": 1,
   "runtime_api": "0.2",
   "id": "ai_flow01",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "title": "課程影片產生字幕",
   "description": "本機 Demucs 人聲分離、音量標準化與 VAD；另提供可選的非平穩降噪與預加重模式。使用 faster-whisper large-v3 依原片時間辨識，輸出字幕與原音聽審。",
   "keywords": [

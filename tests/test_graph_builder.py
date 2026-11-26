@@ -1,4 +1,5 @@
 import json
+import sys
 import zipfile
 from pathlib import Path
 
@@ -50,8 +51,11 @@ def import_graph(ws, graph):
     return service, key, {"capability_fingerprint": report["fingerprint"]}
 
 
-def test_only_validated_graph_build_can_install_and_run(tmp_path):
-    svc, key, res = import_graph(tmp_path, data_graph())
+@pytest.mark.parametrize("workflow_id", ["graph_copy", "graph-copy_v2"])
+def test_only_validated_graph_build_can_install_and_run(tmp_path, workflow_id):
+    graph = data_graph()
+    graph["workflow"]["id"] = workflow_id
+    svc, key, res = import_graph(tmp_path, graph)
     built = svc.install_workflow(draft_id=key, resolution=res)
     assert built["status"] == "verified" and built["validation"]["status"] == "PASS"
     with (
@@ -59,7 +63,10 @@ def test_only_validated_graph_build_can_install_and_run(tmp_path):
         zipfile.ZipFile(built["archive"]) as candidate,
     ):
         assert design.namelist() == ["graph/blueprint.json"]
-        assert any(name.endswith(".whl") for name in candidate.namelist())
+        manifest = json.loads(candidate.read(f"{workflow_id}/flow.json"))
+        assert manifest["id"] == workflow_id
+        assert manifest["module"].isidentifier()
+        assert f"{workflow_id}/{manifest['package']}" in candidate.namelist()
     assert built["archive_sha256"] != key
     assert built["builder_receipt"]["package_hash"] == built["archive_sha256"]
     assert not svc.workspace.discover(read_only=True)
@@ -71,7 +78,7 @@ def test_only_validated_graph_build_can_install_and_run(tmp_path):
     )
     request = tmp_path / "input.json"
     request.write_text(json.dumps({"inputs": {"text": "fresh"}}))
-    result = svc.run_workflow_sync({"task": "graph_copy", "source": request})
+    result = svc.run_workflow_sync({"task": workflow_id, "source": request})
     assert result["blueprint"]["outputs"] == {"original": "fresh", "upper": "FRESH"}
     assert (
         json.loads((Path(result["output"]) / "artifacts/results.json").read_bytes())
@@ -123,6 +130,9 @@ def test_desktop_design_export_and_builder_use_same_graph_and_receipt(
         },
     )
     preflight = proposal["build_preflight"]
+    environment = preflight["binding_environment"]
+    assert environment["status"] == "ready"
+    assert Path(environment["python_executable"]).resolve() == Path(sys.executable).resolve()
     assert proposal["build_preflight_guidance"]["scope"] == "candidate_trial"
     assert proposal["build_preflight_guidance"]["completion_tool"] == "blueprint_completion"
     if with_gaps:
@@ -131,7 +141,7 @@ def test_desktop_design_export_and_builder_use_same_graph_and_receipt(
         assert preflight["capability_gaps"][0]["node"] == "upper"
         assert preflight["build_gaps"][0]["code"] == "TRIAL_CASE_NOT_EXECUTABLE"
     else:
-        assert preflight == {
+        assert {key: value for key, value in preflight.items() if key != "binding_environment"} == {
             "status": "ready", "blocks_blueprint_export": False, "capability_gaps": [], "build_gaps": []
         }
     proposal = studio_request(tmp_path, "finalize_workflow_design", {

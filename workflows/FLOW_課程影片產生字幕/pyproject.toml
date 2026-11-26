@@ -3,10 +3,13 @@ requires = ["hatchling==1.27.0"]
 build-backend = "hatchling.build"
 [project]
 name = "ai_flow01"
-version = "0.5.1"
+version = "0.5.2"
 requires-python = ">=3.11,<3.14"
 description = "Independently packaged workflow for flow_base"
 license = "MIT"
+[project.entry-points."routinekeel.portable_adapters"]
+"course.local.transcribe_faster_whisper" = "ai_flow01.course_graph:transcribe"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/ai_flow01"]
 

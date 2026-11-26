@@ -3,6 +3,7 @@ import json
 import platform
 import sys
 from pathlib import Path
+from routinekeel_contracts.runtime_environment import python_in, workspace_environment
 
 from ..compiler.generator import Compiler
 from ..contracts import StudioError
@@ -30,14 +31,8 @@ class StudioSession:
             studio.tools.seed()
 
     def _find_runtime(self):
-        executable = "Scripts/python.exe" if sys.platform == "win32" else "bin/python"
-        for base in (
-            self.workspace / ".venv",
-            self.workspace / "flow_base/.venv",
-        ):
-            if (base / executable).is_file():
-                return base / executable
-        return sys.executable
+        environment = workspace_environment(self.workspace)
+        return python_in(environment) if environment else sys.executable
 
     def service(self):
         return StudioService.open_workspace(self.workspace)

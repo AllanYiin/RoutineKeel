@@ -276,6 +276,15 @@ def _fail(service, store, state, exc, **details):
 
     trial = {**state["trial"], **_explain_failure(service, state, exc), **details}
     derived = _preflight(service, {**state, "trial": trial})
+    process_retry = False
+    if trial["code"] == "TRIAL_PROCESS_EXIT" and not state.get("trial_process_retry"):
+        # A fresh isolated trial cannot resend production provider requests.
+        recovered = _preflight(service, {**state, "trial": {}})
+        if recovered["status"] == "ready_for_trial":
+            process_retry = True
+            derived = {**recovered, "trial_process_retry": {
+                key: trial[key] for key in ("build_id", "code", "case", "phase") if key in trial
+            }}
     if derived["status"] == "ready_for_trial":
         changes = {
             key: value
@@ -283,7 +292,7 @@ def _fail(service, store, state, exc, **details):
             if key not in {"revision", "updated_at"}
         }
         retries = state.get("environment_retries", 0)
-        if retries < 3:
+        if process_retry or retries < 3:
 
             def save_checkpoint(snapshot):
                 current = store.read(state["work_id"])
@@ -296,7 +305,7 @@ def _fail(service, store, state, exc, **details):
 
             restarted = queue_trial(
                 service,
-                {**changes, "environment_retries": retries + 1},
+                {**changes, "environment_retries": retries if process_retry else retries + 1},
                 save_checkpoint,
             )
             save_checkpoint(restarted)

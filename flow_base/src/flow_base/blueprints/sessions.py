@@ -12,6 +12,14 @@ from .recipe import local_operations, transform
 from .source import require, validate_value
 
 ASSET = re.compile(r"asset:([a-f0-9]{64})(\.[a-z0-9]{1,8})")
+MAX_ASSET_GIB = 5
+MAX_ASSET_BYTES = MAX_ASSET_GIB * 1024**3
+
+
+def check_asset_file(path):
+    require(path.is_file(), "素材不存在或不是檔案")
+    size = path.stat().st_size
+    require(size <= MAX_ASSET_BYTES, f"素材大小 {size:,} bytes 超過單檔上限 {MAX_ASSET_GIB} GiB")
 
 
 class Assets:
@@ -21,7 +29,7 @@ class Assets:
         self.root.mkdir(exist_ok=True, parents=True)
 
     def store(self, path):
-        require(path.is_file() and path.stat().st_size <= 512 * 1024**2, "素材不存在或過大")
+        check_asset_file(path)
         token = "asset:" + sha256(path) + path.suffix.lower()
         dest = self.path(token)
         if not dest.exists():

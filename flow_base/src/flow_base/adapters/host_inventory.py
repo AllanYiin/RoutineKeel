@@ -13,7 +13,7 @@ from ..outputs import reject_links
 from ..runtime import FlowError, atomic_json, digest
 
 
-async def observe_tools(client, grants, *, validity_seconds=300, source_id=None, routes=None):
+async def observe_tools(client, grants, *, validity_seconds=300, source_id=None, routes=None, launch_hash=None):
     """grants belong to the embedding host; no blueprint input can add an entry."""
     if not 1 <= validity_seconds <= 3600:
         raise ValueError("invalid observation lifetime")
@@ -53,13 +53,14 @@ async def observe_tools(client, grants, *, validity_seconds=300, source_id=None,
             route = routes.get(tool.name, tool.name)
             if route in tools:
                 unavailable("宿主能力清冊回傳重複工具：" + route)
+            identity = [source_id, route, observed]
+            if launch_hash is not None:
+                identity.insert(2, launch_hash)
             tools[route] = {
                 **grants[tool.name],
                 **observed,
                 "tool": route,
-                "receipt_id": digest(
-                    observed if source_id is None else [source_id, route, observed]
-                ),
+                "receipt_id": digest(observed if source_id is None else identity),
                 "observed": "tools/list",
                 "available": True,
             }
@@ -112,8 +113,7 @@ async def _observe_sources(sources, directory):
             parameters = StdioServerParameters(command=source["command"], args=source.get("args", []),
                                                cwd=directory)
             async with asyncio.timeout(15), Client(parameters, read_timeout_seconds=8) as client:
-                return await observe_tools(client, source["grants"], source_id=identifier,
-                                           routes=source.get("routes"))
+                return await observe_source(client, identifier, source)
         except Exception:
             # A provider can be down independently. User-facing results do not expose its launch data.
             return None
@@ -129,18 +129,39 @@ async def _observe_sources(sources, directory):
     return observation
 
 
+async def observe_source(client, identifier, source):
+    return await observe_tools(
+        client, source["grants"], source_id=identifier, routes=source.get("routes"),
+        launch_hash=digest([source["command"], source.get("args", [])]),
+    )
+
+
+def read_source_configuration(path):
+    reject_links(path)
+    config = _read_document(path)
+    sources = config["sources"]
+    if config["version"] != 1 or not isinstance(sources, dict) or not 1 <= len(sources) <= 12:
+        raise ValueError("invalid sources")
+    for key, source in sources.items():
+        if (not 1 <= len(key) <= 200 or not Path(source["command"]).is_absolute()
+                or not isinstance(source["grants"], dict)):
+            raise ValueError("invalid source")
+    return config
+
+
+def _read_document(path):
+    with path.open("rb") as file:
+        body = file.read(2 * 1024**2 + 1)
+    if len(body) > 2 * 1024**2:
+        raise ValueError("inventory exceeds limit")
+    return json.loads(body)
+
+
 def refresh_configured_inventory(configuration, cache):
     """Resolve a trusted launcher's stdio sources and share the resulting short-lived snapshot."""
-    def read(path):
-        with path.open("rb") as file:
-            body = file.read(2 * 1024**2 + 1)
-        if len(body) > 2 * 1024**2:
-            raise ValueError("inventory exceeds limit")
-        return json.loads(body)
-
     def cached(config_hash):
         try:
-            prior = read(cache)
+            prior = _read_document(cache)
             expires_at = datetime.fromisoformat(prior["expires_at"])
             if prior["source_config_hash"] == config_hash and expires_at > datetime.now(UTC):
                 return prior
@@ -149,14 +170,8 @@ def refresh_configured_inventory(configuration, cache):
         return None
 
     try:
-        config = read(configuration)
+        config = read_source_configuration(configuration)
         sources = config["sources"]
-        if config["version"] != 1 or not isinstance(sources, dict) or not 1 <= len(sources) <= 12:
-            raise ValueError("invalid sources")
-        for key, source in sources.items():
-            if (not 1 <= len(key) <= 200 or not Path(source["command"]).is_absolute()
-                    or not isinstance(source["grants"], dict)):
-                raise ValueError("invalid source")
         config_hash = digest(config)
         lock_path = cache.with_suffix(cache.suffix + ".lock")
         reject_links(cache)
@@ -164,7 +179,7 @@ def refresh_configured_inventory(configuration, cache):
         if prior := cached(config_hash):
             return prior
         with FileLock(lock_path, timeout=18):
-            if digest(read(configuration)) != config_hash:
+            if digest(read_source_configuration(configuration)) != config_hash:
                 raise ValueError("sources changed while waiting for inventory")
             if prior := cached(config_hash):
                 return prior
@@ -177,7 +192,7 @@ def refresh_configured_inventory(configuration, cache):
                     observed = pool.submit(lambda: asyncio.run(
                         _observe_sources(sources, configuration.parent))).result()
             observed["source_config_hash"] = config_hash
-            if digest(read(configuration)) != config_hash:
+            if digest(read_source_configuration(configuration)) != config_hash:
                 raise ValueError("sources changed during observation")
             if len(json.dumps(observed, ensure_ascii=False).encode()) > 2 * 1024**2:
                 raise ValueError("inventory exceeds limit")

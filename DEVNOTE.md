@@ -2,46 +2,49 @@
 
 ## SNAPSHOT — 當前狀態
 
-最後更新：2026-11-25T08:26+08:00
+最後更新：2026-11-27T04:37+08:00
 交接狀態：verified
 
 ### 目標與授權範圍
 
-藍圖補強遇到工具缺口時，由底座與宿主提出解法、依已選方案開發 Adapter、核對資格並接續安裝。更新專案與底座的 AGENTS.md。
+完成能力與工具綁定 Stage 0–8 的開發、驗收及本機交付，並驗證課程字幕逐段辨識與斷點續跑。
 
 ### 目前進度
 
-新增 Adapter 開發工作單與 complete_local_adapter，沿同一補強工作驗證已安裝的實作。課程字幕 0.2.0 的 Silero VAD 與 Whisper base 在 Windows 隔離工作區取得資格 PASS。E:/RoutineKeel 原工作 completion_c1dc7658b23f6fe5bd8de942f3a43706 的 rev 5 複查紀錄仍為 needs_input，正式工作區尚未安裝。
+Stage 0–8 本機交付完成。最新候選為 dist/candidate-binding-stage8-local/release。Windows 與 WSL 從新解壓環境完成正式 CLI 的藍圖試做、安裝及執行。正式課程工作區仍用原綁定。
 
 ### 下一步
 
-以原補強工作接續術語擷取、音軌擷取、人聲前處理、Ollama 校稿、MMS 波形對齊與 SRT 交付。在取得正式工作區變更授權後套用已驗證候選。
+本機交付範圍已完成。正式字幕換綁、新版 CUDA 或長片驗收另依裝置確認、素材與正式工作區授權處理。
 
 ### DECISIONS
 
-- 缺口是底座與宿主的續作入口。使用者選實質方案；宿主接線、編寫實作與案例，底座重驗並保存可續用結果。
-- 可信的已安裝離線本機 Adapter 由 entry point 與套件描述檔盤點。已配置的宿主 MCP 來源由底座查 tools/list，既有清冊仍可供嵌入宿主提供觀測。
-- 保留案例如 observe_runtime 與合成試做之選擇及資格門檻，部分 PASS 只等待其餘必要工具。同一工作有缺口時保留已確認選擇。
-- 技能來源保存完整 ZIP 和成員指紋，保留手動補件與來源驗證。
+- Studio 匯出使用宿主傳入的底座 Python，未指定時按工作區既有 Runtime 選擇規則定位。
+- 候選隔離環境只準備一次，每案仍個別計畫、核對綁定、執行及比對成果。Windows 部分整合測具的等待上限延為 120 秒，原驗收斷言仍適用。
+- 課程字幕 0.5.2 從 ZIP 逐段讀取並保存原工作檢查點，重試復用相符區段。正式試做選擇仍可使用 observe_runtime。
+- 正式發布與私人工作區的套件更換需其適用授權。本次交付為本機候選。
 
 ### LANDMINES
 
-- 這次的 ASR 使用已驗證的 OpenAI Whisper base.pt 與既有本機執行環境，其他模型、平台、長片及完整流程未驗證。
-- 自動宿主觀測支援已配置 stdio 來源，Codex 私有連接器與課程 Ollama 的正式校稿綁定尚未接通。
-- 課程藍圖的另外六項 Adapter 與正式安裝仍待完成。兩個工作區的 large-v3 權重先前均未找到。
+- macOS 原生、字幕新版 CUDA 與正式課程長片九項案例尚無本次驗收證據。
+- 回復底座需前版可驗證 SQLite 備份與相符套件。前版發行包在 dist/candidate-binding-stage1-combined/release，回復證據在 dist/binding-stage7/retest/local-restore。
 
 ### 證據索引
 
-- AGENTS.md、flow_base/AGENTS.md、flow_base/docs/blueprint-install.md
-- flow_base/src/flow_base/blueprints/adapter_development.py
-- dist/course-subtitle-adapter/speech-evidence.json
-- E:/RoutineKeel/flow_base/share_states/course-subtitles-workspace-recheck.txt
+- E:/PycharmProjects/RoutineKeel/docs/specs/capability-tool-binding/verification.md
+- E:/PycharmProjects/RoutineKeel/dist/candidate-binding-stage8-local/release/versions.json
+- E:/PycharmProjects/RoutineKeel/dist/binding-stage8/windows-local-delivery.json
+- E:/PycharmProjects/RoutineKeel/dist/binding-stage8/linux-local-delivery.json
+- E:/PycharmProjects/RoutineKeel/dist/binding-stage7/retest/stage7-matrix.json
+- E:/PycharmProjects/RoutineKeel/dist/binding-stage7/retest/asr-cpu-installed.json
+- E:/PycharmProjects/RoutineKeel/dist/binding-stage7/retest/local-restore/report.json
 
 ### VALIDATION
 
-- 課程字幕 Adapter 開發入口與資格 — PASS：dist/course-subtitle-adapter/speech-evidence.json 保存同一工作內 Silero VAD、Whisper 分段、時間偏移與純靜音驗證，宿主清冊為 disconnected。
-- 底座與 MCP 回歸 — PASS：最新相關回歸 41 項通過，包含實際 MCP tools/list、工具鏈、資格驗證及 Agent 指引，見 dist/course-subtitle-adapter/regression.xml。另一次補強與 MCP 組合 60 項通過。
-- 正式工作區安裝及九項完整案例 — NOT_RUN：E:/RoutineKeel 的工作尚待其餘六項工具驗證與正式工作區授權。
+- Stage 7 Windows 整合 — PASS：安裝與回復 57 項、補件和模型額度 27 項逐案通過；六類工具另有 16 項工具回歸和 2 項 CPU 模型實跑通過。
+- Stage 7 WSL 整合 — PASS：55 項通過，2 項 Windows 專用情境已在 Windows 分流驗證。
+- Stage 7 套件回復與 ASR — PASS：以實裝 wheel 完成 SQLite v7→v8→v7；0.5.2 CPU 符合兩組資格並在隔離工作區安裝實跑。候選 IR 和 wheel RECORD 失配均被攔截。
+- Stage 8 發行包冷啟動與交付 — PASS：五個 ZIP 的 SHA-256 與內容校驗均通過。Windows 和 WSL 的兩種 Studio 佈局離線冷啟動，從空白 catalog 完成候選試做、安裝、plan、verify、run。整合 ZIP SHA-256 為 becb755e67619848de2542e6fbed49db24fe6862d1afd1c52de5cbbaad6bb207。
 
 # HISTORY
 
@@ -750,3 +753,143 @@ Stage 6 整合查出 Windows 讀取試做進度檔的共用衝突，修正後原
 <!-- devnote-review:be2b9439e14f83114e1a2f78 -->
 
 將可修復缺口續做至安裝寫入 AGENTS.md。底座主動觀測已配置宿主工具及已安裝本機 Adapter。字幕 VAD 與 Whisper 以同一補強工作取得隔離資格收據，列出剩餘能力。
+
+
+## [2026-11-25T09:21+08:00] Windows 啟動回復與藍圖工作查找
+
+<!-- devnote-review:1b6b9e84747908cdbe1fb15c -->
+
+補上本機 Python 優先、舊環境回復與啟動錯誤保留。以相同草稿指紋查回工作和驗收策略，避免復原後重開或重問。
+
+
+## [2026-11-26T01:23+08:00] 同工作補全字幕資格並正式安裝
+
+<!-- devnote-review:a66561bd5ee8ad2851178930 -->
+
+補交宿主與本機案例。修復本機探測工作目錄，以及含連字號 ID 的 Python 套件名稱。八個 Adapter 合格後在隔離副本及正式工作區安裝，九項正式驗收沿用原選擇。
+
+
+## [2026-11-26T03:49+08:00] 本機素材上限設定為 5 GiB
+
+<!-- devnote-review:892c21dcdc255e4b58135b29 -->
+
+依使用者指定調整底座正式匯入及試做補件，驗證邊界與 520 MiB 合成影片抽音後，更新正式工作區的底座套件並檢查正常啟動。
+
+
+## [2026-11-26T22:39+08:00] 交付 5 GiB 修正後的本機 0.3.0 版本
+
+<!-- devnote-review:fb6cbc69bdfe4246ac5970fe -->
+
+核對本機完整 ZIP 與四個分包的 SHA-256、Windows 全新解壓啟動紀錄及 18 項封裝測試。真實課程的九項驗收仍依 observe_runtime 排到實際執行。
+
+
+## [2026-11-26T23:45+08:00] 校稿配額隔離驗收與能力綁定規格
+
+<!-- devnote-review:338bf964e92fb9387e5050c2 -->
+
+修復不一致的模型呼叫上限，完成隔離資格與安裝及本機 Ollama 實測。新增統一 Runtime、六條綁定、三條缺件處理與併行的規格包。正式啟用與真實課程驗收待續。
+
+
+## [2026-11-26T23:54+08:00] 能力與工具綁定 Stage 0 基線通過
+
+<!-- devnote-review:39d84e7ba171653c8ea95118 -->
+
+核對 CLI、MCP 與 Studio 的 Runtime 選擇、uv 深暫存錯誤、短暫存成功及串行基準。完成 Windows 和 WSL POSIX 共 85 項回歸與備份還原。接續 Stage 1。
+
+
+## [2026-11-27T00:12+08:00] 能力與工具綁定 Stage 1 Runtime 與初裝驗收通過
+
+<!-- devnote-review:47c689c5e2c69049d8c2398e -->
+
+以 Windows 和 WSL 新解壓環境驗證唯一 Runtime 及 Studio 獨立模式，完成 uv 深路徑故障恢復及同操作收據驗證。接續 Stage 2。
+
+
+## [2026-11-27T00:30+08:00] 能力與工具綁定 Stage 2 持久併行通過
+
+<!-- devnote-review:ccedecefd0f4452d0795c920 -->
+
+SQLite v8 保存綁定工作，原子認領採用世代與期限，準備和資格併行。完成正式入口測具、SQLite v7 回復與 Windows、Linux 回歸。Stage 3 接續本機工具。
+
+
+## [2026-11-27T00:45+08:00] Stage 3 本機 CLI 與 Skill 實跑通過，字幕模型待補
+
+<!-- devnote-review:7e58675e979b323927460f1f -->
+
+CLI 與 Skill 完成隔離安裝及執行。字幕接回既有 faster-whisper Worker，核對映射與套件型別；原模型與依賴未快取，等待使用者選擇。
+
+
+## [2026-11-27T00:55+08:00] Stage 3 純規則 Skill 實跑與字幕驗收入口
+
+<!-- devnote-review:ef307e26e231ecb10db8aee6 -->
+
+已由完整規則 ZIP 編譯到宿主派送，使用本機模型完成串流與結果回填。以實際安裝的字幕 Adapter 確認正確測具和缺件狀態。保留原 Stage 3 放行條件。
+
+
+## [2026-11-27T01:02+08:00] Stage 3 字幕標準資格驗證保留缺件工作
+
+<!-- devnote-review:0933c520e64229e4c7f730aa -->
+
+用打包底座及實裝字幕 wheel 驗證標準資格入口。缺模型與 profile 記為 NOT_RUN，重新檢查沿同一工作推進；真實推論仍等待依賴。
+
+
+## [2026-11-27T01:08+08:00] Stage 3 本機輸出資格契約
+
+<!-- devnote-review:3483a395a38f9b4ba91451e1 -->
+
+補上本機具名輸出的 schema 驗證與兩組字幕語音案例。14 項回歸通過，打包底座已用新案例驗證缺件時保留工作並回報 NOT_RUN。實際 large-v3 推論待權重及 CPU Profile。
+
+
+## [2026-11-27T02:04+08:00] Stage 3 字幕 CUDA 與區段續跑
+
+<!-- devnote-review:baad8f75f70d43daf9f27ce2 -->
+
+依使用者同意下載、驗證模型，並在 RTX 5090 通過實際推論。補上 GPU 確認、Windows 資格子程序的架構辨識與 Graph 區段檢查點。以正式資格入口取得隔離收據與綁定鎖，硬體實測從首區續接至第二區。
+
+
+## [2026-11-27T02:15+08:00] Stage 4 MCP stdio 宿主派送
+
+<!-- devnote-review:5f3aaea805c103805da069d5 -->
+
+新增可信宿主可使用的 stdio 派送入口，以單次協定請求呼叫已領取工具並保存回執。真實測試伺服器七個案例各接收一次工具呼叫，通過 27 項回歸。
+
+
+## [2026-11-27T02:27+08:00] Stage 4 宿主模型串流驗收
+
+<!-- devnote-review:bef8c8f55eaf28803b6aeb0d -->
+
+通用派送接通本機 Ollama。實測 CPU 上的 Gemma 4 E2B 串流、結構輸出、token 與單次請求。8 項模型驗收和 42 項 MCP 及 B07 回歸通過，開始 Stage 5。
+
+
+## [2026-11-27T02:46+08:00] Stage 5 本機工具往返及扣抵
+
+<!-- devnote-review:7c5f694e9fce8c28573a732f -->
+
+限制模型呼叫至已綁定本機工具及本次額度，模型與工具請求送出前寫入扣抵。實際 Gemma CPU 往返以原 ID 回填一次工具結果並產生具名交付。截斷案例保留完成的工具結果及原待辦。
+
+
+## [2026-11-27T03:05+08:00] Stage 5 完成與 Stage 6 配方選擇
+
+<!-- devnote-review:a5ec1bb93d3d7206b6318504 -->
+
+完成真實 MCP 工具往返與模型呼叫可攜 Python、ffprobe。Stage 6 補上選擇多份核准安裝配方的入口，驗證未核准時保存研究，取得授權後沿原工作只準備選中的版本。
+
+
+## [2026-11-27T03:40+08:00] Stage 6 原廠 wheel 與 Windows 隔離試做
+
+<!-- devnote-review:f203fe8f937d275e24f88649 -->
+
+核對並下載已授權的 PyAV wheel，原工作沿短路徑完成隔離試做與離線執行。驗證兩分支等待授權、派送前撤權、未知回執及隔離程序重試，接續 Stage 7。
+
+
+## [2026-11-27T04:08+08:00] 字幕逐段辨識續跑與 Stage 7 整合查核
+
+<!-- devnote-review:a347cbc17d67f78a53532e65 -->
+
+正式原版已有程序內逐段辨識，缺少中斷續跑。字幕候選 0.5.2 接上 ZIP 逐段讀取及持久檢查點。實跑 large-v3 CPU 完成兩段並沿用第一段。正式長片與換綁仍待。Stage 7 補入 Windows ffprobe、WSL 冷啟動、SQLite 回復及 Windows 回歸未過項目。
+
+
+## [2026-11-27T04:37+08:00] 能力與工具綁定 Stage 7–8 本機交付通過
+
+<!-- devnote-review:9561f1d5dbc0cf1976e16b54 -->
+
+修復 Studio 匯出重驗的 Runtime 選擇，實測 Windows 逾時邊界後重跑原案例。Stage 7 整合、效能、六類工具、補件、回復和字幕 CPU 驗收完成。Stage 8 以最終 ZIP 在 Windows 及 WSL 乾淨環境離線安裝及執行，保存操作指引、SHA 與前版回復證據。

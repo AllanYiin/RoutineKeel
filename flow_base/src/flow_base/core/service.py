@@ -402,7 +402,10 @@ class WorkflowService:
                                       '--request', str(input_path), '--response', str(output_path)],
                                      cwd=folder, env=env, capture_output=True, timeout=40, check=False)
             if not output_path.is_file():
-                raise FlowError('PLAN_PROBE_FAILED', '隔離計畫程序未回報結果', exit_code=process.returncode)
+                from ..diagnostics import redact
+
+                raise FlowError('PLAN_PROBE_FAILED', '隔離計畫程序未回報結果', exit_code=process.returncode,
+                                stderr=redact(process.stderr.decode('utf-8', 'replace')[-2000:]))
             response = read_json(output_path)
         if not response.get('ok'):
             error = response.get('error') or {}

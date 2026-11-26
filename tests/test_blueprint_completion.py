@@ -6,7 +6,7 @@ from hashlib import sha256
 import pytest
 from flow_base.core.service import WorkflowService
 from flow_base.runtime import FlowError
-from test_binding_qualification import draft, echo_blueprint
+from test_binding_qualification import draft, echo_blueprint, host_observation
 from test_capability_resolver import adapter, observed_inventory, reader_blueprint  # noqa: F401
 from test_graph_builder import data_graph
 from test_workspace import cli
@@ -22,9 +22,9 @@ def gap_archive(path):
 
 
 def wait_completion(
-    service, state, targets=("verified", "installed", "needs_input", "needs_update")
+    service, state, targets=("verified", "installed", "needs_input", "needs_update"), *, timeout=45
 ):
-    end = time.monotonic() + 45
+    end = time.monotonic() + timeout
     while time.monotonic() < end:
         status = service.blueprint_completion("status", state["work_id"])
         if status["status"] in targets:
@@ -35,6 +35,46 @@ def wait_completion(
         f"補強未走到 {targets}: {status}\n"
         + "\n".join(p.read_text(encoding="utf-8") for p in logs.glob("*.log"))
     )
+
+
+def test_isolated_trial_without_result_records_exit_and_restarts_only_once(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from flow_base.blueprints import completion, completion_delivery, installer
+    from flow_base.runtime import read_json
+
+    trial = tmp_path / "trial"
+    trial.mkdir()
+    monkeypatch.setattr(installer.subprocess, "run", lambda *_args, **_kwargs: SimpleNamespace(
+        returncode=1, stderr=b"isolated child exited",
+    ))
+    with pytest.raises(FlowError, match="未回報結果") as failure:
+        installer._exercise_candidate(trial, "fixture", tmp_path, tmp_path / "catalog.json", [], None, repeat=False)
+    evidence = read_json(tmp_path / "trial-failure.json")
+    assert evidence["code"] == "TRIAL_PROCESS_EXIT" and evidence["exit_code"] == 1
+
+    launches = []
+    state = {"work_id": "fixture", "trial": {"build_id": "first", "phase": "prepare"}}
+    store = SimpleNamespace(read=lambda _work: state)
+
+    def preflight(_service, snapshot):
+        return {**snapshot, "status": "needs_input" if snapshot["trial"] else "ready_for_trial"}
+
+    def queue(_service, snapshot, _save):
+        launches.append(snapshot)
+        return {**snapshot, "status": "trialing", "trial": {"build_id": "second"}}
+
+    monkeypatch.setattr(completion, "_preflight", preflight)
+    monkeypatch.setattr(completion_delivery, "queue_trial", queue)
+    monkeypatch.setattr(completion_delivery, "_record", lambda _store, _state, **changes: changes)
+    monkeypatch.setattr(completion_delivery, "_explain_failure", lambda *_args: {
+        "outcome": "failed", "code": evidence["code"], "reason": evidence["error"],
+    })
+    completion_delivery._fail(None, store, state, failure.value)
+    assert len(launches) == 1 and launches[0]["work_id"] == state["work_id"]
+    assert launches[0]["trial_process_retry"]["build_id"] == "first"
+    completion_delivery._fail(None, store, {**launches[0], "trial": {"build_id": "second"}}, failure.value)
+    assert len(launches) == 1
 
 
 @pytest.fixture
@@ -93,6 +133,33 @@ def admitted_echo(tmp_path):
         qualification_hash=receipt["qualification_hash"],
     )
     return graph
+
+
+def test_find_install_work_by_confirmed_draft_preserves_saved_decisions(tmp_path):
+    path = gap_archive(tmp_path / "design.zip")
+    service = WorkflowService(tmp_path)
+    assert service.blueprint_completion("find", payload={"draft_id": "a" * 64})["works"] == []
+    assert not (service.workspace.runtime.home / "state.sqlite3").exists()
+    started = service.blueprint_completion("start", payload={
+        "archive": path.name, "intent": "install", "request_id": "installation",
+    })
+    assert started["case_review"]["requires_selection"] is True
+    reply = service.blueprint_completion("submit", started["work_id"], {
+        "action": "choose_case_strategy", "request_id": "strategy", "expected_revision": started["revision"],
+        "scope_hash": started["case_review"]["scope_hash"], "mode": "observe_runtime", "user_text": "先安裝",
+    })
+    assert reply["case_review"]["requires_selection"] is False
+    assert "已保存驗收方式" in reply["case_review"]["display_text"]
+    report = WorkflowService(tmp_path).blueprint_completion("find", payload={"draft_id": started["draft_id"]})
+    (work,) = report["works"]
+    assert work["case_strategy"] == "observe_runtime" and work["revision"] == reply["revision"]
+    assert work["work_id"] == started["work_id"]
+    assert service.blueprint_completion("status", work["work_id"]) == reply
+    assert service.blueprint_completion("find", payload={"draft_id": "a" * 64})["works"] == []
+    service.blueprint_completion("cancel", work["work_id"], {
+        "request_id": "cancelled", "expected_revision": reply["revision"],
+    })
+    assert service.blueprint_completion("find", payload={"draft_id": started["draft_id"]})["works"] == []
 
 
 def test_completion_retains_gaps_and_rejects_stale_changes(tmp_path):
@@ -362,6 +429,106 @@ def test_missing_adapter_examples_are_an_actionable_gap(tmp_path, admitted_echo)
     ]
 
 
+def test_recheck_retries_failed_local_qualification_in_its_workspace(tmp_path, monkeypatch):
+    from flow_base.graph import qualification
+
+    graph = echo_blueprint()
+    graph["quality_contract"]["golden_cases"] = ["保留輸入文字"]
+    service, draft_id = draft(tmp_path, graph)
+    real_run = qualification.subprocess.run
+    workspaces = []
+
+    def probe(*args, **kwargs):
+        if "flow_base.graph.adapter_probe" in args[0]:
+            workspaces.append(kwargs.get("cwd"))
+            if len(workspaces) == 1:
+                raise qualification.subprocess.TimeoutExpired(args[0], timeout=90)
+        return real_run(*args, **kwargs)
+
+    monkeypatch.setattr(qualification.subprocess, "run", probe)
+    failed = service.blueprint_completion(
+        "start", payload={"draft_id": draft_id, "request_id": "failed-local-probe"},
+    )
+    assert failed["qualification"]["rwp_reader"]["report"]["verdict"] == "FAIL"
+    assert failed["environment_lock"] is None
+    rechecked = service.blueprint_completion("recheck", failed["work_id"], {
+        "request_id": "retry-local-probe", "expected_revision": failed["revision"],
+    })
+    assert rechecked["qualification"]["rwp_reader"]["report"]["verdict"] == "PASS"
+    assert rechecked["environment_lock"]["blueprint_hash"] == draft_id
+    assert workspaces == [tmp_path, tmp_path]
+
+
+def test_host_qualification_collects_missing_cases_then_checks_current_receipt(observed_inventory):
+    graph = reader_blueprint()
+    graph["quality_contract"]["golden_cases"] = ["以正式資料核對輸出"]
+    tool = adapter("provider.model")
+    tool["portable"]["model_version"] = "B"
+    root = observed_inventory(tool)
+    service, draft_id = draft(root, graph)
+    started = service.blueprint_completion(
+        "start", payload={"draft_id": draft_id, "request_id": "host-cases", "intent": "install"},
+    )
+    work_id = started["work_id"]
+
+    def binding_gap(state):
+        return next(row for row in state["gaps"] if row["kind"] == "capability")
+
+    gap = binding_gap(started)
+    selected = service.blueprint_completion("submit", work_id, {
+        "request_id": "select-host", "expected_revision": started["revision"],
+        "action": "select_adapter", "gap_id": gap["id"], "scope_hash": gap["scope_hash"],
+        "adapter": "provider.model@1.0.0", "user_text": "使用這個宿主工具",
+    })
+    gap = binding_gap(selected)
+    assert "complete_adapter_cases" in gap["actions"]
+    assert "provide_host_qualification" not in gap["actions"]
+    assert {row["node"] for row in selected["binding_plan"]["automatic_work"]} == {"rwp_reader"}
+    stale_scope = gap["qualification_scope"]
+    cases = [
+        {"id": "one", "inputs": {"source": "A"}, "expected": {"rows": [{"id": "A"}]}},
+        {"id": "two", "inputs": {"source": "B"}, "expected": {"rows": [{"id": "B"}]}},
+    ]
+    submission = {
+        "request_id": "supply-host-cases", "expected_revision": selected["revision"],
+        "action": "complete_adapter_cases", "gap_id": gap["id"], "scope_hash": gap["scope_hash"],
+        "cases": cases,
+    }
+    with pytest.raises(FlowError, match="候選已改變"):
+        service.blueprint_completion("submit", work_id, {**submission, "scope_hash": "stale"})
+    with pytest.raises(FlowError, match="至少兩組不同"):
+        service.blueprint_completion("submit", work_id, {**submission, "cases": cases[:1]})
+    supplied = service.blueprint_completion("submit", work_id, submission)
+    assert supplied["draft_id"] == draft_id
+    assert supplied["adapter_choices"] == selected["adapter_choices"]
+    assert supplied["adapter_case_supplies"] == {"rwp_reader": cases}
+    assert "adapter_case_confirmation" not in supplied
+    assert supplied["environment_lock"] is None
+    gap = binding_gap(supplied)
+    assert "provide_host_qualification" in gap["actions"]
+    assert "complete_adapter_cases" not in gap["actions"]
+    scope = gap["qualification_scope"]
+    assert scope["request_hash"] != stale_scope["request_hash"]
+
+    def recheck(state, request_id, proof):
+        tool["portable_qualification"] = proof
+        observed_inventory(tool)
+        return WorkflowService(root).blueprint_completion("recheck", work_id, {
+            "request_id": request_id, "expected_revision": state["revision"],
+        })
+
+    stale = recheck(supplied, "stale-receipt", host_observation(stale_scope, cases, "B"))
+    assert stale["environment_lock"] is None
+    failed = recheck(stale, "wrong-result", host_observation(scope, cases, "B", wrong=True))
+    assert failed["qualification"]["rwp_reader"]["report"]["verdict"] == "FAIL"
+    assert failed["environment_lock"] is None
+    qualified = recheck(failed, "current-receipt", host_observation(scope, cases, "B"))
+    assert qualified["qualification"]["rwp_reader"]["report"]["verdict"] == "PASS"
+    assert qualified["environment_lock"]["blueprint_hash"] == draft_id
+    assert qualified["work_id"] == work_id
+    assert qualified["case_coverage"] == started["case_coverage"]
+
+
 def test_described_case_can_be_completed_without_revising_source(tmp_path):
     graph = data_graph()
     graph["quality_contract"]["golden_cases"] = ["保留原文並驗證大寫"]
@@ -476,6 +643,47 @@ def test_attach_fixture_copies_local_input_and_saves_preview_metadata(tmp_path):
     assert (service_path / fixture["reference"]["$file"]).read_text(
         encoding="utf-8"
     ) == "example"
+
+
+@pytest.mark.parametrize("size", [5 * 1024**3, 5 * 1024**3 + 1])
+def test_runtime_and_trial_fixtures_share_the_five_gib_limit(tmp_path, monkeypatch, size):
+    from os import stat_result
+    from pathlib import Path
+    from stat import ST_SIZE
+
+    from flow_base.blueprints.completion_cases import attach_fixture
+    from flow_base.blueprints.sessions import Assets
+    from flow_base.blueprints.trial import fixture_path
+
+    service = WorkflowService(tmp_path)
+    source = tmp_path / "fixtures" / "media.mp4"
+    source.parent.mkdir()
+    source.write_bytes(b"test fixture")
+    real_stat = Path.stat
+
+    def stat_with_size(path, **kwargs):
+        metadata = real_stat(path, **kwargs)
+        if path == source:
+            fields = list(metadata)
+            fields[ST_SIZE] = size
+            return stat_result(fields)
+        return metadata
+
+    monkeypatch.setattr(Path, "stat", stat_with_size)
+    assets = Assets(service.workspace.runtime)
+    work = {"work_id": "large-fixture"}
+    if size == 5 * 1024**3:
+        assert assets.resolve(assets.store(source)).read_bytes() == b"test fixture"
+        assert fixture_path(tmp_path, "fixtures/media.mp4") == source
+        attached = attach_fixture(service, work, "fixtures/media.mp4")
+        assert attached["size"] == len(b"test fixture")
+    else:
+        with pytest.raises(FlowError, match="5,368,709,121 bytes 超過單檔上限 5 GiB"):
+            assets.store(source)
+        with pytest.raises(FlowError, match="超過單檔上限 5 GiB"):
+            fixture_path(tmp_path, "fixtures/media.mp4")
+        with pytest.raises(FlowError, match="超過單檔上限 5 GiB"):
+            attach_fixture(service, work, "fixtures/media.mp4")
 
 
 def test_completion_adopts_a_confirmed_studio_revision(

@@ -373,6 +373,15 @@ class Runtime:
         python = root / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
         return root, python
 
+    def profile_ready(self, profile):
+        root, python = self.environment(profile)
+        if not python.is_file():
+            return False
+        try:
+            return read_json(root / "location.json") == {"path": str(root)}
+        except (OSError, ValueError):
+            return False
+
     def prepare_profile(self, profile, offline=False):
         if profile == "core":
             return Path(sys.executable)
@@ -397,7 +406,10 @@ class Runtime:
             env.update({"UV_CACHE_DIR": str(self.home / "packages"), "UV_PYTHON_INSTALL_DIR": str(python_install_dir),
                         "UV_PROJECT_ENVIRONMENT": str(root / ".venv"), "UV_NO_PROGRESS": "1"})
             version = (source / ".python-version").read_text().strip()
-            argv = [uv, "sync", "--locked", "--no-dev", "--no-editable", "--python", version, "--no-build"]
+            required = tuple(int(part) for part in version.split("."))
+            matches = sys.implementation.name == "cpython" and sys.version_info[:len(required)] == required
+            python_target = sys.executable if matches else version
+            argv = [uv, "sync", "--locked", "--no-dev", "--no-editable", "--python", python_target, "--no-build"]
             if offline:
                 argv += ["--offline"]
             from .presentation import ACTIVE

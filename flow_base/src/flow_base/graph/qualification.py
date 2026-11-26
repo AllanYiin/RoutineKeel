@@ -6,6 +6,7 @@ import sys
 from dataclasses import dataclass
 from inspect import Parameter, signature
 
+from jsonschema.exceptions import SchemaError
 from pydantic import Field, JsonValue, ValidationError
 from routinekeel_contracts.bindings import (
     EnvironmentBinding,
@@ -19,7 +20,7 @@ from routinekeel_contracts.models import Contract, Identifier
 from routinekeel_contracts.privacy import contains_private_data
 
 from ..blueprints.installer import draft_dir, read_archive
-from ..blueprints.source import inspect_blueprint
+from ..blueprints.source import check_schema, inspect_blueprint
 from ..execution.process import worker_environment
 from ..runtime import FlowError
 from .locking import find_receipt, persist_lock, write_receipts
@@ -43,7 +44,13 @@ class AdapterCase(Contract):
     id: Identifier
     inputs: dict[Identifier, JsonValue]
     expected: dict[Identifier, JsonValue] | None = None
+    expected_schema: dict[Identifier, dict[str, JsonValue]] | None = None
     expected_error: str | None = Field(default=None, max_length=80)
+
+
+LOCAL_PREREQUISITE_ERRORS = frozenset({
+    "OFFLINE_RESOURCE_MISSING", "ENV_MISSING", "COMPUTE_DEVICE_CONFIRMATION_REQUIRED",
+})
 
 
 def _tasks(graph):
@@ -118,7 +125,7 @@ def describe_qualification(ws, draft_id, selections):
     return _plan(ws, graph, draft_id, selections)[0]
 
 
-def execute_local(binding, node, inputs, parameters, *, workspace=None):
+def execute_local(binding, node, inputs, parameters, *, workspace=None, checkpoint_dir=None):
     from .session import checked_value
 
     for key, value in inputs.items():
@@ -145,18 +152,21 @@ def execute_local(binding, node, inputs, parameters, *, workspace=None):
             raise FlowError("BINDING_STALE", "本機 Adapter 指紋已更改。")
         handler = live[0].load()
         try:
-            asset_parameter = signature(handler).parameters.get("assets")
+            keyword_only = {name for name, parameter in signature(handler).parameters.items()
+                            if parameter.kind == Parameter.KEYWORD_ONLY}
         except (TypeError, ValueError):
-            asset_parameter = None
-        if asset_parameter is not None and asset_parameter.kind == Parameter.KEYWORD_ONLY:
+            keyword_only = set()
+        context = {}
+        if "assets" in keyword_only:
             from ..blueprints.sessions import Assets
             from ..workspace import Workspace
 
             if workspace is None:
                 raise FlowError("CAPABILITY_UNAVAILABLE", "素材 Adapter 需要本機工作區。")
-            outputs = handler(inputs, parameters, assets=Assets(Workspace(workspace).runtime))
-        else:
-            outputs = handler(inputs, parameters)
+            context["assets"] = Assets(Workspace(workspace).runtime)
+        if "checkpoint_dir" in keyword_only:
+            context["checkpoint_dir"] = checkpoint_dir
+        outputs = handler(inputs, parameters, **context)
     if not isinstance(outputs, dict) or outputs.keys() != node["outputs"].keys():
         raise FlowError("CONTRACT_MISMATCH", "Adapter 交付埠與合約不同。")
     for key, value in outputs.items():
@@ -169,15 +179,29 @@ def _adapter_cases(node, raw_cases):
     if not isinstance(raw_cases, list) or not 2 <= len(raw_cases) <= 20:
         raise ValueError("invalid suite")
     cases = [AdapterCase.model_validate(item) for item in raw_cases]
-    positives = [case for case in cases if case.expected is not None]
+    positives = [case for case in cases if case.expected_error is None]
     if (
         len({case.id for case in cases}) != len(cases)
         or len({content_hash(case.inputs) for case in positives}) < 2
-        or any((case.expected is None) == (case.expected_error is None) for case in cases)
+        or any(
+            sum(value is not None for value in (case.expected, case.expected_schema, case.expected_error)) != 1
+            for case in cases
+        )
         or any(case.inputs.keys() != node.inputs.keys() for case in cases)
-        or any(case.expected.keys() != node.outputs.keys() for case in positives)
+        or any(
+            (case.expected if case.expected is not None else case.expected_schema).keys() != node.outputs.keys()
+            for case in positives
+        )
     ):
         raise ValueError("invalid suite")
+    for case in positives:
+        for schema in (case.expected_schema or {}).values():
+            if not schema:
+                raise ValueError("empty output schema")
+            try:
+                check_schema(schema)
+            except (FlowError, SchemaError, RecursionError) as error:
+                raise ValueError("invalid expected output schema") from error
     return cases
 
 
@@ -217,6 +241,7 @@ def _measure(node, binding, raw_cases, limit_ms=None, *, workspace=None):
             [sys.executable, "-I", "-m", "flow_base.graph.adapter_probe"],
             input=raw,
             capture_output=True,
+            cwd=workspace,
             env=worker_environment(),
             timeout=90,
             check=False,
@@ -231,14 +256,30 @@ def _measure(node, binding, raw_cases, limit_ms=None, *, workspace=None):
         return {"status": "NOT_RUN", "code": "ADAPTER_PROBE_UNAVAILABLE"}, {"status": "NOT_RUN"}
 
 
-def _host_measure(workspace, proposal, node_id, candidate, cases):
+def _host_measure(workspace, proposal, node_id, candidate, expected):
     from .capabilities import host_catalog
+    from .model_budget import batch_count, metered_candidate, usage_evidence
 
+    if any(case.expected_schema is not None for case in expected):
+        return (
+            {"status": "NOT_RUN", "code": "HOST_OUTPUT_SCHEMA_EXPECTATION_UNSUPPORTED"},
+            {"status": "NOT_RUN"},
+        )
     unavailable = (
         {"status": "NOT_RUN", "code": "AUTHORIZED_HOST_QUALIFICATION_REQUIRED"},
         {"status": "NOT_RUN"},
     )
     try:
+        budget = candidate.get("model_budget") or {}
+        batched = "model_call_batch" in budget
+        measured_model = metered_candidate(candidate)
+        if batched:
+            counts = [batch_count(budget, case.inputs) for case in expected]
+            if 0 not in counts or 1 not in counts or max(counts) < 2:
+                return (
+                    {"status": "NOT_RUN", "code": "MODEL_BUDGET_CASES_REQUIRED"},
+                    {"status": "NOT_RUN"},
+                )
         record = host_catalog(workspace).get(candidate["tool"], {})
         observed = record.get("portable_qualification")
         if (
@@ -265,19 +306,11 @@ def _host_measure(workspace, proposal, node_id, candidate, cases):
         if (
             not isinstance(tests, dict)
             or tests.keys() != required
-            or not all(result in {"PASS", "FAIL"} for result in tests.values())
+             or not all(result in {"PASS", "FAIL", "NOT_RUN"} for result in tests.values())
         ):
             return unavailable
-        expected = [AdapterCase.model_validate(case) for case in cases]
         results = observed.get("results", [])
-        if (
-            not 2 <= len(expected) <= 20
-            or not isinstance(results, list)
-            or len(results) != len(expected)
-        ):
-            return unavailable
-        positives = [case for case in expected if case.expected is not None]
-        if len({content_hash(case.inputs) for case in positives}) < 2:
+        if not isinstance(results, list) or len(results) != len(expected):
             return unavailable
         behavior = []
         for case, result in zip(expected, results, strict=True):
@@ -297,20 +330,46 @@ def _host_measure(workspace, proposal, node_id, candidate, cases):
                 else result.get("error") is None
                 and result.get("output_hash") == content_hash(case.expected)
             )
+            measurement = {}
+            if measured_model:
+                measured = result.get("measurement")
+                if not isinstance(measured, dict) or not usage_evidence(budget, measured):
+                    return (
+                        {"status": "NOT_RUN", "code": "MODEL_BUDGET_MEASUREMENT_REQUIRED"},
+                        {"status": "NOT_RUN"},
+                    )
+                calls = measured["model_calls"]
+                required_calls = batch_count(budget, case.inputs) if batched else None
+                limit = budget.get("model_calls", required_calls)
+                within_budget = calls <= limit and (required_calls is None or required_calls <= limit)
+                if batched and not case.expected_error:
+                    within_budget &= calls == required_calls and all(
+                        batch["outcome"] == "succeeded" for batch in measured["batches"]
+                    )
+                if not within_budget:
+                    tests = {**tests, "budget": "FAIL"}
+                passed &= within_budget
+                measurement = {
+                    "input_hash": result["input_hash"], "model_calls": calls,
+                    "model_call_limit": limit, "elapsed_ms": measured["elapsed_ms"],
+                    **({"required_model_calls": required_calls} if batched else {}),
+                }
             behavior.append(
                 {
                     "id": case.id,
                     "status": "PASS" if passed else "FAIL",
                     "cost_micro_usd": result["cost_micro_usd"],
+                    **measurement,
                 }
             )
     except (FlowError, ValueError, TypeError, AttributeError):
         return unavailable
     return (
         {
-            "status": "PASS" if all(value == "PASS" for value in tests.values()) else "FAIL",
+            "status": "FAIL" if "FAIL" in tests.values() else "NOT_RUN" if "NOT_RUN" in tests.values() else "PASS",
             "probes": tests,
             "approval_evidence_sha256": approval,
+            **({"observed_model_budget": True} if measured_model else {}),
         },
         {
             "status": "PASS" if all(row["status"] == "PASS" for row in behavior) else "FAIL",
@@ -367,7 +426,13 @@ def _report(ws, proposal, key, candidate, transport, node, rule, cases, evidence
     if candidate["locus"] == "local_runtime" and not transport["network"]:
         conformance, behavior = _measure(node, transport, cases, rule.constraints.max_latency_ms, workspace=ws.root)
     else:
-        conformance, behavior = _host_measure(ws.root, proposal, key, candidate, cases)
+        try:
+            host_cases = _adapter_cases(node, cases)
+        except (ValidationError, TypeError, ValueError):
+            conformance = {"status": "NOT_RUN", "code": "TRIAL_CASES_REQUIRED"}
+            behavior = {"status": "NOT_RUN"}
+        else:
+            conformance, behavior = _host_measure(ws.root, proposal, key, candidate, host_cases)
     statuses = {conformance["status"], behavior["status"]}
     verdict = "FAIL" if "FAIL" in statuses else "NOT_RUN" if "NOT_RUN" in statuses else "PASS"
     return {
@@ -381,6 +446,9 @@ def _report(ws, proposal, key, candidate, transport, node, rule, cases, evidence
         "behavior": behavior,
         "case_hash": proposal["case_hashes"][key],
         "review_hash": content_hash([proposal["request_hash"], evidence]),
+        **({"model_budget_verified": True, "provider_version": candidate["provider_version"],
+            "declared_model_budget": candidate["model_budget"]}
+           if verdict == "PASS" and conformance.get("observed_model_budget") else {}),
         **({"toolchain_plan_id": candidate["toolchain_plan"]["plan_id"],
             "toolchain_graph_hash": candidate["toolchain_plan"]["compiled_graph_hash"]}
            if candidate.get("toolchain_plan") else {}),
@@ -398,14 +466,18 @@ def _individual_scope(proposal, node):
 
 
 def complete_bindings(ws, draft_id, selections, attempted, *, offline=False, case_supplies=None,
-                      toolchain_plans=None, selected_local_writes=()):
+                      toolchain_plans=None, selected_local_writes=(), operation_store=None, retry_failed=False):
     """Probe safe local candidates or consume previously authorized host observations."""
     graph = _source(ws, draft_id)
     proposal, tasks, rules, choices, cases = _plan(
         ws, graph, draft_id, selections, offline=offline, case_supplies=case_supplies,
         toolchain_plans=toolchain_plans,
     )
-    outcomes, reports = {}, {}
+    from functools import partial
+
+    from ..blueprints.binding_operations import BindingOperation
+
+    outcomes, reports, jobs, planned = {}, {}, [], {}
     for key, (candidate, transport) in choices.items():
         scope = _individual_scope(proposal, key)
         previous = attempted.get(key, {})
@@ -416,17 +488,44 @@ def complete_bindings(ws, draft_id, selections, attempted, *, offline=False, cas
             if previous.get("request_hash") == scope["request_hash"] and previous.get("report"):
                 report = previous["report"]
             else:
-                report = _report(ws, scope, key, candidate, transport, tasks[key], rules[key], cases[key],
-                                 "local qualification with selected write scope"
-                                 if transport["side_effect"] == "local_write"
-                                 else "local read-only qualification policy")
+                local_write = transport["side_effect"] == "local_write"
+                measure = partial(
+                    _report, ws, scope, key, candidate, transport, tasks[key], rules[key], cases[key],
+                    "local qualification with selected write scope" if local_write else
+                    "local read-only qualification policy",
+                )
+                if operation_store is None:
+                    report = measure()
+                else:
+                    operation = BindingOperation(
+                        "qualify", scope["request_hash"],
+                        resource_key="binding-local-write" if local_write else None,
+                    )
+                    jobs.append((operation, measure, lambda item: item["verdict"] == "PASS"))
+                    planned[key] = operation.id
         if report is None and candidate["locus"] == "host_mediated":
             report = _report(ws, scope, key, candidate, transport, tasks[key], rules[key], cases[key],
                              "host-controlled authorization evidence")
         outcomes[key] = {"request_hash": scope["request_hash"], "scope": scope, "report": report}
         if report is not None:
             reports[key] = report
-    result = _finish(ws, graph, proposal, rules, choices, reports, offline=offline, case_supplies=case_supplies)
+    if jobs:
+        measured = operation_store.run(jobs, retry_failed=retry_failed)
+        for key, operation_id in planned.items():
+            report = measured.get(operation_id)
+            if report is None:
+                continue
+            error = report.get("operation_error")
+            if error is not None:
+                raise FlowError(error["code"], error["message"], **error["details"])
+            reports[key] = outcomes[key]["report"] = report
+    if operation_store is None:
+        result = _finish(ws, graph, proposal, rules, choices, reports, offline=offline, case_supplies=case_supplies)
+    else:
+        with operation_store.runtime.lock("blueprint-completion:" + operation_store.work_id, timeout=10):
+            if operation_store.work_stopped():
+                raise FlowError("REVISION_CONFLICT", "補強工作已更新，請先重新讀取狀態。")
+            result = _finish(ws, graph, proposal, rules, choices, reports, offline=offline, case_supplies=case_supplies)
     return {**result, "outcomes": outcomes}
 
 

@@ -35,6 +35,14 @@ def encoded(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, allow_nan=False, indent=2).encode()
 
 
+def _temporary_check(workspace, prefix):
+    # Some native Windows wheel dependencies cannot load DLLs from the long sandbox TEMP path.
+    if sys.platform == "win32" and len(str(workspace)) < len(tempfile.gettempdir()):
+        reject_links(workspace)
+        return tempfile.TemporaryDirectory(prefix=".rk-", dir=workspace)
+    return tempfile.TemporaryDirectory(prefix=prefix)
+
+
 def admission(ir, package_hash, validation, evidence):
     from routinekeel_contracts.builder import issue_admission
 
@@ -182,7 +190,11 @@ def read_member(ws, key, name, offset):
 
 def pack(directory, src, plan, raw, resolution, ir, registry):
     manifest = dict(src["manifest"])
-    module = "rk_bp_" + manifest["id"]
+    workflow_id = manifest["id"]
+    module = "rk_bp_" + workflow_id
+    if "-" in workflow_id:
+        # Workflow IDs start with a letter. Reserve the 0 prefix and escape both separators.
+        module = "rk_bp_0" + workflow_id.replace("_", "_u").replace("-", "_h")
     version = plan["version"]
     wheel = directory / f"{module}-{version}-py3-none-any.whl"
     guide = (
@@ -301,8 +313,8 @@ def verify(ws, key, resolution, cases, *, build_id=None, coverage=None, offline=
         require(len(encoded(cases)) <= 2 * 1024**2, "案例描述太大")
         from .trial import stage_fixtures
 
-        with tempfile.TemporaryDirectory(prefix="rk-trial-") as temp:
-            trial = Path(temp) / "workspace"
+        with _temporary_check(ws.root, "rk-trial-") as temp:
+            trial = Path(temp) / ("w" if sys.platform == "win32" else "workspace")
             trial.mkdir()
             trial_catalog = Path(temp) / "host" / "catalog.json"
             source_catalog = None
@@ -399,11 +411,23 @@ def _exercise_candidate(trial, workflow, dest, catalog, cases, deferred, *, repe
     ]
     if deferred is not None:
         args.append("--verify-load")
+    env = worker_environment() | {"ROUTINEKEEL_HOST_CATALOG": str(catalog)}
+    if sys.platform == "win32" and len(str(trial.parent)) < len(tempfile.gettempdir()):
+        env.update(TEMP=str(trial.parent), TMP=str(trial.parent))
     proc = subprocess.run(
-        args, cwd=trial, env=worker_environment() | {"ROUTINEKEEL_HOST_CATALOG": str(catalog)},
+        args, cwd=trial, env=env,
         capture_output=True, timeout=300, check=False,
     )
-    require((trial / "result.json").is_file(), "隔離驗證未回報結果")
+    if not (trial / "result.json").is_file():
+        from ..diagnostics import redact
+
+        progress_path = dest / "trial-progress.json"
+        progress = read_json(progress_path) if progress_path.is_file() else {}
+        failure = {"passed": False, "code": "TRIAL_PROCESS_EXIT", "error": "隔離驗證程序退出且未回報結果。",
+                   "exit_code": proc.returncode, "stderr": redact(proc.stderr.decode("utf-8", "replace")[-2000:]),
+                   **{key: progress[key] for key in ("case", "phase") if key in progress}}
+        atomic_json(dest / "trial-failure.json", failure)
+        raise FlowError(failure["code"], failure["error"], exit_code=proc.returncode)
     evidence = read_json(trial / "result.json")
     evidence["studio_ir_and_record"] = "passed"
     if not evidence.get("passed"):
@@ -444,7 +468,7 @@ def checked_candidate(ws, dest, expected):
             },
             "補強驗收案例或涵蓋證據已變更。",
         )
-    with tempfile.TemporaryDirectory(prefix="rk-install-check-") as temp:
+    with _temporary_check(ws.root, "rk-install-check-") as temp:
         package = Path(temp)
         for name, body in files.items():
             (package / name).write_bytes(body)
@@ -470,7 +494,7 @@ def checked_candidate(ws, dest, expected):
                 "Pattern 回歸候選僅供試做，正式更新須另建工作流版本。")
         verify_pattern_admission(ir, ws.root)
         check_degradation(ws, record["draft_id"], ir["provenance"].get("degraded_delivery"))
-        live = resolve_graph(ir, ws.root)
+        live = resolve_graph(ir, ws.root, require_model_measurement=True)
         require(
             live["status"] == "ready"
             and live["bindings"] == bindings

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from ..outputs import reject_links
 from ..runtime import atomic_json, digest, read_json
-from .sessions import ASSET, Session
+from .sessions import ASSET, Session, check_asset_file
 from .source import require
 
 
@@ -26,7 +26,7 @@ def fixture_destination(root, name):
 
 def fixture_path(root, name):
     src = fixture_destination(root, name)
-    require(src.is_file() and src.stat().st_size<=512*1024**2,"驗收素材無效")
+    check_asset_file(src)
     return src
 
 
@@ -91,11 +91,14 @@ def exercise(root, workflow, measurements=None, progress=None, progress_path=Non
         options = {"task": workflow, "source": request, "offline": True}
         planned = service.plan_workflow(options)
         require(not planned.plan["blocked"], "候選包計畫無法執行")
-        require(
-            service.prepare_workflow(workflow, offline=True)["ok"]
-            and service.verify_workflow(workflow)["ok"],
-            "環境或流程驗證失敗",
-        )
+        if index == 0:
+            # Every case plans and runs the same installed candidate. Prepare and
+            # explicitly verify its environment once, then let each plan recheck its bindings.
+            require(
+                service.prepare_workflow(workflow, offline=True)["ok"]
+                and service.verify_workflow(workflow)["ok"],
+                "環境或流程驗證失敗",
+            )
         report = service.run_workflow_sync(options)
         if progress is not None:
             progress["phase"] = "exercise"
@@ -179,6 +182,11 @@ def exercise(root, workflow, measurements=None, progress=None, progress_path=Non
             measurements.append({"case":index,"run_id":report["run_id"],
                 "review_count":sum(t["kind"] in {"human","review","authorize_external","iteration_review","route_review"} for t in mocks),
                 **usage,"result_status":view.get("result_status"),"output_hash":digest(view.get("outputs"))})
+            if view["status"] != "complete":
+                measurements[-1]["unfinished_nodes"] = {
+                    key: {field: node[field] for field in ("status", "error", "diagnostic") if field in node}
+                    for key, node in view["nodes"].items() if node["status"] not in {"succeeded", "skipped"}
+                }
         require(view["status"] == "complete", "驗收案例仍有未完成步驟")
         if progress is not None:
             progress["phase"] = "compare"

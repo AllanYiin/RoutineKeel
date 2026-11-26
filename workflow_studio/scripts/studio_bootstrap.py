@@ -12,6 +12,7 @@ from pathlib import Path, PurePosixPath
 from uuid import uuid4
 
 from filelock import FileLock
+from routinekeel_contracts.runtime_environment import python_in, workspace_environment
 
 
 def digest(path):
@@ -140,20 +141,22 @@ def move_owned(root, source, destination):
     source.rename(destination)
 
 
-def prepare(root, bundle):
-    executable = "Scripts/python.exe" if os.name == "nt" else "bin/python"
-    runtime_env = owned(root, root / ".venv")
-    runtime_python = runtime_env / executable
+def prepare(root, bundle, workspace=None):
+    target = Path(workspace).resolve() if workspace else root
+    runtime_env = workspace_environment(target)
+    owner = target if runtime_env else root
+    runtime_env = owned(owner, runtime_env or root / ".venv")
+    runtime_python = python_in(runtime_env)
     # POSIX venv Python is intentionally a symlink to the base interpreter.
     # Validate the containing directories and the launched sys.prefix instead.
-    owned(root, runtime_python.parent)
+    owned(owner, runtime_python.parent)
     if not check_environment(runtime_python, runtime_env, bundle["runtime_version"], runtime=True):
         raise ValueError(
-            "Runtime is missing, incompatible, or contains Studio. "
-            "Preserve this folder and extract a fresh copy."
+            f"RUNTIME_MISMATCH: {runtime_python} is missing, incompatible, or contains Studio. "
+            "Prepare this workspace using its flow_base launcher."
         )
     studio_env = owned(root, root / ".studio-venv")
-    python = studio_env / executable
+    python = python_in(studio_env)
     owned(root, python.parent)
     state = owned(root, root / "share_states")
     state.mkdir(exist_ok=True)
@@ -175,7 +178,8 @@ def prepare(root, bundle):
                 valid_marker = False
             if valid_marker and check_environment(python, studio_env, bundle["studio_version"]):
                 return python, runtime_python
-        uv = find_uv(root)
+        uv = find_uv(owner / "flow_base" if (owner / "workflows").is_dir() and
+                     (owner / "flow_base").is_dir() else owner)
         retired = owned(root, state / "retired_studio_envs")
         retired.mkdir(exist_ok=True)
         old = None
@@ -252,13 +256,15 @@ def main(argv=None):
     )
     args = parser.parse_args(argv)
     root = Path(__file__).resolve().parent
+    workspace = (args.workspace or (root.parent if (root.parent / "workflows").is_dir() else root)).resolve()
     try:
         bundle = verify_bundle(root)
-        python, runtime = prepare(root, bundle)
+        python, runtime = prepare(root, bundle, workspace)
         if args.prepare_only:
             print(
                 json.dumps(
-                    {"ok": True, "studio_python": str(python), "runtime_python": str(runtime)}
+                    {"ok": True, "studio_python": str(python), "runtime_python": str(runtime),
+                     "workspace": str(workspace)}
                 )
             )
             return 0
@@ -270,7 +276,7 @@ def main(argv=None):
             "-m",
             "workflow_studio",
             "--workspace",
-            str(args.workspace or (root.parent if (root.parent / "workflows").is_dir() else root)),
+            str(workspace),
             "--runtime-python",
             str(runtime),
             args.command,

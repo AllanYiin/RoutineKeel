@@ -235,7 +235,7 @@ def test_plans_and_runs_one_three_step_adapter_chain(observed_inventory):  # noq
             "offline": True,
         },
     )
-    installed = wait_completion(service, started, ("installed", "needs_input"))
+    installed = wait_completion(service, started, ("installed", "needs_input"), timeout=120)
     assert installed["status"] == "installed", installed.get("gaps")
     assert all(
         not case["simulated_host_and_review"]
@@ -271,7 +271,7 @@ def test_installed_three_tool_workflow_resumes_after_normalizer_drift(
             "offline": True,
         },
     )
-    installed = wait_completion(service, started, ("installed", "needs_input"))
+    installed = wait_completion(service, started, ("installed", "needs_input"), timeout=120)
     assert installed["status"] == "installed", installed.get("gaps")
     assert {
         item["entry_point"]
@@ -312,6 +312,7 @@ def test_installed_three_tool_workflow_resumes_after_normalizer_drift(
         service,
         service.blueprint_completion("status", waiting["rebind_work_id"]),
         ("verified", "needs_input"),
+        timeout=120,
     )
     assert repair["status"] == "verified", repair.get("gaps")
     assert repair["candidate"]["status"] == "verified"

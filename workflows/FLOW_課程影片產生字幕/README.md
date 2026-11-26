@@ -50,7 +50,7 @@ Windows PowerShell 將 `sh flow_base/start.sh` 替換成 `& .\flow_base\start.ps
 
 1. PyAV 保存 16 kHz 單聲道原音供聽審，另以 44.1 kHz 立體聲處理辨識音軌。標準模式使用原有頻譜去噪；參考模式使用 noisereduce 非平穩降噪。接著由 Hybrid Demucs 分離並取出 `vocals`，重採樣為 16 kHz。只有參考模式會增加係數 0.97 的連續高頻預加重。最後對整段人聲套用固定增益：有效樣本（高於 −50 dBFS）的 RMS 目標為 −20 dBFS，峰值上限 −1 dBFS，增益最多 +20 dB。模型採 10 秒分塊、1 秒交叉淡化。輸出與原音的 16 kHz 取樣點數相同。前處理失敗時停止，不自動以未處理音訊冒充成功。
 2. Silero ONNX VAD 的語音閾值為 0.3，最短語音 250 ms，連續靜音達 2,200 ms 即可分段。所有由 VAD 判定、長度嚴格超過 3 秒的靜音（含片頭、片尾）整段略過辨識。250 ms 邊界延伸僅用在其餘區間。區段上限維持 28 秒。每段人聲單獨送辨識，字幕使用原片取樣位置。可在 `artifacts/vad_regions.json` 查看實際設定、區段與略過區間。
-3. 使用 **faster-whisper + large-v3** 逐區段辨識，映回原片時間。每個完成區段保存 checkpoint；失敗後沿用已完成且指紋相符的區段。逐段 ASR 關閉第二次 VAD 與前文延續。
+3. 使用 **faster-whisper + large-v3** 逐區段辨識，映回原片時間。每個完成區段保存 checkpoint；失敗後沿用已完成且指紋相符的區段。逐段 ASR 關閉第二次 VAD 與前文延續。從藍圖綁定 `course.local.transcribe_faster_whisper` 0.5.2 時，Worker 直接從 ZIP 逐一讀取語音片段，並在同一 Graph 工作保存已完成數與下一個區段。重試辨識節點可重用已核對的區段，全部完成後才把文字送往校稿。
 4. 本機繁體轉換、排版與 QA，產生疑義、原音片段、SRT、VTT。預設每行 30 字元、最多兩行、最長 12 秒、最短 0.5 秒，閱讀速率門檻 15 字元／秒。
 5. **所有真實字幕預設 REVIEW_REQUIRED**，即使沒有疑義也需真人確認；有硬性 QA 問題則 FAIL。只有真人聽審後明確核准且內容指紋相符，才可 PASS。
 

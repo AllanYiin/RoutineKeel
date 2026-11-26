@@ -2,6 +2,7 @@
 
 COMPLETION_OPERATIONS = (
     "start",
+    "find",
     "status",
     "history",
     "preview_revision",

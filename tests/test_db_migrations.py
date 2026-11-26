@@ -47,9 +47,32 @@ def test_completion_migration_preserves_prior_database_and_restores(tmp_path, mo
         assert copy.execute("PRAGMA user_version").fetchone()[0] == 6
         assert copy.execute("SELECT task_id FROM flows").fetchone()[0] == "copy"
     with runtime.connect() as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert db.execute("PRAGMA user_version").fetchone()[0] == MIGRATIONS[-1].VERSION
         assert db.execute("SELECT task_id FROM flows").fetchone()[0] == "copy"
         assert db.execute("SELECT count(*) FROM blueprint_completion_revisions").fetchone()[0] == 0
+
+
+def test_binding_operations_migration_keeps_v007_completion_revisions(tmp_path, monkeypatch):
+    from flow_base.storage import migrations
+
+    runtime = Runtime(tmp_path / "share_states")
+    with monkeypatch.context() as previous:
+        previous.setattr(migrations, "MIGRATIONS", MIGRATIONS[:7])
+        runtime.initialize()
+        with runtime.connect() as db:
+            db.execute("INSERT INTO blueprint_completion_revisions VALUES ('work', 1, 'request', 'hash', '{}')")
+    Runtime(runtime.home).initialize()
+    backup = runtime.home / "state.sqlite3.before-v008.sqlite3"
+    assert backup.with_name(backup.name + ".sha256").read_text().strip() == hashlib.sha256(backup.read_bytes()).hexdigest()
+    restored = tmp_path / "restored-v007.sqlite3"
+    with sqlite3.connect(backup.as_uri() + "?mode=ro", uri=True) as original, sqlite3.connect(restored) as copy:
+        original.backup(copy)
+        assert copy.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert copy.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert copy.execute("SELECT work_id FROM blueprint_completion_revisions").fetchone()[0] == "work"
+    with runtime.connect() as db:
+        assert db.execute("SELECT work_id FROM blueprint_completion_revisions").fetchone()[0] == "work"
+        assert db.execute("SELECT count(*) FROM binding_operations").fetchone()[0] == 0
 
 
 def test_legacy_upgrade_keeps_rows_and_backup(tmp_path):

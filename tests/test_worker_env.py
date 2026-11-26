@@ -2,7 +2,9 @@
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
+from flow_base.execution import process
 from flow_base.execution.process import worker_environment
 from flow_base.runtime import Runtime, run_process
 
@@ -18,6 +20,13 @@ def test_worker_environment_is_allowlisted(monkeypatch):
     assert env['CUDA_VISIBLE_DEVICES'] == '-1'
     assert env['HF_HUB_OFFLINE'] == '1'
     assert env['PYTHONUTF8'] == '1'
+
+
+def test_windows_worker_environment_preserves_profile_architecture(monkeypatch):
+    monkeypatch.setattr(process, "os", SimpleNamespace(name="nt"))
+    source = {"PROCESSOR_ARCHITECTURE": "x86", "PROCESSOR_ARCHITEW6432": "AMD64"}
+    env = worker_environment(source)
+    assert {key: env[key] for key in source} == source
 
 
 def test_runtime_worker_passes_allowlisted_env(tmp_path, monkeypatch):

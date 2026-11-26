@@ -1,6 +1,7 @@
 import json
 import sys
 import types
+import zipfile
 
 import pytest
 from ai_flow01 import portable_core as core
@@ -9,41 +10,105 @@ from ai_flow01.contracts import LocalReviewPolicy, Options, subtitle_workflow
 from review_fixtures import make_wav
 
 
-def test_region_resume_preserves_offsets_and_skips_finished_regions(tmp_path, monkeypatch):
+@pytest.mark.parametrize("mode", ["legacy", "persistent", "archive"])
+def test_region_resume_preserves_offsets_and_skips_finished_regions(tmp_path, monkeypatch, mode):
     class Audio:
-        def astype(self, _): return self
-        def __truediv__(self, _): return self
+        def astype(self, _):
+            return self
+
+        def __truediv__(self, _):
+            return self
+
     monkeypatch.setitem(sys.modules, 'numpy', types.SimpleNamespace(float32=None))
     monkeypatch.setitem(sys.modules, 'opencc', types.SimpleNamespace(OpenCC=lambda _: types.SimpleNamespace(convert=lambda t:t)))
     monkeypatch.setattr(worker, 'read_pcm', lambda _: Audio())
     regions = []
-    for i,start in enumerate((1,9)):
-        path=tmp_path/f'{i}.wav';make_wav(path,2)
-        regions.append({'id':i,'start':start,'end':start+2,'audio_file':path.name,'sha256':worker.file_hash(path)})
-    manifest=tmp_path/'vad.json';worker.save(manifest,{'duration':12,'regions':regions})
-    calls=[]
+    for index, start in enumerate((1, 9, 15)):
+        path = tmp_path / f'{index}.wav'
+        make_wav(path, 2)
+        regions.append({'id': index, 'start': start, 'end': start + 2,
+                        'audio_file': path.name, 'sha256': worker.file_hash(path)})
+    persistent_checkpoints = mode != "legacy"
+    archive_path = tmp_path / "vad.zip"
+    archive_reads = []
+    if mode == "archive":
+        with zipfile.ZipFile(archive_path, "w") as archive:
+            for region in regions:
+                source = tmp_path / region.pop("audio_file")
+                region.pop("sha256")
+                region.update(archive_member=source.name, size=source.stat().st_size)
+                archive.write(source, source.name)
+                source.unlink()
+        original_open = zipfile.ZipFile.open
+
+        def track_reads(archive, member, *args, **kwargs):
+            archive_reads.append(member)
+            return original_open(archive, member, *args, **kwargs)
+
+        monkeypatch.setattr(zipfile.ZipFile, "open", track_reads)
+    manifest = tmp_path / 'vad.json'
+    worker.save(manifest, {'duration': 17, 'regions': regions})
+    calls = []
+    loads = []
+
     class Model:
-        fail=True
+        fail = True
+
         def transcribe(self, audio, **kwargs):
             calls.append(kwargs)
-            if len(calls)==2 and self.fail:
+            if len(calls) == 2 and self.fail:
                 raise RuntimeError('simulated interruption')
-            word=types.SimpleNamespace(start=0.1,end=0.8,word=' hello')
-            segment=types.SimpleNamespace(start=0.1,end=0.8,text=' hello',words=[word],avg_logprob=-0.1,no_speech_prob=0.01)
-            return iter([segment]),types.SimpleNamespace(language='en')
-    model=Model();monkeypatch.setattr(worker,'load_model',lambda _:(model,'cpu',None))
-    req={'vad_path':str(manifest),'output':str(tmp_path/'out.json'),'language':'en','model':'whisper-large-v3','device':'cpu','prompt':Options().initial_prompt}
-    with pytest.raises(RuntimeError,match='interruption'):worker.transcribe(req)
-    assert (tmp_path/'region_checkpoints/region_00000.json').is_file()
-    model.fail=False
+            word = types.SimpleNamespace(start=0.1, end=0.8, word=' hello')
+            segment = types.SimpleNamespace(start=0.1, end=0.8, text=' hello', words=[word],
+                                            avg_logprob=-0.1, no_speech_prob=0.01)
+            return iter([segment]), types.SimpleNamespace(language='en')
+
+    model = Model()
+
+    def load_model(_):
+        loads.append('cpu')
+        return model, 'cpu', None
+
+    monkeypatch.setattr(worker, 'load_model', load_model)
+    req = {'vad_path': str(manifest), 'output': str(tmp_path / 'out.json'), 'language': 'en',
+           'model': 'whisper-large-v3', 'device': 'cpu', 'prompt': Options().initial_prompt}
+    checkpoints = tmp_path / 'region_checkpoints'
+    if persistent_checkpoints:
+        checkpoints = tmp_path / 'session' / 'region_checkpoints'
+        req['checkpoints'] = str(checkpoints)
+    if mode == "archive":
+        req["speech_archive"] = str(archive_path)
+    with pytest.raises(RuntimeError, match='interruption'):
+        worker.transcribe(req)
+    assert (checkpoints / 'region_00000.json').is_file()
+    assert not (tmp_path / 'out.json').exists()
+    if mode == "archive":
+        assert archive_reads == ['0.wav', '1.wav']
+        assert core.read_json(checkpoints / 'progress.json') == {
+            'completed': 1, 'total': 3, 'cached': 0, 'executed': 1, 'next_region_id': 1,
+        }
+        archive_reads.clear()
+    model.fail = False
+    output = tmp_path / 'restart' / 'out.json' if persistent_checkpoints else tmp_path / 'out.json'
+    req['output'] = str(output)
     worker.transcribe(req)
-    data=json.loads((tmp_path/'out.json').read_text())
-    assert len(calls)==3  # finished region was not decoded twice
-    assert [(s['start'],s['end']) for s in data['segments']]==[(1.1,1.8),(9.1,9.8)]
-    assert data['segments'][1]['words'][0]['start']==9.1
-    assert [r['status'] for r in data['region_progress']]==['cached','executed']
-    assert all(c['initial_prompt']=='繁體中文' for c in calls)
+    data = json.loads(output.read_text())
+    assert len(calls) == 4
+    assert loads == ['cpu', 'cpu']
+    assert [(s['start'], s['end']) for s in data['segments']] == [(1.1, 1.8), (9.1, 9.8), (15.1, 15.8)]
+    assert data['segments'][1]['words'][0]['start'] == 9.1
+    assert [r['status'] for r in data['region_progress']] == ['cached', 'executed', 'executed']
+    assert all(c['initial_prompt'] == '繁體中文' for c in calls)
     assert all(not c['vad_filter'] and not c['condition_on_previous_text'] for c in calls)
+    if mode == "archive":
+        assert archive_reads == ['0.wav', '1.wav', '2.wav']
+        assert core.read_json(checkpoints / 'progress.json') == {
+            'completed': 3, 'total': 3, 'cached': 1, 'executed': 2, 'next_region_id': None,
+        }
+        worker.transcribe(req)
+        assert len(calls) == 4
+        assert loads == ['cpu', 'cpu']
+        assert core.read_json(checkpoints / 'progress.json')['cached'] == 3
 
 
 

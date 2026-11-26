@@ -140,6 +140,9 @@ def plan_probe_catalog(workspace, task_id, destination):
         "network",
         "inputs",
         "outputs",
+        "output_mapping",
+        "result_schema",
+        "model_profile",
         "parameters_schema",
         "resources",
         "kind",
@@ -285,9 +288,28 @@ def resolve_task(node, workspace, *, offline=False, catalog=None):
             )
         }
         description.update(provider="desktop_host", tool=node.capability)
+        resources = description.get("resources") or {}
+        from .model_budget import batch_rule
+
+        if batch_rule(resources, description["inputs"]):
+            if record.get("kind") == "native" or record.get("network") or "model_budget" in description["inputs"]:
+                unavailable("分批模型工具必須經本機宿主派送，且不得使用保留的模型額度欄位。")
         for key in ("source_id", "provider_tool"):
             if key in record:
                 description[key] = record[key]
+        for key in ("output_mapping", "result_schema"):
+            if key in record:
+                description[key] = record[key]
+        if "model_profile" in record:
+            from ..adapters.host_model import model_profile
+
+            profile = model_profile(record["model_profile"])
+            if profile.get("tool_mode") and (
+                type(resources.get("model_calls")) is not int or resources["model_calls"] < 2
+                or resources.get("cost_micro_usd") != 0 or "model_call_batch" in resources
+            ):
+                unavailable("工具模式須有至少兩次模型請求額度及零成本範圍。")
+            description["model_profile"] = profile
         schema = record.get("parameters_schema")
         if node.parameters or schema is not None:
             if not isinstance(schema, dict) or schema.get("type") != "object":
@@ -314,15 +336,18 @@ def resolve_task(node, workspace, *, offline=False, catalog=None):
         if node.capability in MODEL_STEPS:
             resources = description.get("resources") or {}
             if (description["provider"] != "desktop_host"
-                or type(resources.get("model_calls")) is not int or resources["model_calls"] < 1
+                or ("model_call_batch" not in resources and
+                    (type(resources.get("model_calls")) is not int or resources["model_calls"] < 1))
                 or type(resources.get("cost_micro_usd")) is not int or resources["cost_micro_usd"] < 0
                 or (record.get("network", True) and node.side_effect != "external")):
                 unavailable("模型步驟須綁定有模型呼叫、成本上限與相符授權的宿主能力。")
     return {**description, "fingerprint": digest(description)}
 
 
-def resolve_graph(payload, workspace, *, offline=False, admission=None, allow_waiting=False, planning_search=None):
+def resolve_graph(payload, workspace, *, offline=False, admission=None, allow_waiting=False, planning_search=None,
+                  require_model_measurement=False):
     from .locking import read_lock
+    from .model_budget import unverified_locked_model
     from .portable import graph_requirements, resolve_requirement
     from .qualification import graph_fingerprint
 
@@ -332,6 +357,7 @@ def resolve_graph(payload, workspace, *, offline=False, admission=None, allow_wa
     observation = capability_observation(workspace) if requirements else None
     resolved, gaps, decisions = {}, [], []
     locked = None
+    qualifications = {}
     lock_error = False
     if requirements:
         hashes = {
@@ -344,7 +370,7 @@ def resolve_graph(payload, workspace, *, offline=False, admission=None, allow_wa
                 workspace, graph_fingerprint(graph), lock_hash=next(iter(hashes), None)
             )
             if authority:
-                locked = authority[0]
+                    locked, qualifications = authority
         except FlowError:
             lock_error = True
 
@@ -398,6 +424,19 @@ def resolve_graph(payload, workspace, *, offline=False, admission=None, allow_wa
                                     "lock_hash": locked.lock_hash,
                                     "qualification_receipt": selected.qualification_receipt,
                                 }
+                                qualification = qualifications.get(key, {})
+                                if (qualification.get("model_budget_verified") is True
+                                        and qualification.get("declared_model_budget") == concrete.get("resources")):
+                                    locked_binding["model_budget_verified"] = True
+                                if require_model_measurement and unverified_locked_model(locked_binding):
+                                    decision.update(status="needs_qualification", code="MODEL_BUDGET_UNVERIFIED")
+                                    decisions.append(decision)
+                                    gaps.append({
+                                        "node": key, "tool": rule.capability,
+                                        "code": "MODEL_BUDGET_UNVERIFIED",
+                                        "reason": "既有資格缺少可核對的模型呼叫次數，須重新驗證。",
+                                    })
+                                    continue
                                 check_locus(key, selected.execution_locus)
                                 resolved[key] = locked_binding
                                 decision.update(
@@ -455,6 +494,21 @@ def resolve_graph(payload, workspace, *, offline=False, admission=None, allow_wa
                 visit(node.body, key + "/")
 
     visit(graph)
+    model_tools = {
+        key: binding["model_profile"]["tool_mode"]
+        for key, binding in resolved.items() if (binding.get("model_profile") or {}).get("tool_mode")
+    }
+    if model_tools:
+        from routinekeel_contracts.execution_review import step_paths
+
+        from .tool_calls import bind_tools
+
+        nodes = {key: node.model_dump(mode="json") for key, node in step_paths(graph)}
+        for key, mode in model_tools.items():
+            try:
+                resolved[key]["tool_registry"] = bind_tools(nodes, resolved, key, mode)
+            except FlowError as exc:
+                gaps.append({"node": key, "tool": resolved[key]["tool"], "code": exc.code, "reason": str(exc)})
     report = {
         "status": "blocked" if gaps else "ready",
         "bindings": resolved,

@@ -8,6 +8,7 @@ from routinekeel_contracts.skill_files import SKILL_BUNDLE
 from ..blueprints.source import require
 from ..runtime import FlowError, digest
 from .capabilities import resolve_graph
+from .runtime_environment import binding_environment, runtime_mismatch
 
 
 def verify_pattern_admission(graph, workspace):
@@ -23,7 +24,15 @@ def verify_pattern_admission(graph, workspace):
 
 
 def preflight_graph(graph, workspace, *, offline=False, planning_search=None):
-    resolved = resolve_graph(graph, workspace, offline=offline, planning_search=planning_search)
+    environment = binding_environment(workspace)
+    if environment["status"] == "mismatch":
+        return {
+            "status": "blocked", "build_status": "blocked", "bindings": {},
+            "gaps": [runtime_mismatch(environment)], "build_gaps": [],
+            "binding_environment": environment, "fingerprint": environment["runtime_id"],
+        }
+    resolved = resolve_graph(graph, workspace, offline=offline, planning_search=planning_search,
+                             require_model_measurement=True)
     cases = graph["quality_contract"].get("golden_cases")
     build_gaps = trial_case_gaps(cases, graph["outputs"])
     admission_failed = False
@@ -43,6 +52,7 @@ def preflight_graph(graph, workspace, *, offline=False, planning_search=None):
     }
     return {
         **resolved,
+        "binding_environment": environment,
         "status": "blocked" if admission_failed else resolved["status"],
         "build_status": "blocked" if resolved["gaps"] or build_gaps else "ready",
         "build_gaps": build_gaps,
@@ -53,8 +63,13 @@ def preflight_graph(graph, workspace, *, offline=False, planning_search=None):
 def build_graph(source, requested, cases, workspace, *, attachments=None, coverage=None, offline=False,
                 deferred_acceptance=None):
     graph = source["graph"]
+    environment = binding_environment(workspace)
+    if environment["status"] == "mismatch":
+        gap = runtime_mismatch(environment)
+        raise FlowError(gap["code"], gap["reason"], expected_python=gap["expected_python"],
+                        actual_python=gap["actual_python"])
     verify_pattern_admission(graph, workspace)
-    resolved = resolve_graph(graph, workspace, offline=offline)
+    resolved = resolve_graph(graph, workspace, offline=offline, require_model_measurement=True)
     require(
         resolved["status"] == "ready",
         "有未綁定的能力：" + str([g["node"] for g in resolved["gaps"]]),

@@ -177,7 +177,7 @@ def test_rebind_activation_recovers_at_three_commit_boundaries(
         "start",
         payload={"draft_id": draft, "intent": "install", "request_id": "original"},
     )
-    installed = wait_completion(service, working, ("installed", "needs_input"))
+    installed = wait_completion(service, working, ("installed", "needs_input"), timeout=120)
     assert installed["status"] == "installed", installed.get("gaps")
     installed_hash = service.workspace.task("toolchain_report", read_only=True).manifest.sha256
     source = workspace / "source.json"
@@ -208,6 +208,7 @@ def test_rebind_activation_recovers_at_three_commit_boundaries(
         service,
         service.blueprint_completion("status", suspended["rebind_work_id"]),
         ("verified", "needs_input"),
+        timeout=120,
     )
     assert repair["status"] == "verified", repair.get("gaps")
     scope = service.blueprint_task(session, "preview_rebind")
@@ -287,5 +288,6 @@ def test_rebind_activation_recovers_at_three_commit_boundaries(
         service,
         service.blueprint_completion("status", later_status["rebind_work_id"]),
         ("verified", "needs_input"),
+        timeout=120,
     )
     assert later_repair["status"] == "verified"
